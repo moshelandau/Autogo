@@ -1,0 +1,94 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # allow manual run from GitHub mobile app
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.4
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_pgsql, redis, gd, intl, bcmath, zip
+          tools: composer:v2
+          coverage: none
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install PHP dependencies
+        run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+
+      - name: Install Node deps & build assets
+        run: |
+          npm ci
+          npm run build
+
+      - name: Setup SSH key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Add server to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H 217.216.91.93 >> ~/.ssh/known_hosts
+
+      - name: Deploy via rsync
+        run: |
+          rsync -avz --delete \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.env' \
+            --exclude='node_modules' \
+            --exclude='storage/logs/*' \
+            --exclude='storage/framework/cache/*' \
+            --exclude='storage/framework/sessions/*' \
+            --exclude='storage/framework/views/*' \
+            --exclude='storage/app/public' \
+            --exclude='public/storage' \
+            --exclude='public/hot' \
+            --exclude='tests' \
+            ./ root@217.216.91.93:/var/www/autogo/
+
+      - name: Run migrations + cache + restart on server
+        run: |
+          ssh root@217.216.91.93 'set -e
+            cd /var/www/autogo
+            chown -R www-data:www-data .
+            chmod -R 775 storage bootstrap/cache
+            php artisan migrate --force
+            php artisan optimize:clear
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+            php artisan event:cache
+            systemctl restart php8.4-fpm
+            supervisorctl restart autogo-worker:*
+            echo "✅ Deployed at $(date)"
+          '
+
+      - name: Health check
+        run: |
+          STATUS=$(curl -sk -o /dev/null -w "%{http_code}" https://app.autogoco.com/login)
+          echo "https://app.autogoco.com/login → HTTP $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "❌ Health check failed"
+            exit 1
+          fi
