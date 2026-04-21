@@ -4,10 +4,10 @@ import { useForm, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import CustomerSelect from '@/Components/CustomerSelect.vue';
 
-const props = defineProps({ customers: Array, lenders: Array, salespeople: Array });
+const props = defineProps({ customers: Array, lenders: Array, salespeople: Array, prefill: { type: Object, default: () => ({}) } });
 
 const form = useForm({
-    customer_id: '', payment_type: 'lease', priority: 'low',
+    customer_id: props.prefill.customer_id || '', payment_type: 'lease', priority: 'low',
     vehicle_vin: '', vehicle_year: '', vehicle_make: '', vehicle_model: '', vehicle_trim: '',
     msrp: '', sell_price: '', credit_score: '', customer_zip: '', notes: '',
 });

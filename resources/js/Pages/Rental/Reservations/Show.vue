@@ -257,16 +257,24 @@ const analyzeImage = async (insp) => {
                 </div>
 
                 <!-- Active security hold display -->
-                <div v-if="r.active_hold" class="bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-center justify-between">
+                <div v-if="r.active_hold" class="bg-amber-50 border-2 border-amber-300 rounded-lg p-4 flex items-center justify-between">
                     <div>
-                        <div class="font-bold text-amber-900">🔒 ${{ Number(r.active_hold.amount).toFixed(2) }} held</div>
-                        <div class="text-xs text-amber-800">
-                            {{ r.active_hold.card_brand?.toUpperCase() }} •••• {{ r.active_hold.card_last4 }} — authorized {{ r.active_hold.placed_at?.split('T')[0] }}
+                        <div class="font-bold text-amber-900 text-lg">🔒 ${{ Number(r.active_hold.amount).toFixed(2) }} held on High Car Rental</div>
+                        <div class="text-sm text-amber-800">
+                            {{ r.active_hold.card_brand?.toUpperCase() }} •••• {{ r.active_hold.card_last4 }} ·
+                            authorized {{ r.active_hold.placed_at?.split('T')[0] }}
+                        </div>
+                        <div class="text-xs text-amber-700 mt-1">
+                            ⏳ Auto-expires after 30 days. <strong>Hold is intentionally kept after return</strong> to allow capture if damage discovered later.
                         </div>
                     </div>
-                    <div class="flex gap-2">
-                        <button @click="releaseHold(r.active_hold.id)" class="text-xs px-3 py-1.5 bg-white border border-emerald-300 text-emerald-700 rounded hover:bg-emerald-50">Release Hold</button>
-                        <button @click="captureHold(r.active_hold.id)" class="text-xs px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700">Capture (damage)</button>
+                    <div class="flex flex-col gap-2">
+                        <button @click="releaseHold(r.active_hold.id)" class="text-xs px-3 py-1.5 bg-white border border-emerald-300 text-emerald-700 rounded hover:bg-emerald-50">
+                            ✓ Release Now (clean)
+                        </button>
+                        <button @click="captureHold(r.active_hold.id)" class="text-xs px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700">
+                            ⚠ Capture (damage)
+                        </button>
                     </div>
                 </div>
 

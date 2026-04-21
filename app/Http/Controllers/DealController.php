@@ -28,12 +28,13 @@ class DealController extends Controller
         ]);
     }
 
-    public function create()
+    public function create(Request $request)
     {
         return Inertia::render('Leasing/Deals/Create', [
-            'customers' => Customer::where('is_active', true)->orderBy('last_name')->get(['id', 'first_name', 'last_name', 'phone', 'credit_score']),
-            'lenders' => Lender::active()->get(),
+            'customers'   => Customer::where('is_active', true)->orderBy('last_name')->get(['id', 'first_name', 'last_name', 'phone', 'credit_score']),
+            'lenders'     => Lender::active()->get(),
             'salespeople' => \App\Models\User::orderBy('name')->get(['id', 'name']),
+            'prefill'     => [ 'customer_id' => $request->integer('customer_id') ?: null ],
         ]);
     }
 

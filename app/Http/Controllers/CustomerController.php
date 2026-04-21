@@ -176,6 +176,32 @@ class CustomerController extends Controller
     }
 
     /**
+     * Quick-create endpoint used by the inline CustomerSelect modal.
+     * Returns the new customer as JSON so the dropdown can pick it immediately.
+     */
+    public function quickStore(Request $request)
+    {
+        $validated = $request->validate([
+            'first_name'  => 'required|string|max:255',
+            'last_name'   => 'required|string|max:255',
+            'phone'       => 'nullable|string|max:20',
+            'email'       => 'nullable|email|max:255',
+            'address'     => 'nullable|string|max:255',
+            'city'        => 'nullable|string|max:100',
+            'state'       => 'nullable|string|max:2',
+            'zip'         => 'nullable|string|max:10',
+            'drivers_license_number' => 'nullable|string|max:50',
+            'dl_state'    => 'nullable|string|max:2',
+            'dl_expiration' => 'nullable|date',
+            'date_of_birth' => 'nullable|date',
+        ]);
+
+        $customer = Customer::create(array_merge($validated, ['is_active' => true, 'can_receive_sms' => false]));
+
+        return response()->json(['customer' => $customer]);
+    }
+
+    /**
      * JSON typeahead — returns up to 20 matches for use in searchable customer dropdowns.
      */
     public function search(Request $request)

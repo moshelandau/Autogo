@@ -24,10 +24,33 @@ class ReservationController extends Controller
 
     public function create(Request $request)
     {
+        // Vehicle class availability counts (active fleet by class minus currently rented)
+        $now = now();
+        $rentedVehicleIds = \App\Models\Reservation::whereIn('status', ['rental','open'])
+            ->whereNotNull('vehicle_id')->pluck('vehicle_id')->all();
+
+        $byClass = Vehicle::where('is_active', true)
+            ->get(['id','vehicle_class','make','model','year','license_plate'])
+            ->groupBy('vehicle_class')
+            ->map(fn ($vehicles, $class) => [
+                'class' => $class,
+                'total' => $vehicles->count(),
+                'available' => $vehicles->whereNotIn('id', $rentedVehicleIds)->count(),
+                'vehicles'  => $vehicles->values()->all(),
+            ])->values();
+
         return Inertia::render('Rental/Reservations/Create', [
             'customers' => Customer::where('is_active', true)->orderBy('last_name')->get(['id', 'first_name', 'last_name', 'phone', 'email']),
-            'vehicles' => Vehicle::available()->orderBy('vehicle_class')->orderBy('make')->get(),
+            'vehicles'  => Vehicle::available()->orderBy('vehicle_class')->orderBy('make')->get(),
             'locations' => Location::where('is_active', true)->get(),
+            'vehicleClasses' => $byClass,
+            // Pre-fill from query params (used by "+ New Rental" button on Customer page)
+            'prefill' => [
+                'customer_id'   => $request->integer('customer_id') ?: null,
+                'pickup_date'   => $request->input('pickup_date'),
+                'vehicle_id'    => $request->integer('vehicle_id') ?: null,
+                'vehicle_class' => $request->input('vehicle_class'),
+            ],
         ]);
     }
 

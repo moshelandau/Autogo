@@ -74,7 +74,21 @@ const kinds = [
                     <h2 class="font-bold text-xl text-gray-900">{{ customer.first_name }} {{ customer.last_name }}</h2>
                     <span v-if="!customer.is_active" class="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Inactive</span>
                 </div>
-                <Link :href="route('customers.edit', customer.id)" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm hover:bg-indigo-700">Edit</Link>
+                <div class="flex gap-2">
+                    <Link :href="`/rental/reservations/create?customer_id=${customer.id}`"
+                          class="bg-sky-600 text-white px-3 py-2 rounded-md text-sm hover:bg-sky-700">
+                        🔑 New Rental
+                    </Link>
+                    <Link :href="`/leasing/deals/create?customer_id=${customer.id}`"
+                          class="bg-violet-600 text-white px-3 py-2 rounded-md text-sm hover:bg-violet-700">
+                        🚗 New Deal
+                    </Link>
+                    <Link :href="`/claims/create?customer_id=${customer.id}`"
+                          class="bg-amber-600 text-white px-3 py-2 rounded-md text-sm hover:bg-amber-700">
+                        📋 New Claim
+                    </Link>
+                    <Link :href="route('customers.edit', customer.id)" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm hover:bg-indigo-700">Edit</Link>
+                </div>
             </div>
         </template>
 

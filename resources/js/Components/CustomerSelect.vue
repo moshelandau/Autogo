@@ -1,14 +1,13 @@
 <script setup>
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, watch, onMounted, onBeforeUnmount, reactive } from 'vue';
 import axios from 'axios';
 
 const props = defineProps({
     modelValue: { type: [Number, String, null], default: null },
-    initialLabel: { type: String, default: '' }, // pass when editing — pre-fills the displayed name
+    initialLabel: { type: String, default: '' },
     placeholder: { type: String, default: 'Search customers by name, phone or email…' },
-    allowCreate: { type: Boolean, default: false },
 });
-const emit = defineEmits(['update:modelValue', 'select', 'create-new']);
+const emit = defineEmits(['update:modelValue', 'select']);
 
 const query = ref(props.initialLabel || '');
 const results = ref([]);
@@ -31,7 +30,7 @@ const fetchResults = async () => {
     }
 };
 
-watch(query, (v) => {
+watch(query, () => {
     open.value = true;
     clearTimeout(timer);
     timer = setTimeout(fetchResults, 200);
@@ -60,11 +59,46 @@ const onKey = (e) => {
 };
 
 const onClickOutside = (e) => { if (root.value && !root.value.contains(e.target)) open.value = false; };
-
 const onFocus = () => { open.value = true; if (!results.value.length) fetchResults(); };
 
 onMounted(() => document.addEventListener('mousedown', onClickOutside));
 onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside));
+
+// ── Inline Create ──
+const showCreate = ref(false);
+const createError = ref('');
+const creating = ref(false);
+const newCustomer = reactive({
+    first_name: '', last_name: '', phone: '', email: '',
+    address: '', city: '', state: 'NY', zip: '',
+    drivers_license_number: '', dl_state: 'NY', dl_expiration: '', date_of_birth: '',
+});
+const openCreate = (prefillFromQuery = true) => {
+    // Split the typed query into first + last name if possible
+    if (prefillFromQuery && query.value.trim()) {
+        const parts = query.value.trim().split(/\s+/);
+        newCustomer.first_name = parts[0] || '';
+        newCustomer.last_name  = parts.slice(1).join(' ') || '';
+    }
+    showCreate.value = true;
+    open.value = false;
+};
+const submitCreate = async () => {
+    creating.value = true;
+    createError.value = '';
+    try {
+        const { data } = await axios.post(route('customers.quick-store'), newCustomer);
+        const customer = data.customer;
+        pick({ id: customer.id, label: `${customer.first_name} ${customer.last_name}`, sub: customer.phone || '', outstanding_balance: 0 });
+        showCreate.value = false;
+        // reset
+        Object.keys(newCustomer).forEach(k => newCustomer[k] = ['state','dl_state'].includes(k) ? 'NY' : '');
+    } catch (e) {
+        createError.value = e?.response?.data?.message || 'Failed to create customer';
+    } finally {
+        creating.value = false;
+    }
+};
 </script>
 
 <template>
@@ -105,13 +139,62 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
                     </div>
                     <div v-if="r.sub" class="text-xs text-gray-500">{{ r.sub }}</div>
                 </li>
+                <!-- Always-visible Create button at bottom of results -->
+                <li class="sticky bottom-0 bg-indigo-50 border-t">
+                    <button type="button" @mousedown.prevent="openCreate()"
+                        class="w-full px-3 py-2 text-left text-sm font-semibold text-indigo-700 hover:bg-indigo-100">
+                        ➕ Create new customer {{ query ? `"${query}"` : '' }}
+                    </button>
+                </li>
             </ul>
 
-            <div v-else class="px-3 py-3 text-xs text-gray-500">
-                No customers match "{{ query }}".
-                <button v-if="allowCreate" type="button" @mousedown.prevent="emit('create-new', query); open = false"
-                    class="ml-2 text-indigo-600 hover:text-indigo-800 font-medium">+ Create new</button>
+            <div v-else class="p-3">
+                <div class="text-xs text-gray-500 mb-2">No customers match "{{ query }}"</div>
+                <button type="button" @mousedown.prevent="openCreate()"
+                    class="w-full px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700">
+                    ➕ Create new customer
+                </button>
             </div>
         </div>
+
+        <!-- Inline create modal -->
+        <Teleport to="body">
+            <div v-if="showCreate" @click.self="showCreate = false"
+                 class="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4">
+                <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+                    <header class="p-5 border-b flex items-center justify-between">
+                        <h3 class="font-bold text-lg">➕ Create Customer</h3>
+                        <button @click="showCreate = false" class="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
+                    </header>
+                    <form @submit.prevent="submitCreate" class="p-5 space-y-3 text-sm">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div><label class="block text-xs font-semibold">First name *</label><input v-model="newCustomer.first_name" required class="mt-1 w-full border-gray-300 rounded-lg text-sm" /></div>
+                            <div><label class="block text-xs font-semibold">Last name *</label><input v-model="newCustomer.last_name"  required class="mt-1 w-full border-gray-300 rounded-lg text-sm" /></div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div><label class="block text-xs font-semibold">Phone</label><input v-model="newCustomer.phone" type="tel" class="mt-1 w-full border-gray-300 rounded-lg text-sm" /></div>
+                            <div><label class="block text-xs font-semibold">Email</label><input v-model="newCustomer.email" type="email" class="mt-1 w-full border-gray-300 rounded-lg text-sm" /></div>
+                        </div>
+                        <div><label class="block text-xs font-semibold">Address</label><input v-model="newCustomer.address" class="mt-1 w-full border-gray-300 rounded-lg text-sm" /></div>
+                        <div class="grid grid-cols-3 gap-2">
+                            <div class="col-span-2"><label class="block text-xs">City</label><input v-model="newCustomer.city" class="mt-1 w-full border-gray-300 rounded-lg text-sm" /></div>
+                            <div><label class="block text-xs">ST</label><input v-model="newCustomer.state" maxlength="2" class="mt-1 w-full border-gray-300 rounded-lg text-sm uppercase" /></div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2">
+                            <div><label class="block text-xs">DL #</label><input v-model="newCustomer.drivers_license_number" class="mt-1 w-full border-gray-300 rounded-lg text-sm" /></div>
+                            <div><label class="block text-xs">DL State</label><input v-model="newCustomer.dl_state" maxlength="2" class="mt-1 w-full border-gray-300 rounded-lg text-sm uppercase" /></div>
+                            <div><label class="block text-xs">DL Exp</label><input v-model="newCustomer.dl_expiration" type="date" class="mt-1 w-full border-gray-300 rounded-lg text-sm" /></div>
+                        </div>
+                        <div v-if="createError" class="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">{{ createError }}</div>
+                        <div class="flex justify-end gap-2 pt-2">
+                            <button type="button" @click="showCreate = false" class="px-4 py-2 text-sm bg-gray-100 rounded-lg">Cancel</button>
+                            <button type="submit" :disabled="creating" class="px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50">
+                                {{ creating ? 'Creating…' : 'Create & Select' }}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </Teleport>
     </div>
 </template>

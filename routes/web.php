@@ -34,6 +34,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     Route::post('customers/{customer}/documents', [\App\Http\Controllers\CustomerDocumentController::class, 'store'])->name('customers.documents.store');
     Route::delete('customers/{customer}/documents/{document}', [\App\Http\Controllers\CustomerDocumentController::class, 'destroy'])->name('customers.documents.destroy');
     Route::get('customers-search', [CustomerController::class, 'search'])->name('customers.search');
+    Route::post('customers-quick', [CustomerController::class, 'quickStore'])->name('customers.quick-store');
 
     // ── Car Rental Module ──────────────────────────────
     Route::prefix('rental')->name('rental.')->group(function () {

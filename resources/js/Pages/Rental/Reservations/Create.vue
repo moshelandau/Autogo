@@ -4,16 +4,29 @@ import { useForm, Link } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import CustomerSelect from '@/Components/CustomerSelect.vue';
 
-const props = defineProps({ customers: Array, vehicles: Array, locations: Array });
+const props = defineProps({
+    customers: Array, vehicles: Array, locations: Array,
+    vehicleClasses: { type: Array, default: () => [] },
+    prefill: { type: Object, default: () => ({}) },
+});
 
 const selectedCustomer = ref(null); // populated from CustomerSelect's @select event
 
 const form = useForm({
-    customer_id: '', vehicle_id: '', vehicle_class: 'suv',
+    customer_id: props.prefill.customer_id || '',
+    vehicle_id:  props.prefill.vehicle_id || '',
+    vehicle_class: props.prefill.vehicle_class || 'suv',
     pickup_location_id: '', return_location_id: '',
-    pickup_date: '', return_date: '',
+    pickup_date: props.prefill.pickup_date || '',
+    return_date: '',
     daily_rate: 65, security_deposit: 0, discount_amount: 0, notes: '',
 });
+
+// If pre-filled with customer, hydrate selectedCustomer
+if (props.prefill.customer_id) {
+    const c = props.customers?.find(x => x.id === props.prefill.customer_id);
+    if (c) selectedCustomer.value = { id: c.id, label: `${c.first_name} ${c.last_name}`, outstanding_balance: 0 };
+}
 
 const selectedVehicle = computed(() => props.vehicles?.find(v => v.id == form.vehicle_id));
 const totalDays = computed(() => {
@@ -73,8 +86,18 @@ const submit = () => form.post(route('rental.reservations.store'));
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Vehicle Class</label>
                             <select v-model="form.vehicle_class" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
-                                <option value="car">Car</option><option value="suv">SUV (5 Pass)</option><option value="minivan">Minivan</option><option value="truck">Truck</option>
+                                <!-- Live inventory counts from fleet: "5 Pass SUV — 3 of 6 available" -->
+                                <option v-for="c in vehicleClasses" :key="c.class" :value="c.class"
+                                        :disabled="c.available === 0"
+                                        :class="c.available === 0 ? 'text-red-500' : ''">
+                                    {{ c.class }} — {{ c.available }} of {{ c.total }} available{{ c.available === 0 ? ' (all rented)' : '' }}
+                                </option>
+                                <!-- Fallback static list when fleet is empty -->
+                                <template v-if="!vehicleClasses?.length">
+                                    <option value="car">Car</option><option value="suv">SUV (5 Pass)</option><option value="minivan">Minivan</option><option value="truck">Truck</option>
+                                </template>
                             </select>
+                            <p class="mt-1 text-[10px] text-gray-500">Class count is live across the fleet. Disabled = nothing free now.</p>
                         </div>
                     </div>
 

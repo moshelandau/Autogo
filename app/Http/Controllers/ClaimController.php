@@ -136,11 +136,12 @@ class ClaimController extends Controller
         return back()->with('success', 'Status updated.');
     }
 
-    public function create()
+    public function create(Request $request)
     {
         return Inertia::render('Claims/Create', [
             'customers' => Customer::where('is_active', true)->orderBy('last_name')
                 ->get(['id', 'first_name', 'last_name', 'phone', 'insurance_company', 'insurance_policy']),
+            'prefill' => [ 'customer_id' => $request->integer('customer_id') ?: null ],
         ]);
     }
 

@@ -4,10 +4,11 @@ import { useForm, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import CustomerSelect from '@/Components/CustomerSelect.vue';
 
-const props = defineProps({ customers: Array });
+const props = defineProps({ customers: Array, prefill: { type: Object, default: () => ({}) } });
 
 const form = useForm({
-    customer_id: '', story: '', accident_date: '', accident_location: '', customer_phone: '',
+    customer_id: props.prefill.customer_id || '',
+    story: '', accident_date: '', accident_location: '', customer_phone: '',
     vehicle_year: '', vehicle_make: '', vehicle_model: '', vehicle_vin: '', vehicle_plate: '',
     estimate_amount: '', towing_amount: '', notes: '',
     insurance_entries: [{ insurance_company: '', claim_number: '' }],
