@@ -17,10 +17,19 @@ class TelebroadService
 
     public function __construct()
     {
-        $this->apiUrl = (string) config('services.telebroad.api_url', '');
-        $this->username = (string) config('services.telebroad.username', '');
-        $this->password = (string) config('services.telebroad.password', '');
-        $this->fromNumber = (string) config('services.telebroad.phone_number', '');
+        // Prefer .env, fall back to DB-backed Settings (Settings → Telebroad UI)
+        $this->apiUrl     = $this->resolve('services.telebroad.api_url',     'telebroad_api_url')
+                            ?: 'https://webserv.telebroad.com/api/teleconsole/rest';
+        $this->username   = $this->resolve('services.telebroad.username',     'telebroad_username');
+        $this->password   = $this->resolve('services.telebroad.password',     'telebroad_password');
+        $this->fromNumber = $this->resolve('services.telebroad.phone_number', 'telebroad_phone_number');
+    }
+
+    private function resolve(string $configKey, string $settingKey): string
+    {
+        $v = (string) config($configKey, '');
+        if ($v !== '') return $v;
+        return (string) Setting::getValue($settingKey, '');
     }
 
     public function isConfigured(): bool
