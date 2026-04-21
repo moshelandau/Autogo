@@ -14,6 +14,7 @@ use App\Http\Controllers\RentalDashboardController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\SmsController;
+use App\Http\Controllers\SmsConversationController;
 use App\Http\Controllers\PermissionTypeController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\BusinessDocumentController;
@@ -95,6 +96,9 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     });
 
     // ── SMS (Telebroad) ────────────────────────────────
+    Route::get('sms', [SmsConversationController::class, 'index'])->name('sms.index');
+    Route::get('sms/thread/{phone}', [SmsConversationController::class, 'show'])->name('sms.show')->where('phone', '[0-9+\-\s\(\)]+');
+    Route::get('sms/customer/{customer}/thread', [SmsConversationController::class, 'customerThread'])->name('sms.customer-thread');
     Route::post('sms/send', [SmsController::class, 'send'])->name('sms.send');
 
     // ── Car Leasing / Financing Module ─────────────────

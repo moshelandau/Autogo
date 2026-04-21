@@ -1,7 +1,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router, useForm } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import SmsButton from '@/Components/SmsButton.vue';
 
 const props = defineProps({
@@ -53,6 +53,36 @@ const filteredTimeline = computed(() => {
     if (kindFilter.value === 'all') return props.timeline;
     return props.timeline.filter(t => t.kind === kindFilter.value);
 });
+
+// ── SMS Messages tab ─────────────────────────────────────
+const messages = ref([]);
+const messagesLoading = ref(false);
+const msgScroll = ref(null);
+const replyForm = useForm({
+    to: props.customer.phone || '',
+    message: '',
+    customer_id: props.customer.id,
+    subject_type: 'App\\Models\\Customer',
+    subject_id: props.customer.id,
+});
+const loadMessages = async () => {
+    if (!props.customer.phone) return;
+    messagesLoading.value = true;
+    try {
+        const res = await fetch(route('sms.customer-thread', props.customer.id), { credentials: 'same-origin' });
+        const data = await res.json();
+        messages.value = data.messages || [];
+        nextTick(() => { if (msgScroll.value) msgScroll.value.scrollTop = msgScroll.value.scrollHeight; });
+    } catch (e) { console.error(e); }
+    messagesLoading.value = false;
+};
+const sendReply = () => {
+    if (!replyForm.message.trim()) return;
+    replyForm.post(route('sms.send'), {
+        preserveScroll: true,
+        onSuccess: () => { replyForm.reset('message'); loadMessages(); },
+    });
+};
 
 const kindFilter = ref('all');
 const kinds = [
@@ -134,8 +164,9 @@ const kinds = [
                     <button v-for="t in [
                         {id:'overview', label:'Overview'},
                         {id:'documents', label:`Documents / IDs (${customer.documents?.length || 0})`},
+                        {id:'messages', label:'Messages'},
                         {id:'history', label:`History (${timeline.length})`},
-                    ]" :key="t.id" @click="tab = t.id"
+                    ]" :key="t.id" @click="tab = t.id; if (t.id === 'messages') loadMessages()"
                         class="px-5 py-3 text-sm font-medium border-b-2 transition"
                         :class="tab === t.id ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-500 hover:text-gray-800'">
                         {{ t.label }}
@@ -232,6 +263,44 @@ const kinds = [
                         </div>
                     </div>
                     <p v-else class="text-sm text-gray-400 text-center py-8">No documents on file. Upload a driver's license, insurance card, etc. above.</p>
+                </div>
+
+                <!-- MESSAGES (SMS thread) -->
+                <div v-if="tab === 'messages'" class="p-6">
+                    <div v-if="!customer.phone" class="text-center text-gray-400 py-8">
+                        No phone number on file — add one to send SMS.
+                    </div>
+                    <div v-else>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-semibold text-gray-700">SMS thread with {{ customer.phone }}</h3>
+                            <Link :href="route('sms.show', customer.phone)" class="text-xs text-indigo-600 hover:text-indigo-800">Open full view →</Link>
+                        </div>
+                        <div ref="msgScroll" class="border rounded-lg bg-gray-50 p-3 space-y-2 overflow-y-auto" style="max-height: 400px">
+                            <div v-if="messagesLoading" class="text-center text-gray-400 py-6 text-sm">Loading...</div>
+                            <div v-else-if="messages.length === 0" class="text-center text-gray-400 py-6 text-sm">No messages yet.</div>
+                            <div v-else v-for="m in messages" :key="m.id" class="flex"
+                                :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
+                                <div class="max-w-md">
+                                    <div class="px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap break-words"
+                                        :class="m.direction === 'outbound' ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-white text-gray-900 border rounded-bl-sm'">
+                                        {{ m.body }}
+                                    </div>
+                                    <div class="text-[11px] text-gray-400 mt-0.5"
+                                        :class="m.direction === 'outbound' ? 'text-right' : 'text-left'">
+                                        {{ new Date(m.sent_at || m.created_at).toLocaleString() }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <form @submit.prevent="sendReply" class="mt-3 flex items-end gap-2">
+                            <textarea v-model="replyForm.message" rows="2" placeholder="Type a message…"
+                                class="flex-1 border-gray-300 rounded-md text-sm resize-none focus:border-indigo-500 focus:ring-indigo-500" />
+                            <button type="submit" :disabled="replyForm.processing || !replyForm.message.trim()"
+                                class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+                                {{ replyForm.processing ? 'Sending…' : 'Send' }}
+                            </button>
+                        </form>
+                    </div>
                 </div>
 
                 <!-- HISTORY -->

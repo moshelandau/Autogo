@@ -91,6 +91,7 @@ return [
         'password' => env('TELEBROAD_PASSWORD'),
         'phone_number' => env('TELEBROAD_PHONE_NUMBER'),
         'api_url' => env('TELEBROAD_API_URL', 'https://webserv.telebroad.com/api/teleconsole/rest'),
+        'webhook_secret' => env('TELEBROAD_WEBHOOK_SECRET'),
     ],
 
     'anthropic' => [

@@ -2,6 +2,28 @@
 
 > **Status:** 🟡 **partially integrated** — outbound SMS via `POST /send/sms` is wired in (`SmsController` + `SmsButton.vue`); call/recording/history endpoints still stubbed. Base host is still **assumed** (`https://webserv.telebroad.com/api/teleconsole/rest`) — needs confirmation against a real auth pair.
 
+## ✅ Inbound SMS — webhook receiver (built; needs live test fire)
+
+- Telebroad supports an **Account-SMS webhook** that fires for every SMS sent or received on the account — VERIFIED via [helpdesk article 4000214102](https://helpdesk.telebroad.com/support/solutions/articles/4000214102-webhook-integrations).
+- Configure in the Telebroad portal with this URL (append the trigger name `/Account-SMS` per Telebroad's convention):
+  ```
+  https://app.autogoco.com/api/telebroad/webhook/sms?secret=<TELEBROAD_WEBHOOK_SECRET>/Account-SMS
+  ```
+- AutoGo wiring:
+  - `App\Http\Controllers\TelebroadWebhookController@sms`
+  - Route: `POST /api/telebroad/webhook/sms` (CSRF-exempt, secret-gated)
+  - Auto-links inbound SMS to a Customer by matching the last 10 digits of the `from` number against `customers.phone`
+  - Stores raw payload under `attachments._raw` for forensics
+  - Sends an `OperationalReminder` notification to all `@autogoco.com` users
+- 🟡 **UNVERIFIED:** the EXACT field names in Telebroad's webhook POST body. We try common variants (`from`/`sender`/`caller_id`, `to`/`receiver`/`sms_line`, `msgdata`/`body`/`message`, etc.) and log the raw payload so we can tighten parsing once we see real fires.
+
+## ✅ Conversation UI
+
+- `/sms` — inbox listing one row per phone number, unread counts, click-through to thread
+- `/sms/thread/{phone}` — bubble-style thread with inline reply
+- Customer Show → "Messages" tab — embedded thread + reply for that customer
+- All inbound `received` rows are flipped to `read` on viewing the thread
+
 ## ✅ Outbound SMS (built — needs live-credential test)
 
 - Endpoint: `POST /send/sms` — **VERIFIED** via [helpdesk article 4000110801](https://helpdesk.telebroad.com/support/solutions/articles/4000110801-post-send-sms)
