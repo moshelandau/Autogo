@@ -55,6 +55,20 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::post('reservations/{reservation}/open-claim', [ReservationController::class, 'openClaim'])->name('reservations.openClaim');
         Route::get('reservations/{reservation}/agreement/preview', [\App\Http\Controllers\RentalAgreementController::class, 'preview'])->name('reservations.agreement.preview');
         Route::post('reservations/{reservation}/agreement', [\App\Http\Controllers\RentalAgreementController::class, 'generate'])->name('reservations.agreement.generate');
+
+        // Agreement revisions (immutable history per reservation)
+        Route::get('reservations/{reservation}/revisions', [\App\Http\Controllers\AgreementRevisionController::class, 'listForReservation'])->name('reservations.revisions');
+    });
+
+    // Revision-level actions (can be from anywhere)
+    Route::get('revisions/{revision}/download', [\App\Http\Controllers\AgreementRevisionController::class, 'download'])->name('reservations.revisions.download');
+    Route::post('revisions/{revision}/email', [\App\Http\Controllers\AgreementRevisionController::class, 'email'])->name('reservations.revisions.email');
+
+    // Audit Logs UI (immutable, append-only)
+    Route::get('audit-logs', [\App\Http\Controllers\AuditLogController::class, 'index'])->name('audit-logs.index');
+
+    Route::prefix('rental')->name('rental.')->group(function () {
+        // (all other rental routes already in this group above — placeholder to keep routes group structure)
         Route::post('holds/{hold}/release', [ReservationController::class, 'releaseHold'])->name('holds.release');
         Route::post('holds/{hold}/capture', [ReservationController::class, 'captureHold'])->name('holds.capture');
 

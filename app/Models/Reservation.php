@@ -62,6 +62,11 @@ class Reservation extends Model
     public function externalCharges(): HasMany { return $this->hasMany(ExternalCharge::class); }
     public function inspections(): HasMany { return $this->hasMany(ReservationInspection::class); }
     public function holds(): HasMany { return $this->hasMany(ReservationHold::class)->latest(); }
+    public function additionalDrivers(): HasMany { return $this->hasMany(ReservationAdditionalDriver::class); }
+    public function agreementRevisions(): HasMany { return $this->hasMany(AgreementRevision::class)->latest('id'); }
+    public function signatures() {
+        return $this->morphMany(Signature::class, 'signable')->latest('signed_at');
+    }
     public function activeHold() { return $this->hasOne(ReservationHold::class)->where('status', 'authorized')->latest(); }
 
     public function pickupInspections(): HasMany { return $this->hasMany(ReservationInspection::class)->where('type', 'pickup'); }
