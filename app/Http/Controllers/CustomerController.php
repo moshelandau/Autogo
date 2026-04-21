@@ -12,11 +12,26 @@ class CustomerController extends Controller
     {
         $customers = Customer::query()
             ->when($request->search, function ($query, $search) {
-                $query->where(function ($q) use ($search) {
+                $search = trim($search);
+                $tokens = preg_split('/\s+/', $search);
+                $query->where(function ($q) use ($search, $tokens) {
                     $q->where('first_name', 'ilike', "%{$search}%")
                       ->orWhere('last_name', 'ilike', "%{$search}%")
-                      ->orWhere('email', 'ilike', "%{$search}%")
-                      ->orWhere('phone', 'ilike', "%{$search}%");
+                      ->orWhere('email',     'ilike', "%{$search}%")
+                      ->orWhere('phone',     'ilike', "%{$search}%")
+                      ->orWhere('secondary_phone', 'ilike', "%{$search}%")
+                      // Match against "First Last" concatenation (covers "Moshe Landau")
+                      ->orWhereRaw("(coalesce(first_name,'') || ' ' || coalesce(last_name,'')) ilike ?", ["%{$search}%"]);
+                    if (count($tokens) > 1) {
+                        $q->orWhere(function ($w) use ($tokens) {
+                            foreach ($tokens as $t) {
+                                $w->where(function ($ww) use ($t) {
+                                    $ww->where('first_name', 'ilike', "%{$t}%")
+                                       ->orWhere('last_name', 'ilike', "%{$t}%");
+                                });
+                            }
+                        });
+                    }
                 });
             })
             ->when($request->boolean('active_only', true), fn($q) => $q->where('is_active', true))

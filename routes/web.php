@@ -39,6 +39,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     Route::post('customers-quick', [CustomerController::class, 'quickStore'])->name('customers.quick-store');
     Route::get('customers/{customer}/scan',  [\App\Http\Controllers\CustomerScanController::class, 'index'])->name('customers.scan');
     Route::post('customers/{customer}/scan', [\App\Http\Controllers\CustomerScanController::class, 'ingest'])->name('customers.scan.ingest');
+    Route::post('scan/license-extract',      [\App\Http\Controllers\CustomerScanController::class, 'extractLicense'])->name('scan.license-extract');
 
     // ── Car Rental Module ──────────────────────────────
     Route::prefix('rental')->name('rental.')->group(function () {

@@ -83,6 +83,47 @@ const openCreate = (prefillFromQuery = true) => {
     showCreate.value = true;
     open.value = false;
 };
+// ── License scan (autofill) ──
+const scanFileInput = ref(null);
+const scanning = ref(false);
+const scanError = ref('');
+const scanFilled = ref([]); // field names that were autofilled — for diff display
+const triggerScan = () => { scanError.value = ''; if (scanFileInput.value) scanFileInput.value.click(); };
+const onScanFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    scanning.value = true;
+    scanError.value = '';
+    scanFilled.value = [];
+    try {
+        const fd = new FormData();
+        fd.append('file', file);
+        const { data } = await axios.post(route('scan.license-extract'), fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        if (!data.ok) { scanError.value = data.error || 'Could not read this image'; return; }
+        const f = data.fields || {};
+        const map = {
+            first_name: f.first_name, last_name: f.last_name, address: f.address,
+            city: f.city, state: f.state, zip: f.zip,
+            drivers_license_number: f.drivers_license_number,
+            dl_state: f.dl_state, dl_expiration: f.dl_expiration,
+            date_of_birth: f.date_of_birth,
+        };
+        for (const [k, v] of Object.entries(map)) {
+            if (v && String(v).trim() !== '') {
+                newCustomer[k] = String(v).toUpperCase().length === 2 && ['state','dl_state'].includes(k) ? String(v).toUpperCase() : v;
+                scanFilled.value.push(k);
+            }
+        }
+    } catch (err) {
+        scanError.value = err?.response?.data?.error || err?.message || 'Scan failed';
+    } finally {
+        scanning.value = false;
+        if (scanFileInput.value) scanFileInput.value.value = '';
+    }
+};
+
 const submitCreate = async () => {
     creating.value = true;
     createError.value = '';
