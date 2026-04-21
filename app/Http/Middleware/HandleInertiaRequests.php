@@ -25,7 +25,24 @@ class HandleInertiaRequests extends Middleware
                 'error' => fn () => $request->session()->get('error'),
             ],
             'notifications' => fn () => $this->getNotifications($request),
+            'smsUnreadCount' => fn () => $this->getSmsUnreadCount($request),
         ];
+    }
+
+    private function getSmsUnreadCount(Request $request): int
+    {
+        $user = $request->user();
+        if (!$user) return 0;
+        try {
+            return \App\Models\CommunicationLog::query()
+                ->where('channel', 'sms')
+                ->where('direction', 'inbound')
+                ->where('status', 'received')
+                ->where('assigned_to', $user->id)
+                ->count();
+        } catch (\Throwable) {
+            return 0;
+        }
     }
 
     private function getNotifications(Request $request): array

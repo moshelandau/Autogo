@@ -99,6 +99,8 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     Route::get('sms', [SmsConversationController::class, 'index'])->name('sms.index');
     Route::get('sms/thread/{phone}', [SmsConversationController::class, 'show'])->name('sms.show')->where('phone', '[0-9+\-\s\(\)]+');
     Route::get('sms/customer/{customer}/thread', [SmsConversationController::class, 'customerThread'])->name('sms.customer-thread');
+    Route::post('sms/thread/{phone}/assign', [SmsConversationController::class, 'assign'])->name('sms.assign')->where('phone', '[0-9+\-\s\(\)]+');
+    Route::post('sms/message/{id}/status', [SmsConversationController::class, 'markStatus'])->name('sms.mark-status');
     Route::post('sms/send', [SmsController::class, 'send'])->name('sms.send');
 
     // ── Car Leasing / Financing Module ─────────────────

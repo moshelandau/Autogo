@@ -190,7 +190,11 @@ const icons = {
                                     <svg class="w-5 h-5 flex-shrink-0" :class="isActive(item.pattern) ? 'text-white' : 'text-slate-400'" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
                                         <path stroke-linecap="round" stroke-linejoin="round" :d="icons[item.icon]" />
                                     </svg>
-                                    <span v-if="sidebarOpen" class="truncate">{{ item.name }}</span>
+                                    <span v-if="sidebarOpen" class="truncate flex-1">{{ item.name }}</span>
+                                    <span v-if="item.route === 'sms.index' && ($page.props.smsUnreadCount || 0) > 0"
+                                        class="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[11px] font-bold text-white bg-red-500 rounded-full">
+                                        {{ $page.props.smsUnreadCount }}
+                                    </span>
                                 </Link>
                             </li>
                         </ul>
@@ -248,7 +252,11 @@ const icons = {
                                     <Link :href="route(item.route)" @click="mobileMenuOpen = false"
                                           :class="[isActive(item.pattern) ? 'bg-gradient-to-r from-blue-600/90 to-indigo-600/90 text-white' : 'text-slate-300 hover:bg-slate-800/80 hover:text-white', 'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all']">
                                         <svg class="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" :d="icons[item.icon]" /></svg>
-                                        <span>{{ item.name }}</span>
+                                        <span class="flex-1">{{ item.name }}</span>
+                                        <span v-if="item.route === 'sms.index' && ($page.props.smsUnreadCount || 0) > 0"
+                                            class="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[11px] font-bold text-white bg-red-500 rounded-full">
+                                            {{ $page.props.smsUnreadCount }}
+                                        </span>
                                     </Link>
                                 </li>
                             </ul>

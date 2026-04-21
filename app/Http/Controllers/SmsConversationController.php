@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CommunicationLog;
 use App\Models\Customer;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -18,6 +19,7 @@ class SmsConversationController extends Controller
     public function index(Request $request)
     {
         $search = trim((string) $request->input('search', ''));
+        $mine   = (bool) $request->boolean('mine');
 
         // Other-party phone = `from` if inbound, `to` if outbound
         $rows = CommunicationLog::query()
@@ -25,6 +27,7 @@ class SmsConversationController extends Controller
             ->select([
                 DB::raw("CASE WHEN direction = 'inbound' THEN \"from\" ELSE \"to\" END AS other_party"),
                 'customer_id',
+                'assigned_to',
                 'body',
                 'direction',
                 'status',
@@ -38,6 +41,7 @@ class SmsConversationController extends Controller
                       ->orWhere('body', 'ilike', "%{$search}%");
                 });
             })
+            ->when($mine, fn ($q) => $q->where('assigned_to', $request->user()->id))
             ->orderByDesc('created_at')
             ->limit(500)
             ->get();
@@ -51,6 +55,7 @@ class SmsConversationController extends Controller
                 $grouped[$key] = [
                     'phone'        => $r->other_party,
                     'customer_id'  => $r->customer_id,
+                    'assigned_to'  => $r->assigned_to,
                     'last_body'    => $r->body,
                     'last_at'      => $r->sent_at ?? $r->created_at,
                     'last_dir'     => $r->direction,
@@ -76,10 +81,41 @@ class SmsConversationController extends Controller
             }
         }
 
+        // Attach assignee names
+        $userIds = collect($grouped)->pluck('assigned_to')->filter()->unique()->values();
+        $users   = User::whereIn('id', $userIds)->get(['id', 'name'])->keyBy('id');
+        foreach ($grouped as &$g) {
+            $g['assignee_name'] = $g['assigned_to'] && $users->has($g['assigned_to'])
+                ? $users[$g['assigned_to']]->name : null;
+        }
+
         return Inertia::render('Sms/Index', [
             'conversations' => array_values($grouped),
-            'filters'       => ['search' => $search],
+            'filters'       => ['search' => $search, 'mine' => $mine],
+            'staff'         => User::where('email', 'like', '%@autogoco.com')->orderBy('name')->get(['id', 'name']),
         ]);
+    }
+
+    /** Reassign every message in a conversation (by phone) to a staff member. */
+    public function assign(Request $request, string $phone)
+    {
+        $validated = $request->validate(['user_id' => 'nullable|exists:users,id']);
+        $last10 = substr(preg_replace('/\D/', '', $phone), -10);
+        CommunicationLog::query()
+            ->where('channel', 'sms')
+            ->where(function ($q) use ($last10) {
+                $q->where('from', 'ilike', "%{$last10}")->orWhere('to', 'ilike', "%{$last10}");
+            })
+            ->update(['assigned_to' => $validated['user_id'] ?? null]);
+        return back()->with('success', $validated['user_id'] ? 'Conversation assigned.' : 'Assignment cleared.');
+    }
+
+    /** Mark a single message as unread (status=received) or read. */
+    public function markStatus(Request $request, int $id)
+    {
+        $validated = $request->validate(['status' => 'required|in:received,read']);
+        CommunicationLog::where('id', $id)->update(['status' => $validated['status']]);
+        return back()->with('success', $validated['status'] === 'received' ? 'Marked unread.' : 'Marked read.');
     }
 
     /**
@@ -96,27 +132,20 @@ class SmsConversationController extends Controller
                   ->orWhere('to', 'ilike', "%{$last10}");
             })
             ->orderBy('created_at')
-            ->get(['id', 'direction', 'from', 'to', 'body', 'attachments', 'status', 'sent_at', 'created_at', 'user_id', 'customer_id']);
-
-        // Mark inbound 'received' as 'read' on view (only safe non-update would be a separate read_at column;
-        // CommunicationLog is not append-only — see model — so an update here is fine)
-        CommunicationLog::query()
-            ->where('channel', 'sms')
-            ->where('direction', 'inbound')
-            ->where('status', 'received')
-            ->where(function ($q) use ($last10) {
-                $q->where('from', 'ilike', "%{$last10}");
-            })
-            ->update(['status' => 'read']);
+            ->get(['id', 'direction', 'from', 'to', 'body', 'attachments', 'status', 'sent_at', 'created_at', 'user_id', 'customer_id', 'assigned_to']);
 
         $customer = $messages->firstWhere('customer_id', '!=', null)?->customer_id
             ? Customer::find($messages->firstWhere('customer_id', '!=', null)->customer_id)
             : null;
 
+        $assignedTo = $messages->reverse()->firstWhere('assigned_to', '!=', null)?->assigned_to;
+
         return Inertia::render('Sms/Show', [
-            'phone'    => $phone,
-            'messages' => $messages,
-            'customer' => $customer,
+            'phone'      => $phone,
+            'messages'   => $messages,
+            'customer'   => $customer,
+            'staff'      => User::where('email', 'like', '%@autogoco.com')->orderBy('name')->get(['id', 'name']),
+            'assignedTo' => $assignedTo,
         ]);
     }
 

@@ -7,6 +7,8 @@ const props = defineProps({
     phone:    { type: String, required: true },
     messages: { type: Array,  default: () => [] },
     customer: { type: Object, default: null },
+    staff:    { type: Array,  default: () => [] },
+    assignedTo: { type: [Number, String], default: null },
 });
 
 const reply = useForm({
@@ -81,6 +83,24 @@ const send = () => {
     });
 };
 
+// Assignment + mark-unread
+const assignedToLocal = ref(props.assignedTo);
+watch(() => props.assignedTo, (v) => { assignedToLocal.value = v; });
+const assign = () => {
+    router.post(route('sms.assign', props.phone), { user_id: assignedToLocal.value || null }, { preserveScroll: true });
+};
+const setStatus = (msgId, status) => {
+    router.post(route('sms.mark-status', msgId), { status }, { preserveScroll: true });
+};
+const markAllRead = () => {
+    const unread = (props.messages || []).filter(m => m.direction === 'inbound' && m.status === 'received');
+    Promise.all(unread.map(m => fetch(route('sms.mark-status', m.id), {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content },
+        body: JSON.stringify({ status: 'read' }),
+    }))).then(() => router.reload({ only: ['messages'], preserveScroll: true }));
+};
+
 const fmt = (iso) => {
     if (!iso) return '';
     return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
@@ -90,27 +110,36 @@ const fmt = (iso) => {
 <template>
     <AppLayout :title="`SMS — ${customer ? customer.first_name + ' ' + customer.last_name : phone}`">
         <template #header>
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3 flex-wrap">
                 <Link :href="route('sms.index')" class="text-indigo-600 hover:text-indigo-800 text-sm">← Inbox</Link>
                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
                     {{ customer ? `${customer.first_name} ${customer.last_name}` : phone }}
                 </h2>
                 <span v-if="customer" class="text-sm text-gray-500">{{ phone }}</span>
-                <Link v-if="customer" :href="route('customers.show', customer.id)"
-                    class="ml-auto text-sm text-indigo-600 hover:text-indigo-800">View Customer →</Link>
+                <div class="ml-auto flex items-center gap-2">
+                    <button @click="markAllRead" class="text-xs text-indigo-600 hover:text-indigo-800 underline">Mark all read</button>
+                    <label class="text-xs text-gray-500">Assigned to:</label>
+                    <select v-model="assignedToLocal" @change="assign"
+                        class="text-sm border-gray-300 rounded-md py-1 px-2 focus:border-indigo-500 focus:ring-indigo-500">
+                        <option :value="null">— Unassigned —</option>
+                        <option v-for="u in staff" :key="u.id" :value="u.id">{{ u.name }}</option>
+                    </select>
+                    <Link v-if="customer" :href="route('customers.show', customer.id)"
+                        class="text-sm text-indigo-600 hover:text-indigo-800">View Customer →</Link>
+                </div>
             </div>
         </template>
 
-        <div class="py-6">
-            <div class="max-w-3xl mx-auto sm:px-6 lg:px-8">
-                <div class="bg-white shadow-sm rounded-lg flex flex-col" style="height: calc(100vh - 220px)">
+        <div class="flex-1 flex flex-col min-h-0" style="height: calc(100vh - 64px)">
+            <div class="flex-1 max-w-3xl w-full mx-auto sm:px-6 lg:px-8 py-4 flex flex-col min-h-0">
+                <div class="bg-white shadow-sm rounded-lg flex flex-col flex-1 min-h-0">
                     <!-- Messages — bottom-anchored like iMessage -->
                     <div ref="threadEl" class="flex-1 overflow-y-auto bg-gray-50">
                         <div class="min-h-full flex flex-col justify-end p-4 space-y-3">
                             <div v-if="messages.length === 0" class="text-center text-gray-400 py-8">
                                 No messages yet — send the first one below.
                             </div>
-                            <div v-for="m in messages" :key="m.id" class="flex"
+                            <div v-for="m in messages" :key="m.id" class="flex group"
                                 :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
                                 <div class="max-w-md">
                                     <div class="px-4 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words"
@@ -126,10 +155,15 @@ const fmt = (iso) => {
                                         </template>
                                         <span v-if="m.body">{{ m.body }}</span>
                                     </div>
-                                    <div class="text-xs text-gray-400 mt-1"
-                                        :class="m.direction === 'outbound' ? 'text-right' : 'text-left'">
-                                        {{ fmt(m.sent_at || m.created_at) }}
-                                        <span v-if="m.direction === 'outbound'" class="ml-1">· {{ m.status }}</span>
+                                    <div class="text-xs text-gray-400 mt-1 flex items-center gap-2"
+                                        :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
+                                        <span>{{ fmt(m.sent_at || m.created_at) }}</span>
+                                        <span v-if="m.direction === 'outbound'">· {{ m.status }}</span>
+                                        <button v-if="m.direction === 'inbound'"
+                                            @click="setStatus(m.id, m.status === 'received' ? 'read' : 'received')"
+                                            class="opacity-0 group-hover:opacity-100 transition text-indigo-600 hover:text-indigo-800 underline">
+                                            {{ m.status === 'received' ? 'mark read' : 'mark unread' }}
+                                        </button>
                                     </div>
                                 </div>
                             </div>
