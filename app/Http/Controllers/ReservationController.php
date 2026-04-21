@@ -76,12 +76,23 @@ class ReservationController extends Controller
             ->with('success', 'Reservation created.');
     }
 
-    public function show(Reservation $reservation)
+    public function show(Request $request, Reservation $reservation)
     {
+        // One-click assign from calendar overlay: ?assign_vehicle=ID
+        if ($vid = $request->integer('assign_vehicle')) {
+            $vehicle = \App\Models\Vehicle::find($vid);
+            if ($vehicle) {
+                $reservation->update(['vehicle_id' => $vid, 'vehicle_class' => $vehicle->vehicle_class]);
+                return redirect()->route('rental.reservations.show', $reservation)
+                    ->with('success', "Vehicle assigned: {$vehicle->year} {$vehicle->make} {$vehicle->model}");
+            }
+        }
+
         $reservation->load([
             'customer', 'vehicle', 'pickupLocation', 'returnLocation',
             'addons', 'payments', 'externalCharges', 'createdByUser',
             'inspections.uploadedByUser',
+            'activeHold',
         ]);
 
         return Inertia::render('Rental/Reservations/Show', [

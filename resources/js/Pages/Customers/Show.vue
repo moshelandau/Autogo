@@ -87,6 +87,10 @@ const kinds = [
                           class="bg-amber-600 text-white px-3 py-2 rounded-md text-sm hover:bg-amber-700">
                         📋 New Claim
                     </Link>
+                    <Link :href="route('customers.scan', customer.id)"
+                          class="bg-emerald-600 text-white px-3 py-2 rounded-md text-sm hover:bg-emerald-700">
+                        📄 Scan Docs
+                    </Link>
                     <Link :href="route('customers.edit', customer.id)" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm hover:bg-indigo-700">Edit</Link>
                 </div>
             </div>

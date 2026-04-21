@@ -137,26 +137,61 @@ const startOfDay = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x
 const dayDiff = (a, b) => Math.round((startOfDay(b) - startOfDay(a)) / 86400000);
 
 // ── Vehicle lanes (Gantt-style) ───────────────────────────
-// Each unique vehicle gets its own row. Reservations only show on their vehicle's row.
+// Each ACTIVE-FLEET vehicle gets its own row (regardless of whether it has any
+// reservations in this view). Class-only pending reservations are overlaid on
+// every vehicle of the matching class so operators can pick which to assign.
 const vehicleLanes = computed(() => {
-    // Build map: laneKey -> { key, label, plate, brand, vehicleClass, events: [] }
+    // First, build a row for every active fleet vehicle from props.fleet
     const map = new Map();
-    (props.events || []).forEach(ev => {
-        const key = ev.vehicle_id ? `v${ev.vehicle_id}` : `class:${ev.vehicle_class || 'unassigned'}`;
-        if (!map.has(key)) {
-            map.set(key, {
-                key,
-                label: ev.vehicle_label || ev.vehicle_class || 'Unassigned',
-                plate: ev.vehicle_plate || null,
-                brand: ev.brand || null,
-                vehicleClass: ev.vehicle_class || null,
-                isUnassigned: !ev.vehicle_id,
-                events: [],
-            });
-        }
-        map.get(key).events.push(ev);
+    (props.fleet || []).forEach(v => {
+        const key = `v${v.id}`;
+        map.set(key, {
+            key,
+            vehicleId: v.id,
+            label: v.label,
+            plate: v.plate,
+            brand: v.brand,
+            vehicleClass: v.class,
+            isUnassigned: false,
+            events: [],
+        });
     });
-    // Sort: assigned vehicles alphabetically, unassigned last
+
+    // Place ASSIGNED reservations on their vehicle's row
+    (props.events || []).forEach(ev => {
+        if (ev.vehicle_id) {
+            const key = `v${ev.vehicle_id}`;
+            if (!map.has(key)) {
+                map.set(key, {
+                    key, vehicleId: ev.vehicle_id,
+                    label: ev.vehicle_label, plate: ev.vehicle_plate,
+                    brand: ev.brand, vehicleClass: ev.vehicle_class,
+                    isUnassigned: false, events: [],
+                });
+            }
+            map.get(key).events.push(ev);
+        }
+    });
+
+    // Place CLASS-ONLY reservations on EVERY vehicle of the matching class
+    // (overlay color set on event.color server-side)
+    (props.events || []).forEach(ev => {
+        if (ev.is_class_only && ev.vehicle_class) {
+            for (const lane of map.values()) {
+                if (lane.vehicleClass === ev.vehicle_class) {
+                    lane.events.push({ ...ev, _is_overlay: true });
+                }
+            }
+        }
+    });
+
+    // Truly unassigned (no class either) → bucket at the bottom
+    const unassignedBucket = { key: 'unassigned', label: 'Unassigned (no class)', isUnassigned: true, events: [] };
+    (props.events || []).forEach(ev => {
+        if (!ev.vehicle_id && !ev.vehicle_class) unassignedBucket.events.push(ev);
+    });
+    if (unassignedBucket.events.length) map.set('unassigned', unassignedBucket);
+
     return [...map.values()].sort((a, b) => {
         if (a.isUnassigned !== b.isUnassigned) return a.isUnassigned ? 1 : -1;
         return a.label.localeCompare(b.label);
@@ -492,11 +527,15 @@ const ymdSafe = (d) => d ? d.toISOString().slice(0, 10) : '';
                             </div>
 
                             <!-- Event bars positioned by % across the full range -->
-                            <template v-for="seg in segmentsByVehicle[vi]" :key="seg.event.id">
-                                <Link :href="route('rental.reservations.show', seg.event.id)"
+                            <template v-for="seg in segmentsByVehicle[vi]" :key="seg.event.id + (seg.event._is_overlay ? '-ov' + vehicle.vehicleId : '')">
+                                <component :is="seg.event._is_overlay ? 'a' : Link"
+                                      :href="seg.event._is_overlay
+                                          ? `/rental/reservations/${seg.event.id}?assign_vehicle=${vehicle.vehicleId}`
+                                          : route('rental.reservations.show', seg.event.id)"
                                       class="event-stripe absolute block transition-all duration-150 cursor-pointer overflow-hidden"
                                       :class="[
-                                        statusBg(seg.event.status),
+                                        seg.event._is_overlay ? 'bg-purple-500 ring-1 ring-purple-700 ring-offset-0' : statusBg(seg.event.status),
+                                        seg.event._is_overlay ? 'opacity-60 hover:opacity-100' : '',
                                         seg.continuesLeft  ? 'rounded-l-none' : 'rounded-l',
                                         seg.continuesRight ? 'rounded-r-none' : 'rounded-r',
                                       ]"
@@ -505,21 +544,23 @@ const ymdSafe = (d) => d ? d.toISOString().slice(0, 10) : '';
                                           width: `calc(${seg.widthPct}% - 2px)`,
                                           top:   '3px',
                                           height: (ROW_HEIGHT - 6) + 'px',
+                                          backgroundImage: seg.event._is_overlay ? 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(255,255,255,.25) 4px, rgba(255,255,255,.25) 8px)' : 'none',
                                       }">
                                     <span class="stripe-label block text-white px-1.5 truncate font-medium leading-none pt-1">
-                                        {{ seg.event.customer_name || seg.event.title }}
+                                        <span v-if="seg.event._is_overlay">📍 </span>{{ seg.event.customer_name || seg.event.title }}
                                     </span>
-                                    <span class="event-popover absolute hidden left-0 top-full mt-1 z-40 w-64 bg-white text-gray-900 text-xs rounded-lg shadow-xl border p-2.5 pointer-events-none">
+                                    <span class="event-popover absolute hidden left-0 top-full mt-1 z-40 w-72 bg-white text-gray-900 text-xs rounded-lg shadow-xl border p-2.5 pointer-events-none">
                                         <span class="block font-semibold text-sm leading-tight mb-1">{{ seg.event.title }}</span>
                                         <span class="block text-[11px] text-gray-500">
                                             {{ new Date(seg.event.start).toLocaleDateString() }} → {{ new Date(seg.event.end).toLocaleDateString() }}
                                         </span>
-                                        <span class="inline-block mt-1.5 text-[10px] px-1.5 py-0.5 rounded text-white capitalize" :class="statusBg(seg.event.status)">
-                                            {{ seg.event.status }}
+                                        <span class="inline-block mt-1.5 text-[10px] px-1.5 py-0.5 rounded text-white capitalize"
+                                              :class="seg.event._is_overlay ? 'bg-purple-600' : statusBg(seg.event.status)">
+                                            {{ seg.event._is_overlay ? `Class-pending (${seg.event.vehicle_class}) · click to ASSIGN to ${vehicle.label}` : seg.event.status }}
                                         </span>
                                         <span v-if="seg.event.location_name" class="block text-[10px] text-gray-500 mt-1">📍 {{ seg.event.location_name }}</span>
                                     </span>
-                                </Link>
+                                </component>
                             </template>
                         </div>
                     </div>

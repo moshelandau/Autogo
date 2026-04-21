@@ -291,11 +291,14 @@ class RentalService
             'vehicle_plate'   => $r->vehicle?->license_plate,
             'vehicle_class'   => $r->vehicle_class,
             'brand'           => $r->vehicle?->make,
-            'color'           => match($r->status) {
-                'open'      => '#3B82F6',
-                'rental'    => '#10B981',
-                'completed' => '#6B7280',
-                default     => '#EF4444',
+            // class-level pending: no vehicle picked yet, just a class
+            'is_class_only'   => empty($r->vehicle_id) && !empty($r->vehicle_class),
+            'color'           => match(true) {
+                empty($r->vehicle_id) && !empty($r->vehicle_class) => '#A855F7', // purple = class-pending
+                $r->status === 'open'      => '#3B82F6',
+                $r->status === 'rental'    => '#10B981',
+                $r->status === 'completed' => '#6B7280',
+                default                    => '#EF4444',
             },
         ]);
     }
