@@ -15,7 +15,21 @@
   - Auto-links inbound SMS to a Customer by matching the last 10 digits of the `from` number against `customers.phone`
   - Stores raw payload under `attachments._raw` for forensics
   - Sends an `OperationalReminder` notification to all `@autogoco.com` users
-- 🟡 **UNVERIFIED:** the EXACT field names in Telebroad's webhook POST body. We try common variants (`from`/`sender`/`caller_id`, `to`/`receiver`/`sms_line`, `msgdata`/`body`/`message`, etc.) and log the raw payload so we can tighten parsing once we see real fires.
+- ✅ **VERIFIED webhook payload** (captured from real fire 2026-04-21):
+  ```json
+  {
+    "id": 110167431,
+    "direction": "received",        // or "sent" for outbound
+    "startTime": "2026-04-21T18:47:50-04:00",
+    "fromNumber": "18455008085",
+    "toNumber":   "18457511133",
+    "message":    "3rd",
+    "media":      null,
+    "webhookType":"AccountSMS",
+    "secret":     "<your shared secret, echoed back>"
+  }
+  ```
+  Telebroad echoes the `?secret=…` query value back inside the body too — handy belt-and-suspenders.
 
 ## ✅ Conversation UI
 

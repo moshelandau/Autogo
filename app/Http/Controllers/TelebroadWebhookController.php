@@ -22,11 +22,19 @@ use Illuminate\Support\Facades\Notification;
  *  (configure in Settings -> Telebroad).
  *  Source: https://helpdesk.telebroad.com/support/solutions/articles/4000214102-webhook-integrations
  *
- * UNVERIFIED: the EXACT payload field names. We parse defensively, trying
- *  the field-name variants we've seen in Telebroad/TeleConsole responses
- *  ("from"/"sender"/"caller_id", "to"/"receiver"/"sms_line", etc.) and
- *  store the full raw payload in attachments[_raw] so we can iterate once
- *  we see real fires.
+ * VERIFIED payload (observed from a real Telebroad fire 2026-04-21):
+ *   {
+ *     "id": 110167431,
+ *     "direction": "received" | "sent",
+ *     "startTime": "2026-04-21T18:47:50-04:00",
+ *     "fromNumber": "18455008085",
+ *     "toNumber":   "18457511133",
+ *     "message":    "3rd",
+ *     "media":      null | <mms data>,
+ *     "webhookType":"AccountSMS",
+ *     "secret":     "<our shared secret>"
+ *   }
+ * Raw payload is still stashed in attachments._raw for forensics.
  */
 class TelebroadWebhookController extends Controller
 {
@@ -40,18 +48,17 @@ class TelebroadWebhookController extends Controller
 
         $payload = $request->all();
 
-        // Defensive parsing — try common field variants
-        $from      = $this->pick($payload, ['from', 'sender', 'caller_id', 'src', 'snumber', 'sender_number']);
-        $to        = $this->pick($payload, ['to', 'receiver', 'sms_line', 'dst', 'dnumber', 'recipient']);
-        $body      = $this->pick($payload, ['msgdata', 'body', 'message', 'text', 'msg']);
-        $direction = $this->pick($payload, ['direction', 'flow', 'type']);
-        $messageId = $this->pick($payload, ['message_id', 'id', 'msg_id', 'sms_id']);
-        $timestamp = $this->pick($payload, ['timestamp', 'time', 'created_at', 'date']);
+        // Verified Telebroad field names; fallbacks kept for safety.
+        $from      = $this->pick($payload, ['fromNumber', 'from', 'sender', 'caller_id', 'snumber']);
+        $to        = $this->pick($payload, ['toNumber',   'to',   'receiver', 'sms_line', 'dnumber']);
+        $body      = $this->pick($payload, ['message',    'msgdata', 'body', 'text']);
+        $direction = $this->pick($payload, ['direction',  'flow', 'type']);
+        $messageId = $this->pick($payload, ['id',         'message_id', 'msg_id']);
+        $timestamp = $this->pick($payload, ['startTime',  'timestamp', 'time', 'created_at']);
 
-        // Direction inference: Telebroad fires Account-SMS for both inbound and outbound.
-        // If we can't tell, assume inbound (we don't echo our own outbound here — they'd
-        // already be in the log from SmsController).
-        $isInbound = !in_array(strtolower((string) $direction), ['outbound', 'sent', 'out'], true);
+        // Telebroad sends direction = "received" (inbound) or "sent" (outbound).
+        $isInbound = strtolower((string) $direction) === 'received'
+            || !in_array(strtolower((string) $direction), ['sent', 'outbound', 'out'], true);
 
         // Skip echoes of our own outbound to avoid duplicates
         if (!$isInbound && $messageId && CommunicationLog::where('external_ref', $messageId)->exists()) {
