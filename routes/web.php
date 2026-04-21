@@ -53,6 +53,8 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::post('reservations/{reservation}/cancel', [ReservationController::class, 'cancel'])->name('reservations.cancel');
         Route::post('reservations/{reservation}/payment', [ReservationController::class, 'recordPayment'])->name('reservations.payment');
         Route::post('reservations/{reservation}/open-claim', [ReservationController::class, 'openClaim'])->name('reservations.openClaim');
+        Route::get('reservations/{reservation}/agreement/preview', [\App\Http\Controllers\RentalAgreementController::class, 'preview'])->name('reservations.agreement.preview');
+        Route::post('reservations/{reservation}/agreement', [\App\Http\Controllers\RentalAgreementController::class, 'generate'])->name('reservations.agreement.generate');
         Route::post('holds/{hold}/release', [ReservationController::class, 'releaseHold'])->name('holds.release');
         Route::post('holds/{hold}/capture', [ReservationController::class, 'captureHold'])->name('holds.capture');
 
@@ -232,6 +234,8 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::get('/', [EzPassController::class, 'index'])->name('index');
         Route::post('/', [EzPassController::class, 'store'])->name('store');
         Route::put('{ezPassAccount}', [EzPassController::class, 'update'])->name('update');
+        Route::get('import',  [\App\Http\Controllers\EzPassImportController::class, 'show'])->name('import.show');
+        Route::post('import', [\App\Http\Controllers\EzPassImportController::class, 'import'])->name('import');
     });
 
     // ── Credit Pulls ──────────────────────────────────
@@ -260,4 +264,9 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     Route::get('settings', [SettingController::class, 'index'])->name('settings');
     Route::post('settings', [SettingController::class, 'update'])->name('settings.update');
     Route::post('settings/test/{integration}', [SettingController::class, 'test'])->name('settings.test');
+
+    // S3 — locked-down with test-before-save + history (no delete endpoint, by design)
+    Route::get('settings/s3', [\App\Http\Controllers\S3SettingsController::class, 'index'])->name('settings.s3');
+    Route::post('settings/s3', [\App\Http\Controllers\S3SettingsController::class, 'saveNew'])->name('settings.s3.save');
+    Route::post('settings/s3/{history}/restore', [\App\Http\Controllers\S3SettingsController::class, 'restore'])->name('settings.s3.restore');
 });
