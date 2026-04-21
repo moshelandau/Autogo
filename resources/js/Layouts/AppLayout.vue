@@ -34,6 +34,7 @@ const navSections = [
         items: [
             { name: 'Dashboard', route: 'dashboard', icon: 'home', pattern: 'dashboard', pageKey: 'dashboard' },
             { name: 'Customers', route: 'customers.index', icon: 'users', pattern: 'customers.*', pageKey: 'customers' },
+            { name: 'SMS Inbox', route: 'sms.index', icon: 'mail', pattern: 'sms.*', pageKey: 'customers' },
         ]
     },
     {
@@ -91,7 +92,6 @@ const navSections = [
     {
         label: 'Office',
         items: [
-            { name: 'SMS Inbox', route: 'sms.index', icon: 'mail', pattern: 'sms.*', pageKey: 'office_tasks' },
             { name: 'Office Tasks', route: 'office-tasks.index', icon: 'check-square', pattern: 'office-tasks.*', pageKey: 'office_tasks' },
             { name: 'Parts Orders', route: 'parts.index', icon: 'wrench', pattern: ['parts.*'], pageKey: 'office_tasks' },
             { name: 'Business Docs', route: 'business-documents.index', icon: 'folder', pattern: ['business-documents.*'], pageKey: 'office_tasks' },
