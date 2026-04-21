@@ -13,6 +13,6 @@ Schedule::command('sync:towbook')->hourly()->withoutOverlapping()->runInBackgrou
 
 // Twice-a-week: Mon + Thu @ 9 AM, open the EZ Pass + NYC violations check task
 Schedule::command('tasks:open-violations-check')
-    ->twiceWeekly(\Carbon\Carbon::MONDAY, \Carbon\Carbon::THURSDAY, '09:00')
+    ->cron('0 9 * * 1,4')         // 9:00 AM on Monday and Thursday
     ->timezone('America/New_York')
     ->withoutOverlapping();
