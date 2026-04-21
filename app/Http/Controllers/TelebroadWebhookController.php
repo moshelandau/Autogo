@@ -60,6 +60,12 @@ class TelebroadWebhookController extends Controller
         $isInbound = strtolower((string) $direction) === 'received'
             || !in_array(strtolower((string) $direction), ['sent', 'outbound', 'out'], true);
 
+        // Skip outbound echoes — every outbound SMS is already logged synchronously
+        // by SmsController when the user clicks Send. The webhook would create a duplicate.
+        if (!$isInbound) {
+            return response()->json(['ok' => true, 'note' => 'outbound_echo_skipped']);
+        }
+
         // Skip echoes of our own outbound to avoid duplicates
         if (!$isInbound && $messageId && CommunicationLog::where('external_ref', $messageId)->exists()) {
             return response()->json(['ok' => true, 'note' => 'duplicate_outbound_ignored']);
