@@ -74,6 +74,17 @@ class TelebroadWebhookController extends Controller
         // Auto-link to customer by phone match
         $customer = $from ? $this->findCustomerByPhone($from) : null;
 
+        // Parse MMS media — Telebroad sends `media` as a JSON-encoded string of URL array
+        $mediaUrls = $this->parseMedia($payload['media'] ?? null);
+        $attachments = ['_raw' => $payload];
+        if (!empty($mediaUrls)) {
+            $attachments['media'] = array_map(fn($url) => [
+                'url'  => $url,
+                'name' => basename(parse_url($url, PHP_URL_PATH) ?: 'attachment'),
+                'mime' => $this->guessMime($url),
+            ], $mediaUrls);
+        }
+
         $log = CommunicationLog::create([
             'subject_type' => $customer ? Customer::class : null,
             'subject_id'   => $customer?->id,
@@ -84,7 +95,7 @@ class TelebroadWebhookController extends Controller
             'from'         => $from,
             'to'           => $to,
             'body'         => $body,
-            'attachments'  => ['_raw' => $payload],
+            'attachments'  => $attachments,
             'external_ref' => $messageId,
             'status'       => $isInbound ? 'received' : 'sent',
             'sent_at'      => $timestamp ? $this->parseTime($timestamp) : now(),
@@ -96,6 +107,34 @@ class TelebroadWebhookController extends Controller
         }
 
         return response()->json(['ok' => true, 'id' => $log->id]);
+    }
+
+    private function parseMedia($media): array
+    {
+        if (empty($media)) return [];
+        if (is_string($media)) {
+            $decoded = json_decode($media, true);
+            return is_array($decoded) ? array_values(array_filter($decoded, 'is_string')) : [];
+        }
+        if (is_array($media)) {
+            return array_values(array_filter($media, 'is_string'));
+        }
+        return [];
+    }
+
+    private function guessMime(string $url): string
+    {
+        $ext = strtolower(pathinfo(parse_url($url, PHP_URL_PATH) ?? '', PATHINFO_EXTENSION));
+        return match ($ext) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'png'  => 'image/png',
+            'gif'  => 'image/gif',
+            'webp' => 'image/webp',
+            'mp4'  => 'video/mp4',
+            'mov'  => 'video/quicktime',
+            'pdf'  => 'application/pdf',
+            default => 'application/octet-stream',
+        };
     }
 
     private function pick(array $payload, array $keys): ?string

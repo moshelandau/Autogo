@@ -275,19 +275,28 @@ const kinds = [
                             <h3 class="text-sm font-semibold text-gray-700">SMS thread with {{ customer.phone }}</h3>
                             <Link :href="route('sms.show', customer.phone)" class="text-xs text-indigo-600 hover:text-indigo-800">Open full view →</Link>
                         </div>
-                        <div ref="msgScroll" class="border rounded-lg bg-gray-50 p-3 space-y-2 overflow-y-auto" style="max-height: 400px">
-                            <div v-if="messagesLoading" class="text-center text-gray-400 py-6 text-sm">Loading...</div>
-                            <div v-else-if="messages.length === 0" class="text-center text-gray-400 py-6 text-sm">No messages yet.</div>
-                            <div v-else v-for="m in messages" :key="m.id" class="flex"
-                                :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
-                                <div class="max-w-md">
-                                    <div class="px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap break-words"
-                                        :class="m.direction === 'outbound' ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-white text-gray-900 border rounded-bl-sm'">
-                                        {{ m.body }}
-                                    </div>
-                                    <div class="text-[11px] text-gray-400 mt-0.5"
-                                        :class="m.direction === 'outbound' ? 'text-right' : 'text-left'">
-                                        {{ new Date(m.sent_at || m.created_at).toLocaleString() }}
+                        <div ref="msgScroll" class="border rounded-lg bg-gray-50 overflow-y-auto" style="height: 400px">
+                            <div class="min-h-full flex flex-col justify-end p-3 space-y-2">
+                                <div v-if="messagesLoading" class="text-center text-gray-400 py-6 text-sm">Loading...</div>
+                                <div v-else-if="messages.length === 0" class="text-center text-gray-400 py-6 text-sm">No messages yet.</div>
+                                <div v-else v-for="m in messages" :key="m.id" class="flex"
+                                    :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
+                                    <div class="max-w-md">
+                                        <div class="px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap break-words"
+                                            :class="m.direction === 'outbound' ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-white text-gray-900 border rounded-bl-sm'">
+                                            <template v-if="m.attachments && m.attachments.media">
+                                                <a v-for="(att, i) in m.attachments.media" :key="i" :href="att.url" target="_blank" class="block mb-1 last:mb-0">
+                                                    <img v-if="att.mime && att.mime.startsWith('image/')" :src="att.url"
+                                                        class="rounded-lg max-w-full max-h-60 object-contain" :alt="att.name" />
+                                                    <span v-else class="underline">{{ att.name }}</span>
+                                                </a>
+                                            </template>
+                                            <span v-if="m.body">{{ m.body }}</span>
+                                        </div>
+                                        <div class="text-[11px] text-gray-400 mt-0.5"
+                                            :class="m.direction === 'outbound' ? 'text-right' : 'text-left'">
+                                            {{ new Date(m.sent_at || m.created_at).toLocaleString() }}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
