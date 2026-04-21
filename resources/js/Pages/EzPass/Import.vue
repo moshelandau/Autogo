@@ -1,14 +1,22 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Link, useForm } from '@inertiajs/vue3';
+import { Link, useForm, router } from '@inertiajs/vue3';
 
-const props = defineProps({ recentImports: { type: Array, default: () => [] } });
+const props = defineProps({
+    recentImports: { type: Array, default: () => [] },
+    unbilled: { type: Array, default: () => [] },
+});
 
 const form = useForm({ file: null });
 const onFile = (e) => { form.file = e.target.files[0] || null; };
 const submit = () => {
     if (!form.file) return;
     form.post(route('ezpass.import'), { forceFormData: true, onSuccess: () => form.reset('file') });
+};
+
+const billReservation = (r) => {
+    if (!confirm(`Charge $${r.total.toFixed(2)} to customer's card on file for ${r.count} toll(s) + $${r.admin_fee.toFixed(2)} admin fee? Customer will be emailed the breakdown.`)) return;
+    router.post(route('ezpass.bill', r.reservation_id));
 };
 </script>
 
@@ -42,6 +50,40 @@ const submit = () => {
                 </button>
                 <p v-if="form.errors.file" class="mt-2 text-xs text-red-600">{{ form.errors.file }}</p>
             </form>
+
+            <!-- Unbilled tolls grouped by reservation -->
+            <div v-if="unbilled.length" class="bg-white rounded-xl border overflow-hidden">
+                <header class="p-4 border-b bg-amber-50 flex items-center justify-between">
+                    <div>
+                        <h3 class="font-semibold text-amber-900">⚠ Unbilled Tolls ({{ unbilled.length }} rentals)</h3>
+                        <p class="text-xs text-amber-800 mt-0.5">Click Bill to auto-charge the card on file ($10/toll admin fee applied per rental agreement) and email the breakdown to the customer.</p>
+                    </div>
+                </header>
+                <table class="min-w-full text-sm">
+                    <thead class="bg-gray-50 text-xs uppercase text-gray-500"><tr>
+                        <th class="px-3 py-2 text-left">RA#</th>
+                        <th class="px-3 py-2 text-left">Customer</th>
+                        <th class="px-3 py-2 text-right">Tolls</th>
+                        <th class="px-3 py-2 text-right">Subtotal</th>
+                        <th class="px-3 py-2 text-right">Admin Fee</th>
+                        <th class="px-3 py-2 text-right">Total</th>
+                        <th class="px-3 py-2"></th>
+                    </tr></thead>
+                    <tbody class="divide-y">
+                        <tr v-for="r in unbilled" :key="r.reservation_id">
+                            <td class="px-3 py-2"><Link :href="route('rental.reservations.show', r.reservation_id)" class="text-indigo-600 hover:text-indigo-800">RA#{{ r.reservation_number }}</Link></td>
+                            <td class="px-3 py-2">{{ r.customer || '—' }}</td>
+                            <td class="px-3 py-2 text-right">{{ r.count }}</td>
+                            <td class="px-3 py-2 text-right">${{ Number(r.subtotal).toFixed(2) }}</td>
+                            <td class="px-3 py-2 text-right">${{ Number(r.admin_fee).toFixed(2) }}</td>
+                            <td class="px-3 py-2 text-right font-bold">${{ Number(r.total).toFixed(2) }}</td>
+                            <td class="px-3 py-2 text-right">
+                                <button @click="billReservation(r)" class="text-xs px-3 py-1 bg-rose-600 text-white rounded hover:bg-rose-700">💳 Bill &amp; Notify</button>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
 
             <div v-if="recentImports.length" class="bg-white rounded-xl border overflow-hidden">
                 <header class="p-4 border-b"><h3 class="font-semibold">Recent imports</h3></header>

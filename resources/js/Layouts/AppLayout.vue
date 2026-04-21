@@ -46,6 +46,7 @@ const navSections = [
             { name: 'Rental Claims', route: 'rental-claims.index', icon: 'alert', pattern: ['rental-claims.*'], pageKey: 'rental_claims' },
             { name: 'EZ Pass',         route: 'ezpass.index',       icon: 'tag', pattern: ['ezpass.index','ezpass.show'], pageKey: 'customers' },
             { name: 'EZ Pass Import',  route: 'ezpass.import.show', icon: 'plus-circle', pattern: 'ezpass.import.*', pageKey: 'customers' },
+            { name: 'Violations',      route: 'violations.index',   icon: 'alert', pattern: 'violations.*', pageKey: 'customers' },
         ]
     },
     {

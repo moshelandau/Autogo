@@ -71,6 +71,11 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     Route::post('notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markRead'])->name('notifications.read');
     Route::post('notifications/read-all',  [\App\Http\Controllers\NotificationController::class, 'markAllRead'])->name('notifications.read-all');
 
+    // Vehicle Violations (parking, camera, school bus, toll, etc.)
+    Route::resource('violations', \App\Http\Controllers\VehicleViolationController::class)
+        ->only(['index','create','store','show','update']);
+    Route::post('violations/{violation}/bill-renter', [\App\Http\Controllers\VehicleViolationController::class, 'billRenter'])->name('violations.bill-renter');
+
     Route::prefix('rental')->name('rental.')->group(function () {
         // (all other rental routes already in this group above — placeholder to keep routes group structure)
         Route::post('holds/{hold}/release', [ReservationController::class, 'releaseHold'])->name('holds.release');
@@ -254,6 +259,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::put('{ezPassAccount}', [EzPassController::class, 'update'])->name('update');
         Route::get('import',  [\App\Http\Controllers\EzPassImportController::class, 'show'])->name('import.show');
         Route::post('import', [\App\Http\Controllers\EzPassImportController::class, 'import'])->name('import');
+        Route::post('bill/{reservation}', [\App\Http\Controllers\EzPassImportController::class, 'billReservation'])->name('bill');
     });
 
     // ── Credit Pulls ──────────────────────────────────
