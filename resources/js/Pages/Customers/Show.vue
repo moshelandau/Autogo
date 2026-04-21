@@ -74,12 +74,18 @@ if (typeof window !== 'undefined') {
 }
 const beep = () => {
     if (!audioCtx) return;
-    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = 'sine'; o.frequency.value = 880;
-    g.gain.setValueAtTime(0.2, audioCtx.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
-    o.connect(g).connect(audioCtx.destination);
-    o.start(); o.stop(audioCtx.currentTime + 0.4);
+    const playTone = (freq, when, dur = 0.35) => {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = 'sine'; o.frequency.value = freq;
+        g.gain.setValueAtTime(0.001, audioCtx.currentTime + when);
+        g.gain.exponentialRampToValueAtTime(1.0, audioCtx.currentTime + when + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + when + dur);
+        o.connect(g).connect(audioCtx.destination);
+        o.start(audioCtx.currentTime + when);
+        o.stop(audioCtx.currentTime + when + dur);
+    };
+    playTone(988, 0);      // B5
+    playTone(1319, 0.18);  // E6
     if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
         new Notification('New SMS from ' + (props.customer?.first_name || 'customer'));
     }
