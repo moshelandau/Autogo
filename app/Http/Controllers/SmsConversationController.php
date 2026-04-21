@@ -96,7 +96,7 @@ class SmsConversationController extends Controller
                   ->orWhere('to', 'ilike', "%{$last10}");
             })
             ->orderBy('created_at')
-            ->get(['id', 'direction', 'from', 'to', 'body', 'status', 'sent_at', 'created_at', 'user_id', 'customer_id']);
+            ->get(['id', 'direction', 'from', 'to', 'body', 'attachments', 'status', 'sent_at', 'created_at', 'user_id', 'customer_id']);
 
         // Mark inbound 'received' as 'read' on view (only safe non-update would be a separate read_at column;
         // CommunicationLog is not append-only — see model — so an update here is fine)
@@ -130,7 +130,7 @@ class SmsConversationController extends Controller
             ->where('channel', 'sms')
             ->where('customer_id', $customer->id)
             ->orderBy('created_at')
-            ->get(['id', 'direction', 'from', 'to', 'body', 'status', 'sent_at', 'created_at']);
+            ->get(['id', 'direction', 'from', 'to', 'body', 'attachments', 'status', 'sent_at', 'created_at']);
 
         return response()->json(['messages' => $messages]);
     }

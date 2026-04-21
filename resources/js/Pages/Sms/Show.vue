@@ -33,17 +33,27 @@ const poll = () => {
 onMounted(() => { pollTimer = setInterval(poll, 3000); });
 onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
 
-// Notification sound on new inbound
+// Notification sound on new inbound — unlock AudioContext on first click
+let audioCtx = null;
+const unlockAudio = () => {
+    if (audioCtx) return;
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+};
+onMounted(() => {
+    document.addEventListener('click', unlockAudio, { once: true });
+    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+});
 const beep = () => {
-    try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = 'sine'; o.frequency.value = 880;
-        g.gain.setValueAtTime(0.15, ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-        o.connect(g).connect(ctx.destination);
-        o.start(); o.stop(ctx.currentTime + 0.3);
-    } catch (e) { /* user hasn't interacted yet */ }
+    if (!audioCtx) return;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.4);
+    if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+        new Notification('New SMS', { body: 'Click to view' });
+    }
 };
 let lastInboundId = Math.max(0, ...(props.messages || []).filter(m => m.direction === 'inbound').map(m => m.id));
 watch(() => props.messages, (msgs) => {

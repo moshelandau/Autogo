@@ -66,16 +66,23 @@ const replyForm = useForm({
     subject_id: props.customer.id,
 });
 let lastInboundId = 0;
+let audioCtx = null;
+const unlockAudio = () => { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); };
+if (typeof window !== 'undefined') {
+    document.addEventListener('click', unlockAudio, { once: true });
+    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+}
 const beep = () => {
-    try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = 'sine'; o.frequency.value = 880;
-        g.gain.setValueAtTime(0.15, ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-        o.connect(g).connect(ctx.destination);
-        o.start(); o.stop(ctx.currentTime + 0.3);
-    } catch (e) {}
+    if (!audioCtx) return;
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine'; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.4);
+    if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+        new Notification('New SMS from ' + (props.customer?.first_name || 'customer'));
+    }
 };
 const loadMessages = async () => {
     if (!props.customer.phone) return;
@@ -300,7 +307,7 @@ const kinds = [
                             <h3 class="text-sm font-semibold text-gray-700">SMS thread with {{ customer.phone }}</h3>
                             <Link :href="route('sms.show', customer.phone)" class="text-xs text-indigo-600 hover:text-indigo-800">Open full view →</Link>
                         </div>
-                        <div ref="msgScroll" class="border rounded-lg bg-gray-50 overflow-y-auto" style="height: 400px">
+                        <div ref="msgScroll" class="border rounded-lg bg-gray-50 overflow-y-auto" style="height: calc(100vh - 420px); min-height: 320px">
                             <div class="min-h-full flex flex-col justify-end p-3 space-y-2">
                                 <div v-if="messagesLoading" class="text-center text-gray-400 py-6 text-sm">Loading...</div>
                                 <div v-else-if="messages.length === 0" class="text-center text-gray-400 py-6 text-sm">No messages yet.</div>
