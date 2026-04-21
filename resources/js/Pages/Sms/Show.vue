@@ -21,7 +21,7 @@ const threadEl = ref(null);
 const scrollBottom = () => nextTick(() => { if (threadEl.value) threadEl.value.scrollTop = threadEl.value.scrollHeight; });
 onMounted(scrollBottom);
 
-// Live updates — poll every 5s for new messages
+// Live updates — poll every 3s for new messages
 let pollTimer = null;
 const poll = () => {
     router.reload({
@@ -30,9 +30,30 @@ const poll = () => {
         preserveState: true,
     });
 };
-onMounted(() => { pollTimer = setInterval(poll, 5000); });
+onMounted(() => { pollTimer = setInterval(poll, 3000); });
 onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
-// Auto-scroll when new messages arrive
+
+// Notification sound on new inbound
+const beep = () => {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.value = 880;
+        g.gain.setValueAtTime(0.15, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        o.connect(g).connect(ctx.destination);
+        o.start(); o.stop(ctx.currentTime + 0.3);
+    } catch (e) { /* user hasn't interacted yet */ }
+};
+let lastInboundId = Math.max(0, ...(props.messages || []).filter(m => m.direction === 'inbound').map(m => m.id));
+watch(() => props.messages, (msgs) => {
+    const newest = Math.max(0, ...(msgs || []).filter(m => m.direction === 'inbound').map(m => m.id));
+    if (newest > lastInboundId) {
+        lastInboundId = newest;
+        beep();
+        scrollBottom();
+    }
+}, { deep: true });
 watch(() => props.messages?.length, () => scrollBottom());
 
 const send = () => {

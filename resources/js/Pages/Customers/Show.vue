@@ -65,13 +65,29 @@ const replyForm = useForm({
     subject_type: 'App\\Models\\Customer',
     subject_id: props.customer.id,
 });
+let lastInboundId = 0;
+const beep = () => {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.value = 880;
+        g.gain.setValueAtTime(0.15, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        o.connect(g).connect(ctx.destination);
+        o.start(); o.stop(ctx.currentTime + 0.3);
+    } catch (e) {}
+};
 const loadMessages = async () => {
     if (!props.customer.phone) return;
-    messagesLoading.value = true;
+    if (messages.value.length === 0) messagesLoading.value = true;
     try {
         const res = await fetch(route('sms.customer-thread', props.customer.id), { credentials: 'same-origin' });
         const data = await res.json();
-        messages.value = data.messages || [];
+        const next = data.messages || [];
+        const newestInbound = Math.max(0, ...next.filter(m => m.direction === 'inbound').map(m => m.id));
+        if (lastInboundId && newestInbound > lastInboundId) beep();
+        lastInboundId = newestInbound;
+        messages.value = next;
         nextTick(() => { if (msgScroll.value) msgScroll.value.scrollTop = msgScroll.value.scrollHeight; });
     } catch (e) { console.error(e); }
     messagesLoading.value = false;
@@ -88,7 +104,7 @@ let msgPollTimer = null;
 watch(tab, (val) => {
     if (msgPollTimer) { clearInterval(msgPollTimer); msgPollTimer = null; }
     if (val === 'messages' && props.customer.phone) {
-        msgPollTimer = setInterval(loadMessages, 5000);
+        msgPollTimer = setInterval(loadMessages, 3000);
     }
 });
 onBeforeUnmount(() => { if (msgPollTimer) clearInterval(msgPollTimer); });
