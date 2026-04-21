@@ -256,6 +256,23 @@ const analyzeImage = async (insp) => {
                     </form>
                 </div>
 
+                <!-- Rental Agreement PDF -->
+                <div class="bg-white rounded-xl border p-4 flex items-center justify-between">
+                    <div>
+                        <div class="font-bold text-gray-900">📄 Rental Agreement</div>
+                        <div class="text-xs text-gray-500" v-if="r.lease_agreement_path">Saved — <a :href="`/storage/${r.lease_agreement_path}`" target="_blank" class="text-indigo-600 hover:underline">open PDF</a></div>
+                        <div class="text-xs text-gray-500" v-else>Not yet generated. Includes Beis Din clause + full damage responsibility.</div>
+                    </div>
+                    <div class="flex gap-2">
+                        <a :href="route('rental.reservations.agreement.preview', r.id)" target="_blank"
+                           class="text-xs px-3 py-1.5 bg-white border border-gray-300 rounded hover:bg-gray-50">Preview</a>
+                        <Link :href="route('rental.reservations.agreement.generate', r.id)" method="post" as="button"
+                              class="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                            {{ r.lease_agreement_path ? 'Regenerate' : 'Generate' }} PDF
+                        </Link>
+                    </div>
+                </div>
+
                 <!-- Active security hold display -->
                 <div v-if="r.active_hold" class="bg-amber-50 border-2 border-amber-300 rounded-lg p-4 flex items-center justify-between">
                     <div>

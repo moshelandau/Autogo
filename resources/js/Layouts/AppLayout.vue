@@ -44,7 +44,8 @@ const navSections = [
             { name: 'Fleet Vehicles', route: 'rental.vehicles.index', icon: 'truck', pattern: 'rental.vehicles.*', pageKey: 'vehicles' },
             { name: 'Calendar', route: 'rental.calendar', icon: 'calendar', pattern: 'rental.calendar', pageKey: 'rental_calendar' },
             { name: 'Rental Claims', route: 'rental-claims.index', icon: 'alert', pattern: ['rental-claims.*'], pageKey: 'rental_claims' },
-            { name: 'EZ Pass', route: 'ezpass.index', icon: 'tag', pattern: ['ezpass.*'], pageKey: 'customers' },
+            { name: 'EZ Pass',         route: 'ezpass.index',       icon: 'tag', pattern: ['ezpass.index','ezpass.show'], pageKey: 'customers' },
+            { name: 'EZ Pass Import',  route: 'ezpass.import.show', icon: 'plus-circle', pattern: 'ezpass.import.*', pageKey: 'customers' },
         ]
     },
     {
