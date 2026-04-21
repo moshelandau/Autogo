@@ -1,7 +1,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Link, useForm } from '@inertiajs/vue3';
-import { ref, nextTick, onMounted } from 'vue';
+import { Link, useForm, router } from '@inertiajs/vue3';
+import { ref, nextTick, onMounted, onBeforeUnmount, watch } from 'vue';
 
 const props = defineProps({
     phone:    { type: String, required: true },
@@ -20,6 +20,20 @@ const reply = useForm({
 const threadEl = ref(null);
 const scrollBottom = () => nextTick(() => { if (threadEl.value) threadEl.value.scrollTop = threadEl.value.scrollHeight; });
 onMounted(scrollBottom);
+
+// Live updates — poll every 5s for new messages
+let pollTimer = null;
+const poll = () => {
+    router.reload({
+        only: ['messages'],
+        preserveScroll: true,
+        preserveState: true,
+    });
+};
+onMounted(() => { pollTimer = setInterval(poll, 5000); });
+onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
+// Auto-scroll when new messages arrive
+watch(() => props.messages?.length, () => scrollBottom());
 
 const send = () => {
     if (!reply.message.trim()) return;

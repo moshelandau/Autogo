@@ -1,7 +1,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
 
 const props = defineProps({
     conversations: { type: Array, default: () => [] },
@@ -10,6 +10,12 @@ const props = defineProps({
 
 const search = ref(props.filters.search || '');
 const submit = () => router.get(route('sms.index'), { search: search.value }, { preserveState: true });
+
+// Live updates — poll every 5s
+let pollTimer = null;
+const poll = () => router.reload({ only: ['conversations'], preserveScroll: true, preserveState: true });
+onMounted(() => { pollTimer = setInterval(poll, 5000); });
+onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
 
 const fmtTime = (iso) => {
     if (!iso) return '';

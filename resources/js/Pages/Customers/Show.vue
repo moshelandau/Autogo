@@ -1,7 +1,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router, useForm } from '@inertiajs/vue3';
-import { ref, computed, nextTick } from 'vue';
+import { ref, computed, nextTick, watch, onBeforeUnmount } from 'vue';
 import SmsButton from '@/Components/SmsButton.vue';
 
 const props = defineProps({
@@ -83,6 +83,15 @@ const sendReply = () => {
         onSuccess: () => { replyForm.reset('message'); loadMessages(); },
     });
 };
+// Live updates — poll the thread every 5s while the Messages tab is active
+let msgPollTimer = null;
+watch(tab, (val) => {
+    if (msgPollTimer) { clearInterval(msgPollTimer); msgPollTimer = null; }
+    if (val === 'messages' && props.customer.phone) {
+        msgPollTimer = setInterval(loadMessages, 5000);
+    }
+});
+onBeforeUnmount(() => { if (msgPollTimer) clearInterval(msgPollTimer); });
 
 const kindFilter = ref('all');
 const kinds = [
