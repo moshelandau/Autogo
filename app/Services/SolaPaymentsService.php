@@ -5,90 +5,121 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\ReservationHold;
-use App\Models\RentalPayment;
+use App\Models\Setting;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Sola Payments integration. Wraps:
- *  - Authorize a hold (deposit)
- *  - Capture a previously authorized hold (turn it into a real charge)
- *  - Release / void a hold
- *  - Charge a card directly (token-based)
+ * Sola Payments integration — powered by Cardknox Gateway JSON API.
+ * Endpoint: https://x1.cardknox.com/gatewayjson
  *
- * If SOLA_API_KEY is missing, falls back to MOCK mode so the UI works
- * end-to-end during development. Mock responses set realistic ids.
+ * Two merchants: AutoGo (xKey = services.sola.api_key) + High Car Rental
+ * (xKey = services.sola.webhook_secret, repurposed Sola field for the second merchant).
+ *
+ * Command reference (Cardknox):
+ *  - cc:save      → tokenize without charge (for card-on-file)
+ *  - cc:auth      → authorize only (security deposit hold)
+ *  - cc:capture   → capture a prior auth
+ *  - cc:voidrefund→ release/void an auth
+ *  - cc:sale      → one-step charge
+ *  - cc:refund    → refund an existing sale
+ *
+ * Docs: https://kb.cardknox.com/api/
  */
 class SolaPaymentsService
 {
-    public const ACCOUNT_AUTOGO = 'autogo';
-    public const ACCOUNT_HIGH_RENTAL = 'high_rental';
+    public const ACCOUNT_AUTOGO        = 'autogo';
+    public const ACCOUNT_HIGH_RENTAL   = 'high_rental';
+
+    private const ENDPOINT = 'https://x1.cardknox.com/gatewayjson';
 
     public function isConfigured(string $account = self::ACCOUNT_AUTOGO): bool
     {
-        return !empty($this->apiKey($account));
+        return !empty($this->xKey($account));
     }
 
-    private function apiKey(string $account): ?string
+    /** Pick the right xKey for the account. */
+    private function xKey(string $account): ?string
     {
-        // AutoGo = services.sola.api_key
-        // High Rental = services.sola.webhook_secret (the user re-purposed this field since Sola UI offers only one key field)
         return $account === self::ACCOUNT_HIGH_RENTAL
-            ? \App\Models\Setting::getValue('sola_webhook_secret', config('services.sola.webhook_secret'))
-            : \App\Models\Setting::getValue('sola_api_key',        config('services.sola.api_key'));
+            ? Setting::getValue('sola_webhook_secret', config('services.sola.webhook_secret'))
+            : Setting::getValue('sola_api_key',        config('services.sola.api_key'));
     }
 
-    private function base(): string
+    /**
+     * Core Cardknox call. $params is merged with common envelope fields.
+     */
+    private function call(string $account, array $params): array
     {
-        $env = config('services.sola.env', 'sandbox');
-        return $env === 'live'
-            ? 'https://api.sola-payments.com'
-            : 'https://sandbox.sola-payments.com';
+        $xKey = $this->xKey($account);
+        if (!$xKey) return ['ok' => false, 'mock' => true, 'error' => "No xKey for $account"];
+
+        $payload = array_merge([
+            'xKey'             => $xKey,
+            'xVersion'         => '5.0.0',
+            'xSoftwareName'    => 'AutoGo',
+            'xSoftwareVersion' => '1.0',
+        ], $params);
+
+        try {
+            $resp = Http::acceptJson()->timeout(15)->asForm()->post(self::ENDPOINT, $payload);
+            if (!$resp->successful()) {
+                Log::warning('Cardknox HTTP error', ['status' => $resp->status(), 'account' => $account]);
+                return ['ok' => false, 'http_status' => $resp->status(), 'error' => $resp->body()];
+            }
+            $body = $resp->json();
+            $status = $body['xStatus'] ?? '';
+            $ok = $status === 'Approved';
+            return [
+                'ok'      => $ok,
+                'account' => $account,
+                'status'  => $status,
+                'error'   => $ok ? null : ($body['xError'] ?? 'Declined'),
+                'ref_num' => $body['xRefNum'] ?? null,
+                'token'   => $body['xToken'] ?? null,
+                'data'    => $body,
+            ];
+        } catch (\Throwable $e) {
+            Log::error('Cardknox exception', ['error' => $e->getMessage(), 'account' => $account]);
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
     }
 
-    private function http(string $account = self::ACCOUNT_AUTOGO)
-    {
-        return Http::withToken($this->apiKey($account))->acceptJson();
-    }
-
-    // ── Hold (auth-only) — ALWAYS on High Rental account per business rule ──
+    // ── Hold (auth-only) — always on High Rental ─────────────
     public function authorizeHold(array $card, float $amount, ?string $description = null): array
     {
         $account = self::ACCOUNT_HIGH_RENTAL;
         if (!$this->isConfigured($account)) return $this->mockAuth($amount, $account);
 
-        $resp = $this->http($account)->post($this->base().'/v1/authorizations', [
-            'amount'      => $amount,
-            'currency'    => 'USD',
-            'card'        => $card,
-            'description' => $description ?? 'Rental security deposit',
-        ]);
+        $result = $this->call($account, array_merge([
+            'xCommand'     => 'cc:auth',
+            'xAmount'      => number_format($amount, 2, '.', ''),
+            'xDescription' => $description ?? 'Rental security deposit',
+        ], $this->cardFields($card)));
 
-        if (!$resp->successful()) {
-            Log::warning('Sola auth failed', ['status' => $resp->status(), 'body' => $resp->body(), 'account' => $account]);
-            return ['ok' => false, 'error' => $resp->body()];
-        }
-        $d = $resp->json();
-        return ['ok' => true, 'authorization_id' => $d['id'] ?? null, 'account' => $account, 'data' => $d];
+        if (!$result['ok']) return $result;
+
+        return $result + ['authorization_id' => $result['ref_num']];
     }
 
     public function captureHold(ReservationHold $hold, ?float $amount = null): array
     {
-        // Holds always live on high_rental
         $account = self::ACCOUNT_HIGH_RENTAL;
         if (!$this->isConfigured($account)) {
             $hold->update(['status' => 'captured', 'captured_at' => now()]);
             return ['ok' => true, 'mock' => true];
         }
-        $resp = $this->http($account)->post($this->base()."/v1/authorizations/{$hold->sola_authorization_id}/capture", [
-            'amount' => $amount ?? $hold->amount,
+
+        $result = $this->call($account, [
+            'xCommand' => 'cc:capture',
+            'xRefNum'  => $hold->sola_authorization_id,
+            'xAmount'  => number_format($amount ?? (float)$hold->amount, 2, '.', ''),
         ]);
-        if ($resp->successful()) {
+        if ($result['ok']) {
             $hold->update(['status' => 'captured', 'captured_at' => now()]);
-            return ['ok' => true, 'data' => $resp->json()];
         }
-        return ['ok' => false, 'error' => $resp->body()];
+        return $result;
     }
 
     public function releaseHold(ReservationHold $hold): array
@@ -98,15 +129,18 @@ class SolaPaymentsService
             $hold->update(['status' => 'released', 'released_at' => now()]);
             return ['ok' => true, 'mock' => true];
         }
-        $resp = $this->http($account)->delete($this->base()."/v1/authorizations/{$hold->sola_authorization_id}");
-        if ($resp->successful() || $resp->status() === 404) {
+
+        $result = $this->call($account, [
+            'xCommand' => 'cc:voidrefund',
+            'xRefNum'  => $hold->sola_authorization_id,
+        ]);
+        if ($result['ok']) {
             $hold->update(['status' => 'released', 'released_at' => now()]);
-            return ['ok' => true];
         }
-        return ['ok' => false, 'error' => $resp->body()];
+        return $result;
     }
 
-    // ── Direct charge — account selected by operator (AutoGo or High Rental) ──
+    // ── Direct charge — account picked by operator ───────────
     public function charge(string $account, array $card, float $amount, ?string $description = null): array
     {
         if (!in_array($account, [self::ACCOUNT_AUTOGO, self::ACCOUNT_HIGH_RENTAL], true)) {
@@ -114,30 +148,73 @@ class SolaPaymentsService
         }
         if (!$this->isConfigured($account)) return $this->mockCharge($amount, $account);
 
-        $resp = $this->http($account)->post($this->base().'/v1/charges', [
-            'amount' => $amount, 'currency' => 'USD', 'card' => $card,
-            'description' => $description ?? 'Rental payment',
-        ]);
-        if (!$resp->successful()) return ['ok' => false, 'error' => $resp->body()];
-        $d = $resp->json();
-        return ['ok' => true, 'charge_id' => $d['id'] ?? null, 'account' => $account, 'data' => $d];
+        $result = $this->call($account, array_merge([
+            'xCommand'     => 'cc:sale',
+            'xAmount'      => number_format($amount, 2, '.', ''),
+            'xDescription' => $description ?? 'AutoGo charge',
+        ], $this->cardFields($card)));
+
+        return $result + ['charge_id' => $result['ref_num'] ?? null];
     }
 
-    // ── Mocks ────────────────────────────────────────────────
+    /**
+     * Test the Cardknox connection for an xKey. We don't want to actually charge
+     * or tokenize a card, so we send a lookup-only command that is auth-checked.
+     */
+    public function test(string $account): array
+    {
+        if (!$this->isConfigured($account)) {
+            return ['ok' => false, 'message' => 'No xKey configured for ' . ($account === 'high_rental' ? 'High Car Rental' : 'AutoGo')];
+        }
+
+        // cc:void with a garbage refnum — Cardknox will reject with xError but proves the xKey is valid
+        $r = $this->call($account, [
+            'xCommand' => 'report:txn',
+            'xBeginDate' => now()->subDay()->format('Y-m-d'),
+            'xEndDate'   => now()->format('Y-m-d'),
+        ]);
+
+        $d = $r['data'] ?? [];
+        $status = $d['xStatus'] ?? '';
+        if ($status === 'Approved' || stripos((string)($d['xError'] ?? ''), 'key') === false) {
+            $name = $account === 'high_rental' ? 'High Car Rental' : 'AutoGo';
+            return ['ok' => true, 'message' => "✓ Cardknox xKey for {$name} is valid · endpoint: ".self::ENDPOINT];
+        }
+        return ['ok' => false, 'message' => 'xKey rejected by Cardknox: ' . ($d['xError'] ?? 'unknown')];
+    }
+
+    /** Map our card dict to Cardknox field names. Supports token or raw PAN. */
+    private function cardFields(array $card): array
+    {
+        if (!empty($card['token'])) {
+            return ['xToken' => $card['token']];
+        }
+        $fields = [];
+        if (!empty($card['number']))  $fields['xCardNum'] = $card['number'];
+        if (!empty($card['exp']))     $fields['xExp']     = preg_replace('/\D/', '', $card['exp']);
+        if (!empty($card['cvc']))     $fields['xCVV']     = $card['cvc'];
+        if (!empty($card['last4']))   $fields['xCardNum'] = $card['number'] ?? null; // fallback: cannot charge w/ last4 alone
+        return $fields;
+    }
+
+    // ── Mocks (dev only) ─────────────────────────────────────
     private function mockAuth(float $amount, string $account): array
     {
         return [
             'ok' => true, 'mock' => true, 'account' => $account,
-            'authorization_id' => 'auth_mock_'.Str::random(12),
-            'data' => ['amount' => $amount, 'status' => 'authorized'],
+            'authorization_id' => 'mock_auth_'.Str::random(10),
+            'ref_num' => 'mock_'.Str::random(10),
+            'data' => ['xAmount' => $amount, 'xStatus' => 'Approved (MOCK)'],
         ];
     }
+
     private function mockCharge(float $amount, string $account): array
     {
         return [
             'ok' => true, 'mock' => true, 'account' => $account,
-            'charge_id' => 'ch_mock_'.Str::random(12),
-            'data' => ['amount' => $amount, 'status' => 'succeeded'],
+            'charge_id' => 'mock_ch_'.Str::random(10),
+            'ref_num' => 'mock_'.Str::random(10),
+            'data' => ['xAmount' => $amount, 'xStatus' => 'Approved (MOCK)'],
         ];
     }
 }

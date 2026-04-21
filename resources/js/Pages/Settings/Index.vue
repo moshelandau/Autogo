@@ -56,18 +56,14 @@ const sections = [
     },
     {
         id: 'sola',
-        title: 'Sola Payments — Two Accounts',
+        title: 'Sola Payments / Cardknox — Two Merchants',
         icon: '💳',
-        desc: 'We keep two Sola merchants: AutoGo (lease/finance/body/tow) + High Car Rental (rentals + $250 security holds). Hold-auths ALWAYS go to High Rental; final charges prompt operator to pick. Use the per-account Test buttons below.',
+        desc: 'Sola Payments is powered by Cardknox. Each merchant has its own xKey. Endpoint: https://x1.cardknox.com/gatewayjson. PCI compliant — card numbers are tokenized, never stored locally. Holds always go to High Car Rental; final charges prompt operator to choose.',
         envFlag: 'sola',
-        // No top-level testKey — replaced with per-account tests below
-        fields: [
-            { key: 'sola_env',            label: 'Environment',             type: 'select', options: ['sandbox','live'] },
-            { key: 'sola_api_base',       label: 'API Base URL (optional)', type: 'text', placeholder: 'https://api.sola.com (or your provided URL)' },
-        ],
+        fields: [],
         subTests: [
-            { id: 'sola_autogo',     label: 'Test AutoGo',         keyField: 'sola_api_key',        labelText: 'AutoGo API key' },
-            { id: 'sola_high_rental',label: 'Test High Car Rental',keyField: 'sola_webhook_secret', labelText: 'High Car Rental API key' },
+            { id: 'sola_autogo',     label: 'Test AutoGo xKey',         keyField: 'sola_api_key',        labelText: 'AutoGo xKey (from Cardknox merchant account)' },
+            { id: 'sola_high_rental',label: 'Test High Car Rental xKey',keyField: 'sola_webhook_secret', labelText: 'High Car Rental xKey (from Cardknox merchant account)' },
         ],
     },
     {

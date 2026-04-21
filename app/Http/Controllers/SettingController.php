@@ -117,49 +117,27 @@ class SettingController extends Controller
     }
 
     /**
-     * Test a specific Sola merchant. We try a series of plausible endpoints
-     * and report exactly which one succeeded so the operator can confirm setup.
+     * Test a specific Sola/Cardknox merchant xKey by calling the Cardknox Gateway.
      */
     private function testSolaAccount(Request $r, string $account): array
     {
-        $key  = $r->input('api_key');
-        $env  = $r->input('env')      ?: config('services.sola.env', 'sandbox');
-        $base = $r->input('api_base') ?: config('services.sola.api_base');
+        $xKey = $r->input('api_key'); // From the field the user just typed (not yet saved)
+        if (!$xKey) return ['ok' => false, 'message' => 'xKey for ' . ($account === 'high_rental' ? 'High Car Rental' : 'AutoGo') . ' is empty.'];
 
-        if (!$key) return ['ok' => false, 'message' => 'API key for ' . ($account === 'high_rental' ? 'High Car Rental' : 'AutoGo') . ' is empty.'];
+        // Temporarily override the config so the service uses THIS key for the test
+        $originalKey = $account === 'high_rental' ? config('services.sola.webhook_secret') : config('services.sola.api_key');
+        if ($account === 'high_rental') config(['services.sola.webhook_secret' => $xKey]);
+        else                            config(['services.sola.api_key'        => $xKey]);
 
-        $candidates = $base
-            ? [$base]
-            : ($env === 'live'
-                ? ['https://api.sola.com', 'https://gateway.solapayments.com', 'https://api.sola-payments.com']
-                : ['https://sandbox.sola.com', 'https://sandbox-api.sola.com', 'https://sandbox.sola-payments.com']);
-
-        $tried = [];
-        foreach ($candidates as $b) {
-            try {
-                $resp = Http::withToken($key)->acceptJson()->timeout(8)->get(rtrim($b, '/').'/v1/me');
-                if ($resp->successful()) {
-                    return [
-                        'ok' => true,
-                        'message' => "✓ ".ucfirst(str_replace('_',' ',$account))." OK · base: $b · status ".$resp->status(),
-                    ];
-                }
-                if ($resp->status() === 401 || $resp->status() === 403) {
-                    return [
-                        'ok' => false,
-                        'message' => "✗ ".ucfirst(str_replace('_',' ',$account))." key REJECTED (HTTP ".$resp->status().") at $b — endpoint reachable but the key is wrong.",
-                    ];
-                }
-                $tried[] = "$b → HTTP ".$resp->status();
-            } catch (\Throwable $e) {
-                $tried[] = "$b → ".substr($e->getMessage(), 0, 60);
-            }
+        try {
+            /** @var \App\Services\SolaPaymentsService $svc */
+            $svc = app(\App\Services\SolaPaymentsService::class);
+            return $svc->test($account);
+        } finally {
+            // Restore
+            if ($account === 'high_rental') config(['services.sola.webhook_secret' => $originalKey]);
+            else                            config(['services.sola.api_key'        => $originalKey]);
         }
-
-        return [
-            'ok' => false,
-            'message' => "Could not reach any Sola endpoint. Tried: ".implode(' · ', $tried).". Set the correct base URL in the field above (ask Sola support for it).",
-        ];
     }
 
     private function testCredit700(Request $r): array
