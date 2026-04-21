@@ -142,6 +142,14 @@ class LeaseApplicationBot
         }
 
         $flow = $wantsLease ? 'lease' : 'rental';
+
+        // Rental self-service requires zero outstanding balance
+        if ($flow === 'rental' && $customer && $customer->hasOutstandingBalance()) {
+            $bal = number_format((float) $customer->cached_outstanding_balance, 2);
+            $this->reply($fromPhone, "Hi {$customer->first_name} — there's an outstanding balance of \${$bal} on your account. Please contact our office to resolve it before starting a new rental. Thanks!");
+            return true;
+        }
+
         $this->startFlow($fromPhone, $customer, $flow);
         return true;
     }

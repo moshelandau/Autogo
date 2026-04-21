@@ -11,7 +11,7 @@ class S3SettingHistory extends Model
     protected $table = 's3_settings_history';
 
     protected $fillable = [
-        'bucket', 'region', 'access_key', 'secret_key',
+        'bucket', 'region', 'endpoint', 'access_key', 'secret_key',
         'test_passed', 'test_message', 'is_active', 'saved_by',
     ];
 

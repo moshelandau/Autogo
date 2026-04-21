@@ -4,7 +4,7 @@ import { Link, useForm, router } from '@inertiajs/vue3';
 
 const props = defineProps({ current: Object, history: Array });
 
-const form = useForm({ bucket: '', region: 'us-east-1', access_key: '', secret_key: '' });
+const form = useForm({ bucket: '', region: 'us-east-1', endpoint: '', access_key: '', secret_key: '' });
 const save = () => form.post(route('settings.s3.save'));
 const restore = (h) => { if (confirm(`Restore S3 config from ${new Date(h.created_at).toLocaleString()}?`)) router.post(route('settings.s3.restore', h.id)); };
 </script>
@@ -38,8 +38,21 @@ const restore = (h) => { if (confirm(`Restore S3 config from ${new Date(h.create
             <form @submit.prevent="save" class="bg-white border rounded-xl p-5 space-y-3">
                 <h3 class="font-semibold">Save NEW S3 config (test runs first)</h3>
                 <div class="grid grid-cols-2 gap-3">
-                    <div><label class="block text-xs font-semibold">Bucket *</label><input v-model="form.bucket" required class="mt-1 w-full border-gray-300 rounded-lg text-sm" /></div>
-                    <div><label class="block text-xs font-semibold">Region *</label><input v-model="form.region" required placeholder="us-east-1" class="mt-1 w-full border-gray-300 rounded-lg text-sm" /></div>
+                    <div>
+                        <label class="block text-xs font-semibold">Bucket *</label>
+                        <input v-model="form.bucket" required placeholder="autogo" class="mt-1 w-full border-gray-300 rounded-lg text-sm" />
+                        <p class="text-[11px] text-gray-400 mt-0.5">Just the name. For Contabo: <code>autogo</code></p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold">Region</label>
+                        <input v-model="form.region" placeholder="us-east-1" class="mt-1 w-full border-gray-300 rounded-lg text-sm" />
+                        <p class="text-[11px] text-gray-400 mt-0.5">Optional for Contabo/MinIO; AWS SDK defaults to us-east-1.</p>
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-xs font-semibold">Endpoint URL <span class="font-normal text-gray-400">(blank = AWS S3)</span></label>
+                        <input v-model="form.endpoint" placeholder="https://usc1.contabostorage.com" class="mt-1 w-full border-gray-300 rounded-lg text-sm font-mono" />
+                        <p class="text-[11px] text-gray-400 mt-0.5">For Contabo: <code>https://usc1.contabostorage.com</code> (no bucket name in the URL).</p>
+                    </div>
                     <div><label class="block text-xs font-semibold">Access Key *</label><input v-model="form.access_key" required class="mt-1 w-full border-gray-300 rounded-lg text-sm font-mono" /></div>
                     <div><label class="block text-xs font-semibold">Secret Key *</label><input v-model="form.secret_key" required type="password" class="mt-1 w-full border-gray-300 rounded-lg text-sm font-mono" /></div>
                 </div>
