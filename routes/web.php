@@ -109,6 +109,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::post('deals/{deal}/note', [DealController::class, 'addNote'])->name('deals.note');
         Route::post('deals/{deal}/quote', [DealController::class, 'addQuote'])->name('deals.quote');
         Route::post('deals/{deal}/quotes/{quote}/select', [DealController::class, 'selectQuote'])->name('deals.select-quote');
+        Route::post('deals/{deal}/credit-pull', [DealController::class, 'pullCredit'])->name('deals.credit-pull');
 
         // VIN Decode API
         Route::post('vin-decode', [DealController::class, 'decodeVin'])->name('vin-decode');

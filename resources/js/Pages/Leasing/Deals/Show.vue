@@ -1,9 +1,14 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, useForm, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 
-const props = defineProps({ deal: Object, lenders: Array });
+const props = defineProps({
+    deal: Object,
+    lenders: Array,
+    creditPulls: { type: Array, default: () => [] },
+    creditConfigured: { type: Boolean, default: false },
+});
 const d = props.deal;
 const fmt = (v) => v ? '$' + parseFloat(v).toLocaleString() : '-';
 const activeTab = ref('summary');
@@ -13,6 +18,14 @@ const allStages = ['lead', 'quote', 'application', 'submission', 'pending', 'fin
 
 const noteForm = useForm({ body: '' });
 const addNote = () => { noteForm.post(route('leasing.deals.note', d.id), { onSuccess: () => noteForm.reset() }); };
+
+// Credit pull (inline)
+const latestPull = computed(() => props.creditPulls?.[0] || null);
+const creditPullForm = useForm({});
+const runCreditPull = () => {
+    if (!confirm('Run a soft credit pull for this customer? This will not affect their credit score.')) return;
+    creditPullForm.post(route('leasing.deals.credit-pull', d.id), { preserveScroll: true });
+};
 
 const quoteForm = useForm({ lender_id: '', payment_type: d.payment_type, term: 36, mileage_per_year: 10000, monthly_payment: '', das: '', sell_price: d.sell_price || '', msrp: d.msrp || '', rebates: 0, notes: '' });
 const addQuote = () => { quoteForm.post(route('leasing.deals.quote', d.id), { onSuccess: () => quoteForm.reset() }); };
@@ -317,17 +330,60 @@ const saveCalcAsQuote = () => {
                             </div>
                         </div>
 
-                        <!-- Credit Tab -->
+                        <!-- Credit Tab — inline soft pull (no separate page) -->
                         <div v-if="activeTab === 'credit'" class="space-y-4">
-                            <div class="flex justify-end gap-3">
-                                <Link :href="route('credit.create', { customer_id: d.customer.id, deal_id: d.id })" class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700">+ New Credit Pull</Link>
-                                <Link :href="route('credit.customer-history', d.customer.id)" class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">View Customer History</Link>
+                            <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-900">
+                                <strong>Soft pull only.</strong> AutoGo never runs hard pulls — those are done by the dealer / lender after the application is submitted. No SSN required, no impact on the customer's credit score.
+                                <span v-if="!creditConfigured" class="block mt-1 text-amber-700">⚠ 700Credit API key not configured — pulls will return mock scores. Set CREDIT700_API_KEY in Settings.</span>
                             </div>
-                            <div v-if="d.credit_score" class="bg-white border-2 border-emerald-200 rounded-2xl p-6 text-center">
-                                <div class="text-6xl font-extrabold text-gray-900">{{ d.credit_score }}</div>
-                                <p class="text-sm text-gray-500 mt-1">Credit Score on file</p>
+
+                            <!-- Latest score banner -->
+                            <div v-if="latestPull || d.credit_score" class="bg-white border-2 border-emerald-200 rounded-2xl p-6 text-center">
+                                <div class="text-6xl font-extrabold text-gray-900">{{ latestPull?.credit_score || d.credit_score }}</div>
+                                <p class="text-sm text-gray-500 mt-1">
+                                    Latest credit score
+                                    <span v-if="latestPull"> · {{ latestPull.bureau }} {{ latestPull.credit_score_model }} · {{ new Date(latestPull.created_at).toLocaleDateString() }}</span>
+                                </p>
+                                <p v-if="latestPull?.credit_tier" class="text-xs text-gray-500 mt-1 capitalize">Tier: {{ latestPull.credit_tier?.replace('_', ' ') }}</p>
                             </div>
-                            <p v-else class="text-center text-sm text-gray-400 py-6">No credit score on file. Click "+ New Credit Pull" to run a soft pull (no SSN, no impact).</p>
+                            <p v-else class="text-center text-sm text-gray-400 py-6">No credit score on file yet.</p>
+
+                            <!-- Inline pull button + history -->
+                            <div class="bg-white border rounded-xl p-5">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h4 class="font-semibold text-sm">Run a soft pull for {{ d.customer?.first_name }} {{ d.customer?.last_name }}</h4>
+                                    <button @click="runCreditPull" :disabled="creditPullForm.processing"
+                                            class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50">
+                                        {{ creditPullForm.processing ? 'Pulling…' : '🔍 Run Soft Pull' }}
+                                    </button>
+                                </div>
+                                <p class="text-xs text-gray-500">Uses customer's name + DOB + address on file. Result is cached for 30 days.</p>
+                            </div>
+
+                            <!-- Pull history -->
+                            <div v-if="creditPulls?.length" class="bg-white border rounded-xl overflow-hidden">
+                                <header class="p-4 border-b">
+                                    <h4 class="font-semibold text-sm">Pull history ({{ creditPulls.length }})</h4>
+                                </header>
+                                <table class="min-w-full text-sm">
+                                    <thead class="bg-gray-50 text-xs uppercase text-gray-500"><tr>
+                                        <th class="px-3 py-2 text-left">Date</th>
+                                        <th class="px-3 py-2 text-center">Score</th>
+                                        <th class="px-3 py-2 text-left">Bureau</th>
+                                        <th class="px-3 py-2 text-left">Tier</th>
+                                        <th class="px-3 py-2 text-left">By</th>
+                                    </tr></thead>
+                                    <tbody class="divide-y">
+                                        <tr v-for="p in creditPulls" :key="p.id">
+                                            <td class="px-3 py-2 text-xs">{{ new Date(p.created_at).toLocaleDateString() }}</td>
+                                            <td class="px-3 py-2 text-center font-bold">{{ p.credit_score || '—' }}</td>
+                                            <td class="px-3 py-2 text-xs uppercase">{{ p.bureau }}</td>
+                                            <td class="px-3 py-2 text-xs capitalize">{{ p.credit_tier?.replace('_', ' ') || '—' }}</td>
+                                            <td class="px-3 py-2 text-xs text-gray-500">{{ p.pulled_by_user?.name || '—' }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
 
                         <!-- Summary Tab -->

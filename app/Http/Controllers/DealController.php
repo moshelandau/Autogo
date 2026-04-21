@@ -66,11 +66,62 @@ class DealController extends Controller
     {
         $deal->load(['customer', 'salesperson', 'lender', 'quotes.lender', 'tasks', 'documents', 'dealNotes.user']);
 
+        // Credit-pull history for this deal's customer (most-recent first)
+        $creditPulls = $deal->customer
+            ? \App\Models\CreditPull::where('customer_id', $deal->customer_id)
+                ->with('pulledByUser:id,name')
+                ->orderByDesc('created_at')
+                ->limit(20)
+                ->get()
+            : collect();
+
         return Inertia::render('Leasing/Deals/Show', [
             'deal' => $deal,
             'lenders' => Lender::active()->get(),
             'inspectionComparison' => null,
+            'creditPulls' => $creditPulls,
+            'creditConfigured' => !empty(config('services.credit700.api_key')),
         ]);
+    }
+
+    /**
+     * Run a soft credit pull inline from the deal's Credit tab.
+     * Saves the pull, attaches it to this deal + customer, refreshes the score on the deal.
+     */
+    public function pullCredit(Request $request, Deal $deal, \App\Services\Credit700Service $credit)
+    {
+        if (!$deal->customer) abort(422, 'Deal has no customer');
+
+        $c = $deal->customer;
+        $pull = \App\Models\CreditPull::create([
+            'customer_id'        => $c->id,
+            'deal_id'            => $deal->id,
+            'type'               => 'soft',
+            'first_name'         => $c->first_name,
+            'last_name'          => $c->last_name,
+            'date_of_birth'      => $c->date_of_birth,
+            'address'            => $c->address,
+            'city'               => $c->city,
+            'state'              => $c->state,
+            'zip'                => $c->zip,
+            'pulled_by'          => auth()->id(),
+            'permissible_purpose'=> 'prequalification',
+            'ip_address'         => $request->ip(),
+            'status'             => 'pending',
+        ]);
+
+        $result = $credit->softPull($pull);
+
+        if (!($result['success'] ?? false)) {
+            return back()->with('error', 'Credit pull failed: ' . ($result['error'] ?? 'Unknown error'));
+        }
+
+        // Cache the score on the deal for quick display
+        $deal->update(['credit_score' => $result['score']]);
+
+        $msg = "Soft pull complete — Score: {$result['score']}";
+        if ($result['mock'] ?? false) $msg .= ' (mock — set CREDIT700_API_KEY for real pulls)';
+        return back()->with('success', $msg);
     }
 
     public function update(Request $request, Deal $deal)

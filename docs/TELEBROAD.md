@@ -28,14 +28,34 @@ Telebroad publishes a REST API documented at their help-desk article on `helpdes
 | **Pull call history into `communication_logs`** | ✅ yes | Scheduled `GET /call/history` → insert rows |
 | **Attach call recordings to a rental/claim** | ✅ yes | `GET /call/recording` by call id |
 | **Auto-match inbound caller-ID to customer on screen pop** | 🟡 possible | Requires webhooks OR polling `GET /active/calls` — not yet verified whether webhooks are supported |
-| **Browser softphone (click-to-call from laptop audio)** | ❌ **not feasible with documented APIs** | Telebroad's public docs do NOT publish a WebRTC/SIP-over-WebSocket endpoint or JavaScript SDK. Ops must use their desk phone / Telebroad's own app. |
+| **Desktop softphone (Zoiper / Linphone / Bria) registered to your Telebroad line** | ✅ **yes** | See "Softphone (SIP)" below |
+| **Browser softphone (WebRTC inside AutoGo)** | 🟡 **uncertain** | See "Browser softphone (WebRTC)" below |
 
-## ❌ Not verified / not available
+## ✅ Softphone (SIP) — verified from helpdesk article 4000142010
 
-- **WebRTC SIP-over-WebSocket (WSS) URL** — not documented on public pages
-- **JavaScript SDK for browser phone** — none published
-- **Auth method** — not specified on the help-desk index page; probably HTTP Basic or token — **need a working account to confirm**
-- **Exact base URL of the REST API** — we have the path names but not the host. Our current config has `https://webserv.telebroad.com/api/teleconsole/rest` as a guess — **this needs to be confirmed with Telebroad support or by sniffing a real API call**.
+Telebroad publishes settings to register a SIP softphone (Zoiper, Linphone, Bria, etc.):
+
+- **Transport:** SIP **TLS** (recommended)
+- **Username:** the PBX extension number (e.g. `113842`) — same as the extension you'd dial internally
+- **Authentication Username:** not needed
+- **Outbound Proxy:** not needed
+- **SIP server / domain:** **fetched via `GET /myProfile` REST call** — Telebroad doesn't publish a single fixed hostname; the per-account server is returned by that API
+- **Password:** the SIP password from the same `/myProfile` response
+
+**Conclusion:** A workstation softphone (Zoiper/Linphone/Bria) is fully supported and easy to set up.
+
+## 🟡 Browser softphone (WebRTC inside AutoGo) — still unconfirmed
+
+- SIP TLS is what desktop softphones speak. Browsers cannot make raw SIP TLS — they need **SIP-over-WebSocket (WSS)**.
+- The Telebroad help articles surfaced so far do NOT mention WSS, WebRTC, STUN/TURN, or a browser softphone SDK.
+- **To confirm:** ask Telebroad support directly *"Do you provide a SIP-over-WebSocket endpoint for browser softphones (WebRTC)? If yes, what's the WSS URL and any STUN/TURN config?"*
+  - If **yes** → we build a JsSIP / SIP.js softphone widget in AutoGo
+  - If **no** → operators install a desktop softphone, AND AutoGo's REST-based click-to-call (`POST /send/call`) handles browser-initiated calls (rings the desktop softphone, then bridges to the customer)
+
+## ❌ Still not verified for our REST API code
+
+- **Auth method** — not specified on the help-desk index. Likely the SIP credentials, or a separate API token issued from `GET /myProfile` — **need a real test call to confirm**.
+- **Exact base URL of the REST API** — we have endpoint paths (`/myProfile`, `/send/call`, etc.) but not the host. Current config guesses `https://webserv.telebroad.com/api/teleconsole/rest`. **Needs confirmation.**
 
 ## 🟡 Current AutoGo code
 
