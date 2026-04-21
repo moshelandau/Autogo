@@ -34,11 +34,15 @@ class HandleInertiaRequests extends Middleware
         $user = $request->user();
         if (!$user) return 0;
         try {
+            // Count = messages assigned to me OR unassigned (so unclaimed messages
+            // still ping everyone until someone takes ownership)
             return \App\Models\CommunicationLog::query()
                 ->where('channel', 'sms')
                 ->where('direction', 'inbound')
                 ->where('status', 'received')
-                ->where('assigned_to', $user->id)
+                ->where(function ($q) use ($user) {
+                    $q->where('assigned_to', $user->id)->orWhereNull('assigned_to');
+                })
                 ->count();
         } catch (\Throwable) {
             return 0;
