@@ -59,7 +59,9 @@ class SettingController extends Controller
             return response()->json(match ($integration) {
                 'telebroad' => $this->testTelebroad($request),
                 'twilio'    => $this->testTwilio($request),
-                'sola'      => $this->testSola($request),
+                'sola'              => $this->testSola($request),
+                'sola_autogo'       => $this->testSolaAccount($request, 'autogo'),
+                'sola_high_rental'  => $this->testSolaAccount($request, 'high_rental'),
                 'credit700' => $this->testCredit700($request),
                 'asana'     => $this->testAsana($request),
                 'hq_rentals'=> $this->testHqRentals($request),
@@ -110,16 +112,54 @@ class SettingController extends Controller
 
     private function testSola(Request $r): array
     {
-        $key = $r->input('api_key') ?: config('services.sola.api_key');
-        $env = $r->input('env')     ?: config('services.sola.env', 'sandbox');
-        if (!$key) return ['ok' => false, 'message' => 'Sola API key required'];
+        // Generic Sola test (kept for backward compat) — defaults to AutoGo account.
+        return $this->testSolaAccount($r, 'autogo');
+    }
 
-        $base = $env === 'live' ? 'https://api.sola-payments.com' : 'https://sandbox.sola-payments.com';
-        $resp = Http::withToken($key)->acceptJson()->get("{$base}/v1/ping");
+    /**
+     * Test a specific Sola merchant. We try a series of plausible endpoints
+     * and report exactly which one succeeded so the operator can confirm setup.
+     */
+    private function testSolaAccount(Request $r, string $account): array
+    {
+        $key  = $r->input('api_key');
+        $env  = $r->input('env')      ?: config('services.sola.env', 'sandbox');
+        $base = $r->input('api_base') ?: config('services.sola.api_base');
 
-        return $resp->successful()
-            ? ['ok' => true,  'message' => "Sola Payments {$env} reachable."]
-            : ['ok' => false, 'message' => 'Sola rejected key (HTTP ' . $resp->status() . '). NOTE: confirm Sola endpoint URL — this is a placeholder.'];
+        if (!$key) return ['ok' => false, 'message' => 'API key for ' . ($account === 'high_rental' ? 'High Car Rental' : 'AutoGo') . ' is empty.'];
+
+        $candidates = $base
+            ? [$base]
+            : ($env === 'live'
+                ? ['https://api.sola.com', 'https://gateway.solapayments.com', 'https://api.sola-payments.com']
+                : ['https://sandbox.sola.com', 'https://sandbox-api.sola.com', 'https://sandbox.sola-payments.com']);
+
+        $tried = [];
+        foreach ($candidates as $b) {
+            try {
+                $resp = Http::withToken($key)->acceptJson()->timeout(8)->get(rtrim($b, '/').'/v1/me');
+                if ($resp->successful()) {
+                    return [
+                        'ok' => true,
+                        'message' => "✓ ".ucfirst(str_replace('_',' ',$account))." OK · base: $b · status ".$resp->status(),
+                    ];
+                }
+                if ($resp->status() === 401 || $resp->status() === 403) {
+                    return [
+                        'ok' => false,
+                        'message' => "✗ ".ucfirst(str_replace('_',' ',$account))." key REJECTED (HTTP ".$resp->status().") at $b — endpoint reachable but the key is wrong.",
+                    ];
+                }
+                $tried[] = "$b → HTTP ".$resp->status();
+            } catch (\Throwable $e) {
+                $tried[] = "$b → ".substr($e->getMessage(), 0, 60);
+            }
+        }
+
+        return [
+            'ok' => false,
+            'message' => "Could not reach any Sola endpoint. Tried: ".implode(' · ', $tried).". Set the correct base URL in the field above (ask Sola support for it).",
+        ];
     }
 
     private function testCredit700(Request $r): array

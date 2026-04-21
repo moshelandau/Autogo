@@ -36,10 +36,10 @@ return [
     ],
 
     'sola' => [
-        'api_key'    => env('SOLA_API_KEY'),
-        'merchant_id'=> env('SOLA_MERCHANT_ID'),
-        'env'        => env('SOLA_ENV', 'sandbox'), // sandbox | live
-        'webhook_secret' => env('SOLA_WEBHOOK_SECRET'),
+        'api_key'        => env('SOLA_API_KEY'),                        // AutoGo merchant
+        'webhook_secret' => env('SOLA_WEBHOOK_SECRET'),                 // High Car Rental merchant (re-purposed slot)
+        'env'            => env('SOLA_ENV', 'sandbox'),                 // sandbox | live
+        'api_base'       => env('SOLA_API_BASE'),                       // optional override for API base URL
     ],
 
     'asana' => [

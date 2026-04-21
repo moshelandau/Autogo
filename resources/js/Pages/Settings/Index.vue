@@ -58,14 +58,16 @@ const sections = [
         id: 'sola',
         title: 'Sola Payments — Two Accounts',
         icon: '💳',
-        desc: 'We keep two Sola merchants: AutoGo (lease/finance/body/tow) + High Car Rental (rentals + $250 security holds). Because Sola\'s UI shows only one key slot, we reuse the "Webhook secret" field as the High Rental API key. Hold-auths ALWAYS go to High Rental; final charges prompt operator to pick AutoGo or High Rental.',
+        desc: 'We keep two Sola merchants: AutoGo (lease/finance/body/tow) + High Car Rental (rentals + $250 security holds). Hold-auths ALWAYS go to High Rental; final charges prompt operator to pick. Use the per-account Test buttons below.',
         envFlag: 'sola',
-        testKey: 'sola',
+        // No top-level testKey — replaced with per-account tests below
         fields: [
             { key: 'sola_env',            label: 'Environment',             type: 'select', options: ['sandbox','live'] },
-            { key: 'sola_api_key',        label: 'AutoGo API key',          type: 'password' },
-            { key: 'sola_webhook_secret', label: 'High Car Rental API key', type: 'password' },
-            { key: 'sola_merchant_id',    label: 'AutoGo Merchant ID',      type: 'text' },
+            { key: 'sola_api_base',       label: 'API Base URL (optional)', type: 'text', placeholder: 'https://api.sola.com (or your provided URL)' },
+        ],
+        subTests: [
+            { id: 'sola_autogo',     label: 'Test AutoGo',         keyField: 'sola_api_key',        labelText: 'AutoGo API key' },
+            { id: 'sola_high_rental',label: 'Test High Car Rental',keyField: 'sola_webhook_secret', labelText: 'High Car Rental API key' },
         ],
     },
     {
@@ -239,7 +241,6 @@ const runTest = async (section) => {
     if (!section.testKey) return;
     testing[section.id] = true;
     testResults[section.id] = null;
-    // Send any modified field values as overrides so user can test before saving
     const overrides = {};
     section.fields.forEach(f => { overrides[f.key.replace(`${section.id}_`, '')] = model[f.key]; });
     try {
@@ -249,6 +250,24 @@ const runTest = async (section) => {
         testResults[section.id] = { ok: false, message: e.response?.data?.message || e.message };
     } finally {
         testing[section.id] = false;
+    }
+};
+
+// Per-account sub-test (e.g. Sola AutoGo / Sola High Rental)
+const runSubTest = async (subTestId, keyField) => {
+    testing[subTestId] = true;
+    testResults[subTestId] = null;
+    try {
+        const { data } = await axios.post(route('settings.test', subTestId), {
+            api_key: model[keyField],
+            env:     model['sola_env'],
+            api_base: model['sola_api_base'],
+        });
+        testResults[subTestId] = data;
+    } catch (e) {
+        testResults[subTestId] = { ok: false, message: e.response?.data?.message || e.message };
+    } finally {
+        testing[subTestId] = false;
     }
 };
 
@@ -328,6 +347,28 @@ const scrollTo = (id) => {
                                 <input v-else v-model="model[f.key]" :type="f.type" :placeholder="f.placeholder || ''"
                                     class="w-full border-gray-300 rounded-lg text-sm"
                                     autocomplete="off" />
+                            </div>
+                        </div>
+
+                        <!-- Per-account sub-tests (e.g. Sola has AutoGo + High Rental) -->
+                        <div v-if="s.subTests?.length" class="mt-5 space-y-3">
+                            <div v-for="sub in s.subTests" :key="sub.id" class="border-2 border-gray-200 rounded-lg p-3">
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="flex-1">
+                                        <label class="block text-xs font-semibold text-gray-700 mb-1">{{ sub.labelText }}</label>
+                                        <input v-model="model[sub.keyField]" type="password" placeholder="API key"
+                                               class="w-full border-gray-300 rounded-lg text-sm font-mono" autocomplete="off" />
+                                    </div>
+                                    <button @click="runSubTest(sub.id, sub.keyField)" :disabled="testing[sub.id]"
+                                            class="self-end px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap">
+                                        {{ testing[sub.id] ? 'Testing…' : sub.label }}
+                                    </button>
+                                </div>
+                                <div v-if="testResults[sub.id]" class="mt-2 px-3 py-2 rounded-lg text-xs"
+                                     :class="testResults[sub.id].ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'">
+                                    <strong>{{ testResults[sub.id].ok ? '✓' : '✗' }}</strong>
+                                    {{ testResults[sub.id].message }}
+                                </div>
                             </div>
                         </div>
                     </section>
