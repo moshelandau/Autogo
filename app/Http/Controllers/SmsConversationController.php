@@ -125,6 +125,18 @@ class SmsConversationController extends Controller
     {
         $last10 = substr(preg_replace('/\D/', '', $phone), -10);
 
+        // Auto-mark inbound 'received' as 'read' when the thread is opened.
+        // Skip on Inertia polling (partial reloads) so newly arrived messages
+        // visibly show as 'unread' until the user actually opens/refreshes.
+        if (!request()->header('X-Inertia-Partial-Data')) {
+            CommunicationLog::query()
+                ->where('channel', 'sms')
+                ->where('direction', 'inbound')
+                ->where('status', 'received')
+                ->where('from', 'ilike', "%{$last10}")
+                ->update(['status' => 'read']);
+        }
+
         $messages = CommunicationLog::query()
             ->where('channel', 'sms')
             ->where(function ($q) use ($last10) {

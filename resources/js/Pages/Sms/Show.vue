@@ -1,7 +1,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, useForm, router } from '@inertiajs/vue3';
-import { ref, nextTick, onMounted, onBeforeUnmount, watch } from 'vue';
+import { ref, nextTick, onMounted, onBeforeUnmount, watch, computed } from 'vue';
 
 const props = defineProps({
     phone:    { type: String, required: true },
@@ -27,7 +27,7 @@ onMounted(scrollBottom);
 let pollTimer = null;
 const poll = () => {
     router.reload({
-        only: ['messages'],
+        only: ['messages', 'smsUnreadCount'],
         preserveScroll: true,
         preserveState: true,
     });
@@ -92,14 +92,13 @@ const assign = () => {
 const setStatus = (msgId, status) => {
     router.post(route('sms.mark-status', msgId), { status }, { preserveScroll: true });
 };
-const markAllRead = () => {
-    const unread = (props.messages || []).filter(m => m.direction === 'inbound' && m.status === 'received');
-    Promise.all(unread.map(m => fetch(route('sms.mark-status', m.id), {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content },
-        body: JSON.stringify({ status: 'read' }),
-    }))).then(() => router.reload({ only: ['messages'], preserveScroll: true }));
-};
+// "Mark unread" applies to the most recent inbound message that is currently read.
+// Useful for flagging a thread for whoever's assigned to come back to it.
+const lastReadInbound = computed(() => {
+    const inbound = (props.messages || []).filter(m => m.direction === 'inbound');
+    const last = inbound[inbound.length - 1];
+    return last && last.status !== 'received' ? last : null;
+});
 
 const fmt = (iso) => {
     if (!iso) return '';
@@ -117,7 +116,8 @@ const fmt = (iso) => {
                 </h2>
                 <span v-if="customer" class="text-sm text-gray-500">{{ phone }}</span>
                 <div class="ml-auto flex items-center gap-2">
-                    <button @click="markAllRead" class="text-xs text-indigo-600 hover:text-indigo-800 underline">Mark all read</button>
+                    <button v-if="lastReadInbound" @click="setStatus(lastReadInbound.id, 'received')"
+                        class="text-xs text-orange-600 hover:text-orange-800 underline">Mark unread</button>
                     <label class="text-xs text-gray-500">Assigned to:</label>
                     <select v-model="assignedToLocal" @change="assign"
                         class="text-sm border-gray-300 rounded-md py-1 px-2 focus:border-indigo-500 focus:ring-indigo-500">
@@ -159,11 +159,8 @@ const fmt = (iso) => {
                                         :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
                                         <span>{{ fmt(m.sent_at || m.created_at) }}</span>
                                         <span v-if="m.direction === 'outbound'">· {{ m.status }}</span>
-                                        <button v-if="m.direction === 'inbound'"
-                                            @click="setStatus(m.id, m.status === 'received' ? 'read' : 'received')"
-                                            class="opacity-0 group-hover:opacity-100 transition text-indigo-600 hover:text-indigo-800 underline">
-                                            {{ m.status === 'received' ? 'mark read' : 'mark unread' }}
-                                        </button>
+                                        <span v-if="m.direction === 'inbound' && m.status === 'received'"
+                                            class="text-orange-500 font-semibold">· unread</span>
                                     </div>
                                 </div>
                             </div>

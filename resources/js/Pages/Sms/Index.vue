@@ -13,7 +13,7 @@ const submit = () => router.get(route('sms.index'), { search: search.value }, { 
 
 // Live updates — poll every 5s
 let pollTimer = null;
-const poll = () => router.reload({ only: ['conversations'], preserveScroll: true, preserveState: true });
+const poll = () => router.reload({ only: ['conversations', 'smsUnreadCount'], preserveScroll: true, preserveState: true });
 onMounted(() => { pollTimer = setInterval(poll, 3000); });
 onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
 
