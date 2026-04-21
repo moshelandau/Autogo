@@ -9,11 +9,29 @@ const props = defineProps({
 });
 
 const search = ref(props.filters.search || '');
-const submit = () => router.get(route('sms.index'), { search: search.value }, { preserveState: true });
 
-// Live updates — poll every 5s
+// Debounced live search as you type
+let searchTimer = null;
+const submit = () => {
+    router.get(route('sms.index'), { search: search.value }, {
+        preserveState: true, preserveScroll: true, replace: true,
+    });
+};
+const onSearchInput = () => {
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(submit, 300);
+};
+
+// Live updates — poll every 3s (preserve current search)
 let pollTimer = null;
-const poll = () => router.reload({ only: ['conversations', 'smsUnreadCount'], preserveScroll: true, preserveState: true });
+const poll = () => {
+    router.get(route('sms.index'), { search: search.value }, {
+        only: ['conversations', 'smsUnreadCount'],
+        preserveScroll: true,
+        preserveState: true,
+        replace: true,
+    });
+};
 onMounted(() => { pollTimer = setInterval(poll, 3000); });
 onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
 
@@ -38,7 +56,7 @@ const fmtTime = (iso) => {
             <div class="max-w-5xl mx-auto sm:px-6 lg:px-8">
                 <div class="bg-white shadow-sm rounded-lg overflow-hidden">
                     <div class="p-4 border-b">
-                        <input v-model="search" @keydown.enter="submit" type="search"
+                        <input v-model="search" @input="onSearchInput" type="search"
                             placeholder="Search messages, numbers, names..."
                             class="w-full border-gray-300 rounded-md text-sm focus:border-indigo-500 focus:ring-indigo-500" />
                     </div>

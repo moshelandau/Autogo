@@ -35,10 +35,20 @@ class SmsConversationController extends Controller
                 'created_at',
             ])
             ->when($search !== '', function ($q) use ($search) {
-                $q->where(function ($w) use ($search) {
+                $digits = preg_replace('/\D/', '', $search);
+                $q->where(function ($w) use ($search, $digits) {
                     $w->where('from', 'ilike', "%{$search}%")
                       ->orWhere('to', 'ilike', "%{$search}%")
                       ->orWhere('body', 'ilike', "%{$search}%");
+                    if ($digits !== '') {
+                        $w->orWhere('from', 'ilike', "%{$digits}%")
+                          ->orWhere('to',   'ilike', "%{$digits}%");
+                    }
+                    // Match by linked customer name
+                    $w->orWhereHas('customer', function ($cq) use ($search) {
+                        $cq->where('first_name', 'ilike', "%{$search}%")
+                           ->orWhere('last_name', 'ilike', "%{$search}%");
+                    });
                 });
             })
             ->when($mine, fn ($q) => $q->where('assigned_to', $request->user()->id))
