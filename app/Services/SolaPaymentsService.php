@@ -93,7 +93,7 @@ class SolaPaymentsService
         if (!$this->isConfigured($account)) return $this->mockAuth($amount, $account);
 
         $result = $this->call($account, array_merge([
-            'xCommand'     => 'cc:auth',
+            'xCommand'     => 'cc:authonly',
             'xAmount'      => number_format($amount, 2, '.', ''),
             'xDescription' => $description ?? 'Rental security deposit',
         ], $this->cardFields($card)));
@@ -131,7 +131,7 @@ class SolaPaymentsService
         }
 
         $result = $this->call($account, [
-            'xCommand' => 'cc:voidrefund',
+            'xCommand' => 'cc:voidrelease',
             'xRefNum'  => $hold->sola_authorization_id,
         ]);
         if ($result['ok']) {
@@ -167,20 +167,25 @@ class SolaPaymentsService
             return ['ok' => false, 'message' => 'No xKey configured for ' . ($account === 'high_rental' ? 'High Car Rental' : 'AutoGo')];
         }
 
-        // cc:void with a garbage refnum — Cardknox will reject with xError but proves the xKey is valid
+        // Send cc:save with no card details. Cardknox will reject:
+        //  - bad xKey  → xError contains "key" / "authentication"
+        //  - good xKey → xError mentions missing card data (the auth itself was accepted)
         $r = $this->call($account, [
-            'xCommand' => 'report:txn',
-            'xBeginDate' => now()->subDay()->format('Y-m-d'),
-            'xEndDate'   => now()->format('Y-m-d'),
+            'xCommand' => 'cc:save',
         ]);
+        $d   = $r['data'] ?? [];
+        $err = strtolower((string)($d['xError'] ?? ''));
+        $name = $account === 'high_rental' ? 'High Car Rental' : 'AutoGo';
 
-        $d = $r['data'] ?? [];
-        $status = $d['xStatus'] ?? '';
-        if ($status === 'Approved' || stripos((string)($d['xError'] ?? ''), 'key') === false) {
-            $name = $account === 'high_rental' ? 'High Car Rental' : 'AutoGo';
-            return ['ok' => true, 'message' => "✓ Cardknox xKey for {$name} is valid · endpoint: ".self::ENDPOINT];
+        $isAuthFailure = str_contains($err, 'key')
+            || str_contains($err, 'authentication')
+            || str_contains($err, 'unauthorized')
+            || str_contains($err, 'invalid login');
+
+        if ($isAuthFailure) {
+            return ['ok' => false, 'message' => "✗ {$name} xKey rejected by Cardknox: " . ($d['xError'] ?? 'unknown')];
         }
-        return ['ok' => false, 'message' => 'xKey rejected by Cardknox: ' . ($d['xError'] ?? 'unknown')];
+        return ['ok' => true, 'message' => "✓ {$name} xKey accepted by Cardknox · endpoint: " . self::ENDPOINT];
     }
 
     /** Map our card dict to Cardknox field names. Supports token or raw PAN. */
