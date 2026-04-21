@@ -77,17 +77,28 @@ const fmtTime = (iso) => {
                                     {{ (c.customer_name || c.phone).charAt(0).toUpperCase() }}
                                 </div>
                                 <div class="flex-1 min-w-0">
-                                    <div class="flex items-baseline justify-between">
+                                    <div class="flex items-baseline justify-between gap-2">
                                         <p class="font-medium text-gray-900 truncate">
                                             {{ c.customer_name || c.phone }}
                                             <span v-if="c.customer_name" class="text-xs text-gray-400 font-normal ml-1">{{ c.phone }}</span>
                                         </p>
-                                        <span class="text-xs text-gray-500 ml-2">{{ fmtTime(c.last_at) }}</span>
+                                        <span class="text-xs text-gray-500 flex-shrink-0">{{ fmtTime(c.last_at) }}</span>
                                     </div>
-                                    <p class="text-sm text-gray-600 truncate mt-0.5">
-                                        <span v-if="c.last_dir === 'outbound'" class="text-gray-400">You: </span>
-                                        {{ c.last_body }}
-                                    </p>
+                                    <div class="flex items-center justify-between gap-2 mt-0.5">
+                                        <p class="text-sm text-gray-600 truncate">
+                                            <span v-if="c.last_dir === 'outbound'" class="text-gray-400">You: </span>
+                                            {{ c.last_body }}
+                                        </p>
+                                        <span v-if="c.assignee_name"
+                                            class="flex-shrink-0 inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-full">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                                            {{ c.assignee_name }}
+                                        </span>
+                                        <span v-else
+                                            class="flex-shrink-0 inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-gray-500 bg-gray-100 rounded-full">
+                                            Unassigned
+                                        </span>
+                                    </div>
                                 </div>
                                 <span v-if="c.unread_count > 0"
                                     class="ml-2 inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold text-white bg-green-500 rounded-full">
