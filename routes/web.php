@@ -13,6 +13,7 @@ use App\Http\Controllers\OfficeTaskController;
 use App\Http\Controllers\RentalDashboardController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\SettingController;
+use App\Http\Controllers\SmsController;
 use App\Http\Controllers\PermissionTypeController;
 use App\Http\Controllers\UserManagementController;
 use App\Http\Controllers\BusinessDocumentController;
@@ -92,6 +93,9 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 
         Route::get('calendar', [ReservationController::class, 'calendar'])->name('calendar');
     });
+
+    // ── SMS (Telebroad) ────────────────────────────────
+    Route::post('sms/send', [SmsController::class, 'send'])->name('sms.send');
 
     // ── Car Leasing / Financing Module ─────────────────
     Route::prefix('leasing')->name('leasing.')->group(function () {

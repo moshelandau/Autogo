@@ -1,6 +1,18 @@
 # Telebroad
 
-> **Status:** ❌ **not yet integrated.** This document describes only what's verified from Telebroad's public support pages. No code in AutoGo currently calls the Telebroad API; the `Settings → Telebroad` fields exist but the Test button is a stub.
+> **Status:** 🟡 **partially integrated** — outbound SMS via `POST /send/sms` is wired in (`SmsController` + `SmsButton.vue`); call/recording/history endpoints still stubbed. Base host is still **assumed** (`https://webserv.telebroad.com/api/teleconsole/rest`) — needs confirmation against a real auth pair.
+
+## ✅ Outbound SMS (built — needs live-credential test)
+
+- Endpoint: `POST /send/sms` — **VERIFIED** via [helpdesk article 4000110801](https://helpdesk.telebroad.com/support/solutions/articles/4000110801-post-send-sms)
+- Verified body params: `sms_line` (your Telebroad SMS line, E.164), `receiver` (recipient, E.164), `msgdata` (text body), optional `media` (JSON array, base64) for MMS
+- Auth: HTTP Basic (Telebroad username + password) — VERIFIED
+- Pricing reference: $0.0125 per SMS segment, $0.03 per MMS
+- AutoGo wiring:
+  - `App\Services\TelebroadService::sendSms($to, $message)`
+  - `POST /sms/send` route → `SmsController@send`
+  - `<SmsButton>` Vue component (Customer Show, Deal Show)
+  - Every send writes a row to `communication_logs` (channel=`sms`, direction=`outbound`)
 
 ## ✅ Verified facts
 

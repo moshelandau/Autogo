@@ -2,6 +2,7 @@
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, useForm, router } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
+import SmsButton from '@/Components/SmsButton.vue';
 
 const props = defineProps({
     deal: Object,
@@ -147,7 +148,10 @@ const saveCalcAsQuote = () => {
                     <div class="bg-white shadow-sm rounded-lg p-6">
                         <h3 class="text-sm font-medium text-gray-500 mb-3">Customer</h3>
                         <p class="font-bold text-lg">{{ d.customer?.first_name }} {{ d.customer?.last_name }}</p>
-                        <p class="text-sm text-gray-600">{{ d.customer?.phone }}</p>
+                        <p class="text-sm text-gray-600 flex items-center gap-2">
+                            <span>{{ d.customer?.phone }}</span>
+                            <SmsButton v-if="d.customer?.phone" :to="d.customer.phone" :customer-id="d.customer.id" subject-type="App\\Models\\Deal" :subject-id="d.id" label="SMS" />
+                        </p>
                         <p v-if="d.credit_score" class="text-sm text-gray-600">Score: {{ d.credit_score }}</p>
                     </div>
                     <div class="bg-white shadow-sm rounded-lg p-6">

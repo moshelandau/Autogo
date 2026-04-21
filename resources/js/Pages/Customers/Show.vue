@@ -2,6 +2,7 @@
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router, useForm } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
+import SmsButton from '@/Components/SmsButton.vue';
 
 const props = defineProps({
     customer: Object,
@@ -146,7 +147,13 @@ const kinds = [
                     <div>
                         <h3 class="text-sm font-semibold text-gray-700 mb-3">Contact</h3>
                         <dl class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                            <div><dt class="text-gray-500">Phone</dt><dd class="font-medium">{{ customer.phone || '-' }}</dd></div>
+                            <div>
+                                <dt class="text-gray-500">Phone</dt>
+                                <dd class="font-medium flex items-center gap-2">
+                                    <span>{{ customer.phone || '-' }}</span>
+                                    <SmsButton v-if="customer.phone" :to="customer.phone" :customer-id="customer.id" subject-type="App\\Models\\Customer" :subject-id="customer.id" label="SMS" />
+                                </dd>
+                            </div>
                             <div><dt class="text-gray-500">Email</dt><dd class="font-medium">{{ customer.email || '-' }}</dd></div>
                             <div class="md:col-span-2"><dt class="text-gray-500">Address</dt>
                                 <dd class="font-medium">{{ customer.address || '-' }}, {{ customer.city }} {{ customer.state }} {{ customer.zip }}</dd></div>
