@@ -58,6 +58,9 @@ const filteredTimeline = computed(() => {
 const messages = ref([]);
 const messagesLoading = ref(false);
 const msgScroll = ref(null);
+const smsStaff = ref([]);
+const smsAssignedTo = ref(null);
+const smsPhone = ref(props.customer.phone || '');
 const replyForm = useForm({
     to: props.customer.phone || '',
     message: '',
@@ -90,20 +93,43 @@ const beep = () => {
         new Notification('New SMS from ' + (props.customer?.first_name || 'customer'));
     }
 };
-const loadMessages = async () => {
+const loadMessages = async (isPoll = false) => {
     if (!props.customer.phone) return;
     if (messages.value.length === 0) messagesLoading.value = true;
     try {
-        const res = await fetch(route('sms.customer-thread', props.customer.id), { credentials: 'same-origin' });
+        const url = route('sms.customer-thread', props.customer.id) + (isPoll ? '?poll=1' : '');
+        const res = await fetch(url, { credentials: 'same-origin' });
         const data = await res.json();
         const next = data.messages || [];
         const newestInbound = Math.max(0, ...next.filter(m => m.direction === 'inbound').map(m => m.id));
         if (lastInboundId && newestInbound > lastInboundId) beep();
         lastInboundId = newestInbound;
         messages.value = next;
+        smsAssignedTo.value = data.assignedTo ?? null;
+        smsStaff.value = data.staff || [];
+        smsPhone.value = data.phone || props.customer.phone;
         nextTick(() => { if (msgScroll.value) msgScroll.value.scrollTop = msgScroll.value.scrollHeight; });
     } catch (e) { console.error(e); }
     messagesLoading.value = false;
+};
+const lastReadInboundMsg = computed(() => {
+    const inbound = messages.value.filter(m => m.direction === 'inbound');
+    const last = inbound[inbound.length - 1];
+    return last && last.status !== 'received' ? last : null;
+});
+const assignConversation = () => {
+    if (!smsPhone.value) return;
+    router.post(route('sms.assign', smsPhone.value), { user_id: smsAssignedTo.value || null }, {
+        preserveScroll: true,
+        onSuccess: () => loadMessages(true),
+    });
+};
+const markLastUnread = () => {
+    if (!lastReadInboundMsg.value) return;
+    router.post(route('sms.mark-status', lastReadInboundMsg.value.id), { status: 'received' }, {
+        preserveScroll: true,
+        // Redirects to /sms inbox by design — user is flagging for someone else
+    });
 };
 const sendReply = () => {
     if (!replyForm.message.trim()) return;
@@ -117,7 +143,7 @@ let msgPollTimer = null;
 watch(tab, (val) => {
     if (msgPollTimer) { clearInterval(msgPollTimer); msgPollTimer = null; }
     if (val === 'messages' && props.customer.phone) {
-        msgPollTimer = setInterval(loadMessages, 3000);
+        msgPollTimer = setInterval(() => loadMessages(true), 3000);
     }
 });
 onBeforeUnmount(() => { if (msgPollTimer) clearInterval(msgPollTimer); });
@@ -309,9 +335,19 @@ const kinds = [
                         No phone number on file — add one to send SMS.
                     </div>
                     <div v-else>
-                        <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center justify-between mb-3 gap-3 flex-wrap">
                             <h3 class="text-sm font-semibold text-gray-700">SMS thread with {{ customer.phone }}</h3>
-                            <Link :href="route('sms.show', customer.phone)" class="text-xs text-indigo-600 hover:text-indigo-800">Open full view →</Link>
+                            <div class="flex items-center gap-2 ml-auto">
+                                <label class="text-xs text-gray-500">Assigned to:</label>
+                                <select v-model="smsAssignedTo" @change="assignConversation"
+                                    class="text-xs border-gray-300 rounded-md py-1 px-2 focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option :value="null">— Unassigned —</option>
+                                    <option v-for="u in smsStaff" :key="u.id" :value="u.id">{{ u.name }}</option>
+                                </select>
+                                <button v-if="lastReadInboundMsg" @click="markLastUnread"
+                                    class="text-xs text-orange-600 hover:text-orange-800 underline">Mark unread</button>
+                                <Link :href="route('sms.show', customer.phone)" class="text-xs text-indigo-600 hover:text-indigo-800">Open full view →</Link>
+                            </div>
                         </div>
                         <div ref="msgScroll" class="border rounded-lg bg-gray-50 overflow-y-auto" style="height: calc(100vh - 420px); min-height: 320px">
                             <div class="min-h-full flex flex-col justify-end p-3 space-y-2">

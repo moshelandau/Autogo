@@ -173,13 +173,31 @@ class SmsConversationController extends Controller
      */
     public function customerThread(Customer $customer)
     {
+        // Auto-mark received -> read on first load (skip on polling partial reloads)
+        if (!request()->header('X-Inertia-Partial-Data') && !request()->boolean('poll')) {
+            CommunicationLog::query()
+                ->where('channel', 'sms')
+                ->where('customer_id', $customer->id)
+                ->where('direction', 'inbound')
+                ->where('status', 'received')
+                ->update(['status' => 'read']);
+        }
+
         $messages = CommunicationLog::query()
             ->where('channel', 'sms')
             ->where('customer_id', $customer->id)
             ->orderBy('created_at')
-            ->get(['id', 'direction', 'from', 'to', 'body', 'attachments', 'status', 'sent_at', 'created_at']);
+            ->get(['id', 'direction', 'from', 'to', 'body', 'attachments', 'status', 'sent_at', 'created_at', 'assigned_to']);
 
-        return response()->json(['messages' => $messages]);
+        $assignedTo = $messages->reverse()->firstWhere('assigned_to', '!=', null)?->assigned_to;
+        $phone = $customer->phone;
+
+        return response()->json([
+            'messages'   => $messages,
+            'assignedTo' => $assignedTo,
+            'phone'      => $phone,
+            'staff'      => User::where('email', 'like', '%@autogoco.com')->orderBy('name')->get(['id', 'name']),
+        ]);
     }
 
     private function normalizePhone(string $phone): string
