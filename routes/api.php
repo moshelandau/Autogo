@@ -8,4 +8,6 @@ Route::get('/user', function (Request $request) {
 })->middleware('auth:sanctum');
 
 // Telebroad inbound SMS webhook (auth via shared-secret query param)
-Route::post('telebroad/webhook/sms', [\App\Http\Controllers\TelebroadWebhookController::class, 'sms']);
+// Accepts an optional trigger-name suffix (e.g. /Account-SMS) per Telebroad's URL convention.
+Route::post('telebroad/webhook/sms/{suffix?}', [\App\Http\Controllers\TelebroadWebhookController::class, 'sms'])
+    ->where('suffix', '.*');
