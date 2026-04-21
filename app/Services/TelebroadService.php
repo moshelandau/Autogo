@@ -56,7 +56,7 @@ class TelebroadService
             if ($response->successful() && !$hasBodyError) {
                 return [
                     'success' => true,
-                    'external_id' => $response->json('message_id') ?? $response->json('id'),
+                    'external_id' => $response->json('result') ?? $response->json('message_id') ?? $response->json('id'),
                     'response' => $responseData,
                 ];
             }
