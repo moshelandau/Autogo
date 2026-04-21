@@ -106,6 +106,18 @@ class TelebroadWebhookController extends Controller
             $this->notifyStaff($log, $customer);
         }
 
+        // Hand off to the lease/rental SMS bot. If it replied, the conversation
+        // is bot-driven; staff still see everything in /sms but don't need to act.
+        if ($isInbound) {
+            try {
+                $bot = app(\App\Services\LeaseApplicationBot::class);
+                $mediaUrls = collect($mediaUrls ?? [])->all(); // already parsed above
+                $bot->handleInbound((string) $from, (string) $body, $customer, $mediaUrls);
+            } catch (\Throwable $e) {
+                Log::warning('Bot handleInbound failed', ['error' => $e->getMessage()]);
+            }
+        }
+
         return response()->json(['ok' => true, 'id' => $log->id]);
     }
 

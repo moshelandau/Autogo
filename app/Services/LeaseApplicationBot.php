@@ -1,0 +1,538 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Services;
+
+use App\Models\CommunicationLog;
+use App\Models\Customer;
+use App\Models\CustomerDocument;
+use App\Models\Deal;
+use App\Models\LeaseApplicationSession;
+use Anthropic\Anthropic;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
+/**
+ * SMS-driven bot. Handles two flows:
+ *
+ *   LEASE  — verified field set from `AutoGo Leasing Application_260419.pdf`
+ *   RENTAL — verified field set from rental agreement (docs/RENTAL_AGREEMENT.md):
+ *            license image + insurance check + dates + vehicle preference.
+ *
+ * Triggers (case-insensitive):
+ *   "lease" | "finance" | "leasing" | "apply"   -> LEASE
+ *   "rent"  | "rental"                          -> RENTAL
+ *   Brand-new phone with anything else          -> ask which flow
+ *
+ * "STOP" aborts at any time.
+ */
+class LeaseApplicationBot
+{
+    public const STEPS_LEASE = [
+        ['key' => 'first_name',        'prompt' => "Great — let's start your lease/finance application. What's your FIRST name?"],
+        ['key' => 'last_name',         'prompt' => "Thanks {first_name}. And your LAST name?"],
+        ['key' => 'date_of_birth',     'prompt' => "Date of birth? (MM/DD/YYYY)"],
+        ['key' => 'ssn',               'prompt' => "Your full SSN? (XXX-XX-XXXX). Used only for the credit application."],
+        ['key' => 'address',           'prompt' => "Current home street address?"],
+        ['key' => 'city',              'prompt' => "City?"],
+        ['key' => 'state',             'prompt' => "State? (2-letter, e.g. NY)"],
+        ['key' => 'zip',               'prompt' => "ZIP code?"],
+        ['key' => 'own_or_rent',       'prompt' => "Do you OWN or RENT your home? (own / rent)"],
+        ['key' => 'monthly_housing',   'prompt' => "Monthly mortgage/rent payment? ($)"],
+        ['key' => 'years_at_address',  'prompt' => "How many years at this address?"],
+        ['key' => 'email',             'prompt' => "Email address?"],
+        ['key' => 'employer',          'prompt' => "Current employer name?"],
+        ['key' => 'employer_address',  'prompt' => "Employer street address?"],
+        ['key' => 'employer_city',     'prompt' => "Employer city?"],
+        ['key' => 'employer_state',    'prompt' => "Employer state? (2-letter)"],
+        ['key' => 'employer_zip',      'prompt' => "Employer ZIP?"],
+        ['key' => 'employer_phone',    'prompt' => "Employer phone?"],
+        ['key' => 'position',          'prompt' => "Your position / job title?"],
+        ['key' => 'years_employed',    'prompt' => "Years employed there?"],
+        ['key' => 'annual_income',     'prompt' => "Annual income? ($)"],
+        ['key' => 'has_coapplicant',   'prompt' => "Do you have a CO-APPLICANT? (yes / no)"],
+
+        ['key' => 'co_first_name',       'prompt' => "Co-applicant FIRST name?",        'requires' => 'has_coapplicant'],
+        ['key' => 'co_last_name',        'prompt' => "Co-applicant LAST name?",         'requires' => 'has_coapplicant'],
+        ['key' => 'co_date_of_birth',    'prompt' => "Co-applicant date of birth? (MM/DD/YYYY)", 'requires' => 'has_coapplicant'],
+        ['key' => 'co_ssn',              'prompt' => "Co-applicant SSN? (XXX-XX-XXXX)", 'requires' => 'has_coapplicant'],
+        ['key' => 'co_phone',            'prompt' => "Co-applicant phone?",             'requires' => 'has_coapplicant'],
+        ['key' => 'co_address',          'prompt' => "Co-applicant street address?",    'requires' => 'has_coapplicant'],
+        ['key' => 'co_city',             'prompt' => "Co-applicant city?",              'requires' => 'has_coapplicant'],
+        ['key' => 'co_state',            'prompt' => "Co-applicant state?",             'requires' => 'has_coapplicant'],
+        ['key' => 'co_zip',              'prompt' => "Co-applicant ZIP?",               'requires' => 'has_coapplicant'],
+        ['key' => 'co_own_or_rent',      'prompt' => "Co-applicant: own or rent?",      'requires' => 'has_coapplicant'],
+        ['key' => 'co_monthly_housing',  'prompt' => "Co-applicant monthly housing? ($)", 'requires' => 'has_coapplicant'],
+        ['key' => 'co_years_at_address', 'prompt' => "Co-applicant years at address?",  'requires' => 'has_coapplicant'],
+        ['key' => 'co_employer',         'prompt' => "Co-applicant employer?",          'requires' => 'has_coapplicant'],
+        ['key' => 'co_position',         'prompt' => "Co-applicant position?",          'requires' => 'has_coapplicant'],
+        ['key' => 'co_annual_income',    'prompt' => "Co-applicant annual income? ($)", 'requires' => 'has_coapplicant'],
+
+        ['key' => 'vehicle_interest', 'prompt' => "Last question — what vehicle are you interested in? (year/make/model, or just describe)"],
+        ['key' => '__done__',         'prompt' => "All set ✅ — your application is in. A team member will reach out with options shortly. Reply STOP to opt out."],
+    ];
+
+    public const STEPS_RENTAL = [
+        ['key' => 'first_name',        'prompt' => "Great — let's set up your rental. What's your FIRST name?"],
+        ['key' => 'last_name',         'prompt' => "Thanks {first_name}. LAST name?"],
+        ['key' => 'email',             'prompt' => "Email address?"],
+        ['key' => 'date_of_birth',     'prompt' => "Date of birth? (MM/DD/YYYY) — required for the rental agreement."],
+        ['key' => 'license_image',     'prompt' => "Please TEXT a photo of the FRONT of your driver's license. (We'll auto-read your name, DL #, expiration, and address.)", 'expects' => 'image'],
+        ['key' => 'address_confirmation', 'prompt' => "Got your license. Is this address correct? Reply YES, or text the correct address."],
+        ['key' => 'has_insurance',     'prompt' => "Do you have your own auto insurance? (yes / no)"],
+        ['key' => 'insurance_company', 'prompt' => "Insurance company name?", 'requires' => 'has_insurance'],
+        ['key' => 'insurance_policy',  'prompt' => "Policy number?",          'requires' => 'has_insurance'],
+        ['key' => 'pickup_date',       'prompt' => "Pick-up date? (MM/DD/YYYY)"],
+        ['key' => 'pickup_location',   'prompt' => "Pick up at MONROE or MONSEY?"],
+        ['key' => 'return_date',       'prompt' => "Return date? (MM/DD/YYYY)"],
+        ['key' => 'vehicle_preference','prompt' => "Any vehicle preference? (e.g. SUV, sedan, minivan — or 'whatever's available')"],
+        ['key' => '__done__',          'prompt' => "All set ✅ — your rental request is in. A team member will text you to confirm a vehicle and total. Reply STOP to opt out."],
+    ];
+
+    public const TRIGGERS_LEASE  = ['apply', 'lease', 'leasing', 'finance', 'application'];
+    public const TRIGGERS_RENTAL = ['rent', 'rental', 'rentals', 'hire'];
+    public const STOP_WORDS      = ['stop', 'cancel', 'quit', 'unsubscribe'];
+
+    public function __construct(private readonly TelebroadService $telebroad) {}
+
+    /**
+     * @param array $mediaUrls Image URLs from inbound MMS (parsed from Telebroad webhook)
+     * @return bool true if a reply was sent
+     */
+    public function handleInbound(string $fromPhone, string $body, ?Customer $customer, array $mediaUrls = []): bool
+    {
+        $text = strtolower(trim($body));
+        $session = LeaseApplicationSession::where('phone', $fromPhone)
+            ->whereNull('completed_at')->whereNull('aborted_at')
+            ->latest('id')->first();
+
+        // STOP at any time
+        if ($session && in_array($text, self::STOP_WORDS, true)) {
+            $session->update(['aborted_at' => now()]);
+            $this->reply($fromPhone, "OK — cancelled. Reply APPLY (lease) or RENT (rental) to start over.");
+            return true;
+        }
+
+        if ($session) {
+            return $this->advanceSession($session, $body, $mediaUrls);
+        }
+
+        // Decide intent
+        $isUnknown = $customer === null;
+        $wantsLease  = $this->matchesAny($text, self::TRIGGERS_LEASE);
+        $wantsRental = $this->matchesAny($text, self::TRIGGERS_RENTAL);
+
+        if (!$isUnknown && !$wantsLease && !$wantsRental) {
+            // Known customer chatting normally — leave for staff
+            return false;
+        }
+
+        // Need to pick a flow if ambiguous
+        if (!$wantsLease && !$wantsRental) {
+            // Unknown sender, no clear intent — ask
+            $this->reply($fromPhone, "Hi! 👋 This is AutoGo. Are you looking to RENT a car, or LEASE/FINANCE one? (reply: rent / lease)");
+            // Park them in a tiny intent-only session
+            LeaseApplicationSession::create([
+                'phone' => $fromPhone, 'flow' => 'intent', 'current_step' => '__intent__',
+                'collected' => [], 'customer_id' => $customer?->id, 'last_inbound_at' => now(),
+            ]);
+            return true;
+        }
+
+        $flow = $wantsLease ? 'lease' : 'rental';
+        $this->startFlow($fromPhone, $customer, $flow);
+        return true;
+    }
+
+    private function startFlow(string $phone, ?Customer $customer, string $flow): void
+    {
+        // If we already know this customer, prefill what we have and ask them
+        // to confirm name + address + phone before continuing.
+        if ($customer) {
+            $session = LeaseApplicationSession::create([
+                'phone'        => $phone,
+                'flow'         => $flow,
+                'current_step' => '__confirm_existing__',
+                'collected'    => array_filter([
+                    'first_name'    => $customer->first_name,
+                    'last_name'     => $customer->last_name,
+                    'email'         => $customer->email,
+                    'address'       => $customer->address,
+                    'city'          => $customer->city,
+                    'state'         => $customer->state,
+                    'zip'           => $customer->zip,
+                    'date_of_birth' => $customer->date_of_birth?->toDateString(),
+                    'drivers_license_number' => $customer->drivers_license_number,
+                    'dl_state'               => $customer->dl_state,
+                    'dl_expiration'          => $customer->dl_expiration?->toDateString(),
+                    'insurance_company'      => $customer->insurance_company,
+                    'insurance_policy'       => $customer->insurance_policy,
+                ]),
+                'customer_id'     => $customer->id,
+                'last_inbound_at' => now(),
+            ]);
+
+            $intro = $flow === 'lease'
+                ? "Hi {$customer->first_name}! 👋 This is AutoGo Leasing — starting your lease/finance application."
+                : "Hi {$customer->first_name}! 👋 This is AutoGo Rentals — setting up your rental.";
+            $this->reply($phone, $intro);
+
+            $name = trim(($customer->first_name ?? '') . ' ' . ($customer->last_name ?? ''));
+            $addr = trim(($customer->address ?? '') . ', ' . ($customer->city ?? '') . ', ' . ($customer->state ?? '') . ' ' . ($customer->zip ?? ''), ' ,');
+            $confirmMsg = "I have you on file as:\n\n  Name: {$name}\n  Address: " . ($addr ?: '(none on file)') . "\n  Phone: {$phone}\n\nIs that all still correct? Reply YES to continue, or NO to update.";
+            $this->reply($phone, $confirmMsg);
+            return;
+        }
+
+        // Brand-new customer — go straight into questions
+        $steps = $flow === 'lease' ? self::STEPS_LEASE : self::STEPS_RENTAL;
+        $session = LeaseApplicationSession::create([
+            'phone'        => $phone,
+            'flow'         => $flow,
+            'current_step' => $steps[0]['key'],
+            'collected'    => [],
+            'customer_id'  => null,
+            'last_inbound_at' => now(),
+        ]);
+
+        $intro = $flow === 'lease'
+            ? "Hi! 👋 This is AutoGo Leasing. I'll text a few quick questions to start your lease/finance application. Reply STOP to opt out."
+            : "Hi! 👋 This is AutoGo Rentals. I'll text a few quick questions to set up your rental. Reply STOP to opt out.";
+        $this->reply($phone, $intro);
+        $this->reply($phone, $this->renderPrompt($steps[0], $session));
+    }
+
+    private function advanceSession(LeaseApplicationSession $session, string $body, array $mediaUrls): bool
+    {
+        $text = strtolower(trim($body));
+
+        // Intent-pick session waiting for "rent" or "lease"
+        if ($session->flow === 'intent') {
+            if ($this->matchesAny($text, self::TRIGGERS_LEASE))  { $session->delete(); $this->startFlow($session->phone, $session->customer, 'lease');  return true; }
+            if ($this->matchesAny($text, self::TRIGGERS_RENTAL)) { $session->delete(); $this->startFlow($session->phone, $session->customer, 'rental'); return true; }
+            $this->reply($session->phone, "Please reply RENT or LEASE.");
+            return true;
+        }
+
+        // Existing-customer confirmation step
+        if ($session->current_step === '__confirm_existing__') {
+            $steps = $session->flow === 'lease' ? self::STEPS_LEASE : self::STEPS_RENTAL;
+            $collected = $session->collected ?? [];
+            if (in_array($text, ['yes', 'y', 'correct', 'confirm', 'right', 'yep', 'yup', 'ok'], true)) {
+                // Skip ahead to the first step we don't have a value for
+                $next = $this->firstUnfilledStep($steps, $collected);
+                $session->update(['current_step' => $next['key'] ?? '__done__']);
+                if ($next === null || $next['key'] === '__done__') { $this->finalize($session); return true; }
+                $this->reply($session->phone, "Great — continuing.");
+                $this->reply($session->phone, $this->renderPrompt($next, $session));
+                return true;
+            }
+            // Anything else = wants to update. Wipe identity fields so we re-collect.
+            foreach (['first_name','last_name','address','city','state','zip'] as $k) unset($collected[$k]);
+            $session->update(['collected' => $collected, 'current_step' => $steps[0]['key']]);
+            $this->reply($session->phone, "No problem — let's update.");
+            $this->reply($session->phone, $this->renderPrompt($steps[0], $session));
+            return true;
+        }
+
+        $steps   = $session->flow === 'lease' ? self::STEPS_LEASE : self::STEPS_RENTAL;
+        $stepIdx = $this->indexOfStep($steps, $session->current_step);
+        if ($stepIdx === null) return false;
+        $step = $steps[$stepIdx];
+        $collected = $session->collected ?? [];
+
+        // Image step (license_image) needs an MMS attachment
+        if (($step['expects'] ?? null) === 'image') {
+            if (empty($mediaUrls)) {
+                $this->reply($session->phone, "I need an actual photo of your license — please TEXT (MMS) the front of your driver's license.");
+                return true;
+            }
+            $extracted = $this->ingestLicenseImage($session, $mediaUrls[0]);
+            $collected['license_image_url']   = $mediaUrls[0];
+            $collected['license_extracted']   = $extracted;
+            // Pre-fill name + DOB + address fields if not already set
+            foreach (['first_name','last_name','date_of_birth','address','city','state','zip'] as $k) {
+                if (empty($collected[$k]) && !empty($extracted[$k])) $collected[$k] = $extracted[$k];
+            }
+            $collected['drivers_license_number'] = $extracted['drivers_license_number'] ?? null;
+            $collected['dl_state']               = $extracted['dl_state'] ?? null;
+            $collected['dl_expiration']          = $extracted['dl_expiration'] ?? null;
+        } elseif ($step['key'] !== '__done__') {
+            $collected[$step['key']] = $this->normalize($step['key'], $body);
+        }
+
+        $next = $this->nextApplicableStep($steps, $stepIdx, $collected);
+        $session->update([
+            'collected'       => $collected,
+            'current_step'    => $next['key'] ?? '__done__',
+            'last_inbound_at' => now(),
+        ]);
+
+        if ($next === null || $next['key'] === '__done__') {
+            $this->finalize($session);
+            return true;
+        }
+
+        // Special prompt: address_confirmation includes the extracted address
+        if ($next['key'] === 'address_confirmation') {
+            $extracted = $collected['license_extracted'] ?? [];
+            $line = trim(($extracted['address'] ?? '') . ', ' . ($extracted['city'] ?? '') . ', ' . ($extracted['state'] ?? '') . ' ' . ($extracted['zip'] ?? ''), ' ,');
+            $prompt = "Got your license. Is this address correct?\n\n  {$line}\n\nReply YES, or text the correct address.";
+            $this->reply($session->phone, $prompt);
+            return true;
+        }
+
+        $this->reply($session->phone, $this->renderPrompt($next, $session));
+        return true;
+    }
+
+    private function indexOfStep(array $steps, string $key): ?int
+    {
+        foreach ($steps as $i => $s) if ($s['key'] === $key) return $i;
+        return null;
+    }
+
+    private function nextApplicableStep(array $steps, int $currentIdx, array $collected): ?array
+    {
+        for ($i = $currentIdx + 1; $i < count($steps); $i++) {
+            $s = $steps[$i];
+            if (isset($s['requires'])) {
+                $val = strtolower((string) ($collected[$s['requires']] ?? ''));
+                if (!in_array($val, ['yes', 'y', '1', 'true'], true)) continue;
+            }
+            // Skip steps whose key we already have a value for (re-used customers)
+            if (!empty($collected[$s['key']]) && $s['key'] !== '__done__' && ($s['expects'] ?? null) !== 'image') continue;
+            return $s;
+        }
+        return null;
+    }
+
+    private function firstUnfilledStep(array $steps, array $collected): ?array
+    {
+        foreach ($steps as $s) {
+            if ($s['key'] === '__done__') return $s;
+            if (isset($s['requires'])) {
+                $val = strtolower((string) ($collected[$s['requires']] ?? ''));
+                if (!in_array($val, ['yes', 'y', '1', 'true'], true)) continue;
+            }
+            if (empty($collected[$s['key']]) || ($s['expects'] ?? null) === 'image') return $s;
+        }
+        return null;
+    }
+
+    private function matchesAny(string $text, array $triggers): bool
+    {
+        foreach ($triggers as $t) if (str_contains($text, $t)) return true;
+        return false;
+    }
+
+    private function renderPrompt(array $step, LeaseApplicationSession $session): string
+    {
+        return preg_replace_callback('/\{(\w+)\}/', function ($m) use ($session) {
+            return (string) ($session->collected[$m[1]] ?? '');
+        }, $step['prompt']);
+    }
+
+    private function normalize(string $key, string $value): string
+    {
+        $v = trim($value);
+        return match ($key) {
+            'state', 'employer_state', 'co_state' => strtoupper(substr(preg_replace('/[^A-Za-z]/', '', $v), 0, 2)),
+            'zip', 'employer_zip', 'co_zip'      => substr(preg_replace('/[^0-9]/', '', $v), 0, 10),
+            'ssn', 'co_ssn'                       => $this->formatSsn($v),
+            'monthly_housing', 'annual_income', 'co_monthly_housing', 'co_annual_income' => preg_replace('/[^0-9.]/', '', $v),
+            'has_coapplicant', 'has_insurance'    => str_starts_with(strtolower($v), 'y') ? 'yes' : 'no',
+            'own_or_rent', 'co_own_or_rent'       => str_starts_with(strtolower($v), 'o') ? 'own' : 'rent',
+            'pickup_location'                     => str_contains(strtolower($v), 'monsey') ? 'Monsey' : 'Monroe',
+            default => $v,
+        };
+    }
+
+    private function formatSsn(string $v): string
+    {
+        $d = preg_replace('/\D/', '', $v);
+        return strlen($d) === 9 ? substr($d,0,3).'-'.substr($d,3,2).'-'.substr($d,5) : $d;
+    }
+
+    /**
+     * Download the MMS image, store it, run Claude vision, save as a CustomerDocument.
+     * Returns the extracted-fields array (may be empty if no API key / parse failed).
+     */
+    private function ingestLicenseImage(LeaseApplicationSession $session, string $url): array
+    {
+        try {
+            $binary = @file_get_contents($url);
+            if ($binary === false) { Log::warning('Could not fetch license image', ['url' => $url]); return []; }
+            $b64 = base64_encode($binary);
+
+            $extracted = [];
+            if (!empty(config('services.anthropic.api_key'))) {
+                try {
+                    $client = Anthropic::client(config('services.anthropic.api_key'));
+                    $resp = $client->messages()->create([
+                        'model' => 'claude-3-5-sonnet-latest', 'max_tokens' => 800, 'temperature' => 0,
+                        'system' => 'OCR US driver licenses. Output VALID JSON only.',
+                        'messages' => [[
+                            'role' => 'user',
+                            'content' => [
+                                ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => 'image/jpeg', 'data' => $b64]],
+                                ['type' => 'text', 'text' => 'Extract: { "first_name":"", "last_name":"", "address":"", "city":"", "state":"", "zip":"", "drivers_license_number":"", "dl_state":"", "dl_expiration":"YYYY-MM-DD", "date_of_birth":"YYYY-MM-DD" }. Empty string if missing.'],
+                            ],
+                        ]],
+                    ]);
+                    $text = trim(preg_replace('/^```(?:json)?\s*|\s*```$/m', '', $resp->content[0]->text ?? ''));
+                    $data = json_decode($text, true);
+                    if (is_array($data)) $extracted = $data;
+                } catch (\Throwable $e) {
+                    Log::warning('License OCR failed', ['error' => $e->getMessage()]);
+                }
+            }
+
+            // Save as a CustomerDocument once we know the customer
+            // (will be wired in finalize — for now, stash the binary)
+            $filename = 'license-mms-' . now()->format('YmdHis') . '-' . Str::random(6) . '.jpg';
+            $path = "lease-bot-uploads/{$session->id}/{$filename}";
+            Storage::disk('public')->put($path, $binary);
+
+            $extracted['_stored_path'] = $path;
+            $extracted['_stored_disk'] = 'public';
+            $extracted['_stored_size'] = strlen($binary);
+
+            return $extracted;
+        } catch (\Throwable $e) {
+            Log::warning('ingestLicenseImage failed', ['error' => $e->getMessage()]);
+            return [];
+        }
+    }
+
+    private function finalize(LeaseApplicationSession $session): void
+    {
+        $c = $session->collected ?? [];
+        $last10 = substr(preg_replace('/\D/', '', $session->phone), -10);
+
+        $customer = $session->customer
+            ?? Customer::where('phone', 'ilike', "%{$last10}")->first()
+            ?? new Customer();
+
+        $customer->fill(array_filter([
+            'first_name'             => $c['first_name']    ?? null,
+            'last_name'              => $c['last_name']     ?? null,
+            'phone'                  => $session->phone,
+            'email'                  => $c['email']         ?? null,
+            'date_of_birth'          => $this->parseDate($c['date_of_birth'] ?? null),
+            'address'                => $c['address']       ?? null,
+            'city'                   => $c['city']          ?? null,
+            'state'                  => $c['state']         ?? null,
+            'zip'                    => $c['zip']           ?? null,
+            'drivers_license_number' => $c['drivers_license_number'] ?? null,
+            'dl_state'               => $c['dl_state']               ?? null,
+            'dl_expiration'          => $this->parseDate($c['dl_expiration'] ?? null),
+            'insurance_company'      => $c['insurance_company']      ?? null,
+            'insurance_policy'       => $c['insurance_policy']       ?? null,
+        ]));
+        $customer->is_active = true;
+        $customer->save();
+
+        // If we ingested a license image, attach it as a CustomerDocument
+        $extracted = $c['license_extracted'] ?? [];
+        if (!empty($extracted['_stored_path'])) {
+            CustomerDocument::create([
+                'customer_id'   => $customer->id,
+                'type'          => 'drivers_license_front',
+                'label'         => trim(($c['first_name'] ?? '') . ' ' . ($c['last_name'] ?? '') . ' · ' . ($c['drivers_license_number'] ?? ''), ' ·'),
+                'disk'          => $extracted['_stored_disk'] ?? 'public',
+                'path'          => $extracted['_stored_path'],
+                'original_name' => basename($extracted['_stored_path']),
+                'mime_type'     => 'image/jpeg',
+                'size_bytes'    => $extracted['_stored_size'] ?? null,
+                'expires_at'    => $this->parseDate($c['dl_expiration'] ?? null),
+                'uploaded_by'   => null,
+            ]);
+        }
+
+        $session->customer_id = $customer->id;
+
+        if ($session->flow === 'lease') {
+            $deal = Deal::create([
+                'customer_id'  => $customer->id,
+                'payment_type' => 'lease',
+                'stage'        => 'application',
+                'priority'     => 'medium',
+                'notes'        => $this->buildNote($session->flow, $c),
+            ]);
+            $session->deal_id = $deal->id;
+            $session->update(['completed_at' => now()]);
+            $this->reply($session->phone, "All set ✅ — your application is in (Deal #{$deal->deal_number}). A team member will reach out shortly. Reply STOP to opt out.");
+        } else {
+            // RENTAL — create a draft Reservation if dates parse cleanly; otherwise leave as note for staff
+            $deal = null;
+            try {
+                $pickup = $this->parseDate($c['pickup_date'] ?? null);
+                $return = $this->parseDate($c['return_date'] ?? null);
+                if ($pickup && $return && class_exists(\App\Models\Reservation::class)) {
+                    $deal = \App\Models\Reservation::create([
+                        'customer_id'      => $customer->id,
+                        'pickup_date'      => $pickup,
+                        'return_date'      => $return,
+                        'pickup_location'  => $c['pickup_location'] ?? 'Monroe',
+                        'status'           => 'pending',
+                        'notes'            => $this->buildNote($session->flow, $c),
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Bot: could not create reservation', ['error' => $e->getMessage()]);
+            }
+
+            $session->update(['completed_at' => now()]);
+            $msg = $deal
+                ? "All set ✅ — rental request created (Reservation #{$deal->id}). A team member will text you to confirm vehicle + total."
+                : "All set ✅ — request received. A team member will text you shortly to confirm vehicle, dates, and total.";
+            $this->reply($session->phone, $msg);
+        }
+    }
+
+    private function parseDate(?string $v): ?string
+    {
+        if (!$v) return null;
+        try { return \Carbon\Carbon::parse($v)->toDateString(); } catch (\Throwable) { return null; }
+    }
+
+    private function buildNote(string $flow, array $c): string
+    {
+        $steps = $flow === 'lease' ? self::STEPS_LEASE : self::STEPS_RENTAL;
+        $lines = [strtoupper($flow) . " bot intake:"];
+        foreach ($steps as $s) {
+            if (in_array($s['key'], ['__done__', 'license_image', 'address_confirmation'], true)) continue;
+            if (!array_key_exists($s['key'], $c)) continue;
+            $label = ucwords(str_replace('_', ' ', $s['key']));
+            $val = $c[$s['key']];
+            if (in_array($s['key'], ['ssn', 'co_ssn'], true)) $val = '***-**-' . substr((string)$val, -4);
+            $lines[] = "  {$label}: {$val}";
+        }
+        return implode("\n", $lines);
+    }
+
+    private function reply(string $toPhone, string $message): void
+    {
+        $result = $this->telebroad->sendSms($toPhone, $message);
+        $last10 = substr(preg_replace('/\D/', '', $toPhone), -10);
+        $customer = Customer::where('phone', 'ilike', "%{$last10}")->first();
+        CommunicationLog::create([
+            'subject_type' => $customer ? Customer::class : null,
+            'subject_id'   => $customer?->id,
+            'customer_id'  => $customer?->id,
+            'user_id'      => null,
+            'channel'      => 'sms',
+            'direction'    => 'outbound',
+            'from'         => (string) config('services.telebroad.phone_number'),
+            'to'           => $toPhone,
+            'body'         => $message,
+            'attachments'  => ['_bot' => true],
+            'external_ref' => $result['external_id'] ?? null,
+            'status'       => ($result['success'] ?? false) ? 'sent' : 'failed',
+            'sent_at'      => now(),
+        ]);
+    }
+}
