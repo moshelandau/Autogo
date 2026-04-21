@@ -115,7 +115,13 @@ class SmsConversationController extends Controller
     {
         $validated = $request->validate(['status' => 'required|in:received,read']);
         CommunicationLog::where('id', $id)->update(['status' => $validated['status']]);
-        return back()->with('success', $validated['status'] === 'received' ? 'Marked unread.' : 'Marked read.');
+
+        // When flagging back to unread, leave the thread (otherwise show() would
+        // immediately re-mark as read on the redirect). Send to the inbox.
+        if ($validated['status'] === 'received') {
+            return redirect()->route('sms.index')->with('success', 'Marked unread — back to inbox.');
+        }
+        return back()->with('success', 'Marked read.');
     }
 
     /**
