@@ -50,6 +50,12 @@ class OfficeTaskController extends Controller
     public function complete(OfficeTask $officeTask)
     {
         $officeTask->markComplete();
+
+        // Clear all notifications referencing this task
+        \DB::table('notifications')
+            ->whereJsonContains('data->office_task_id', $officeTask->id)
+            ->update(['read_at' => now()]);
+
         return back()->with('success', 'Task completed.');
     }
 

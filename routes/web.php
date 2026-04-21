@@ -67,6 +67,10 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     // Audit Logs UI (immutable, append-only)
     Route::get('audit-logs', [\App\Http\Controllers\AuditLogController::class, 'index'])->name('audit-logs.index');
 
+    // Notification bell
+    Route::post('notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markRead'])->name('notifications.read');
+    Route::post('notifications/read-all',  [\App\Http\Controllers\NotificationController::class, 'markAllRead'])->name('notifications.read-all');
+
     Route::prefix('rental')->name('rental.')->group(function () {
         // (all other rental routes already in this group above — placeholder to keep routes group structure)
         Route::post('holds/{hold}/release', [ReservationController::class, 'releaseHold'])->name('holds.release');

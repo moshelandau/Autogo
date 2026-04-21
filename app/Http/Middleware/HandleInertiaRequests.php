@@ -24,7 +24,30 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
             ],
+            'notifications' => fn () => $this->getNotifications($request),
         ];
+    }
+
+    private function getNotifications(Request $request): array
+    {
+        $user = $request->user();
+        if (!$user) return ['unread_count' => 0, 'items' => []];
+        try {
+            $unread = $user->unreadNotifications()->limit(20)->get();
+            return [
+                'unread_count' => $unread->count(),
+                'items' => $unread->map(fn ($n) => [
+                    'id'         => $n->id,
+                    'title'      => $n->data['title'] ?? 'Notification',
+                    'body'       => $n->data['body'] ?? '',
+                    'icon'       => $n->data['icon'] ?? '🔔',
+                    'url'        => $n->data['url']  ?? '#',
+                    'created_at' => $n->created_at,
+                ])->all(),
+            ];
+        } catch (\Throwable) {
+            return ['unread_count' => 0, 'items' => []];
+        }
     }
 
     private function getPageAccess(Request $request): array

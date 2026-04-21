@@ -276,9 +276,43 @@ const icons = {
                             </div>
 
                             <!-- Notifications bell -->
-                            <button class="relative text-gray-400 hover:text-gray-600 transition-colors p-2 rounded-xl hover:bg-gray-100">
-                                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-                            </button>
+                            <Dropdown align="right" width="80">
+                                <template #trigger>
+                                    <button class="relative text-gray-400 hover:text-gray-600 transition-colors p-2 rounded-xl hover:bg-gray-100">
+                                        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+                                        <span v-if="$page.props.notifications?.unread_count > 0"
+                                              class="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                                            {{ $page.props.notifications.unread_count }}
+                                        </span>
+                                    </button>
+                                </template>
+                                <template #content>
+                                    <div class="px-4 py-3 border-b flex items-center justify-between">
+                                        <div class="font-semibold text-sm text-gray-900">Notifications</div>
+                                        <Link v-if="$page.props.notifications?.unread_count > 0"
+                                              :href="route('notifications.read-all')" method="post" as="button"
+                                              class="text-[10px] text-indigo-600 hover:text-indigo-800">Mark all read</Link>
+                                    </div>
+                                    <div class="max-h-96 overflow-y-auto">
+                                        <Link v-for="n in $page.props.notifications?.items"
+                                              :key="n.id"
+                                              :href="route('notifications.read', n.id)" method="post" as="button"
+                                              :data="{ _redirect: n.url }"
+                                              @click.prevent="$inertia.post(route('notifications.read', n.id), {}, { onSuccess: () => $inertia.visit(n.url) })"
+                                              class="w-full text-left flex items-start gap-3 px-4 py-3 border-b last:border-b-0 hover:bg-gray-50">
+                                            <div class="text-2xl flex-shrink-0">{{ n.icon }}</div>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="font-semibold text-xs text-gray-900">{{ n.title }}</div>
+                                                <div v-if="n.body" class="text-[11px] text-gray-600 mt-0.5">{{ n.body }}</div>
+                                                <div class="text-[10px] text-gray-400 mt-1">{{ new Date(n.created_at).toLocaleString() }}</div>
+                                            </div>
+                                        </Link>
+                                        <div v-if="!$page.props.notifications?.items?.length" class="px-4 py-6 text-center text-xs text-gray-400">
+                                            No new notifications
+                                        </div>
+                                    </div>
+                                </template>
+                            </Dropdown>
 
                             <!-- User dropdown (desktop) -->
                             <Dropdown align="right" width="48" class="hidden lg:block">

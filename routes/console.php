@@ -10,3 +10,9 @@ Artisan::command('inspire', function () {
 
 // ── Scheduled syncs ────────────────────────────────────
 Schedule::command('sync:towbook')->hourly()->withoutOverlapping()->runInBackground();
+
+// Twice-a-week: Mon + Thu @ 9 AM, open the EZ Pass + NYC violations check task
+Schedule::command('tasks:open-violations-check')
+    ->twiceWeekly(\Carbon\Carbon::MONDAY, \Carbon\Carbon::THURSDAY, '09:00')
+    ->timezone('America/New_York')
+    ->withoutOverlapping();
