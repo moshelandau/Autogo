@@ -49,6 +49,9 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::post('reservations/{reservation}/return', [ReservationController::class, 'return'])->name('reservations.return');
         Route::post('reservations/{reservation}/cancel', [ReservationController::class, 'cancel'])->name('reservations.cancel');
         Route::post('reservations/{reservation}/payment', [ReservationController::class, 'recordPayment'])->name('reservations.payment');
+        Route::post('reservations/{reservation}/open-claim', [ReservationController::class, 'openClaim'])->name('reservations.openClaim');
+        Route::post('holds/{hold}/release', [ReservationController::class, 'releaseHold'])->name('holds.release');
+        Route::post('holds/{hold}/capture', [ReservationController::class, 'captureHold'])->name('holds.capture');
 
         // Vehicle Inspections (before/after images)
         Route::post('reservations/{reservation}/inspection', [InspectionController::class, 'upload'])->name('inspection.upload');
@@ -103,6 +106,8 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::get('{rentalClaim}', [RentalClaimController::class, 'show'])->name('show');
         Route::post('{rentalClaim}/status', [RentalClaimController::class, 'updateStatus'])->name('status');
         Route::post('{rentalClaim}/comment', [RentalClaimController::class, 'addComment'])->name('comment');
+        Route::post('{rentalClaim}/photos', [RentalClaimController::class, 'uploadPhoto'])->name('photos.store');
+        Route::delete('{rentalClaim}/photos/{document}', [RentalClaimController::class, 'deletePhoto'])->name('photos.destroy');
     });
 
     // ── Towing Module ─────────────────────────────────

@@ -92,8 +92,17 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
                     @mousedown.prevent="pick(r)"
                     @mouseenter="highlight = i"
                     class="px-3 py-2 cursor-pointer text-sm border-b last:border-b-0"
-                    :class="highlight === i ? 'bg-indigo-50' : 'hover:bg-gray-50'">
-                    <div class="font-medium text-gray-900">{{ r.label }}</div>
+                    :class="[
+                        highlight === i ? 'bg-indigo-50' : 'hover:bg-gray-50',
+                        r.outstanding_balance > 0 ? 'border-l-4 border-l-red-500 bg-red-50/40' : ''
+                    ]">
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="font-medium text-gray-900">{{ r.label }}</div>
+                        <span v-if="r.outstanding_balance > 0"
+                              class="text-[10px] font-bold text-white bg-red-600 px-2 py-0.5 rounded-full whitespace-nowrap">
+                            ⚠ Owes ${{ Number(r.outstanding_balance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+                        </span>
+                    </div>
                     <div v-if="r.sub" class="text-xs text-gray-500">{{ r.sub }}</div>
                 </li>
             </ul>

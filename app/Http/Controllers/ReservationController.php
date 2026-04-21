@@ -74,19 +74,58 @@ class ReservationController extends Controller
         ]);
     }
 
-    public function pickup(Request $request, Reservation $reservation)
+    public function pickup(Request $request, Reservation $reservation, \App\Services\SolaPaymentsService $sola)
     {
         $validated = $request->validate([
-            'vehicle_id' => 'nullable|exists:vehicles,id',
+            'vehicle_id'   => 'nullable|exists:vehicles,id',
             'odometer_out' => 'nullable|integer|min:0',
-            'fuel_out' => 'nullable|string',
+            'fuel_out'     => 'nullable|string',
             'pickup_notes' => 'nullable|string',
+            'insurance_source'        => 'required|in:own_policy,credit_card,none',
+            'insurance_company_seen'  => 'nullable|string',
+            'insurance_policy_seen'   => 'nullable|string',
+            'hold_amount'     => 'required|numeric|min:0|max:10000',
+            'hold_card_brand' => 'nullable|string|max:20',
+            'hold_card_last4' => 'nullable|string|size:4',
+            'hold_card_exp'   => 'nullable|string|max:7',
         ]);
 
-        $this->rental->pickupVehicle($reservation, $validated);
+        // Persist insurance-at-pickup on the reservation
+        $reservation->update([
+            'insurance_source'         => $validated['insurance_source'],
+            'insurance_company_seen'   => $validated['insurance_company_seen'] ?? null,
+            'insurance_policy_seen'    => $validated['insurance_policy_seen']  ?? null,
+        ]);
+
+        // Authorize the $250 (or custom) hold on High Rental account
+        if ($validated['hold_amount'] > 0 && !empty($validated['hold_card_last4'])) {
+            $auth = $sola->authorizeHold(
+                card: [
+                    'last4' => $validated['hold_card_last4'],
+                    'brand' => $validated['hold_card_brand'] ?? null,
+                    'exp'   => $validated['hold_card_exp'] ?? null,
+                ],
+                amount: (float) $validated['hold_amount'],
+                description: "Security deposit — rental #{$reservation->reservation_number}",
+            );
+            \App\Models\ReservationHold::create([
+                'reservation_id'        => $reservation->id,
+                'amount'                => $validated['hold_amount'],
+                'card_brand'            => $validated['hold_card_brand'] ?? null,
+                'card_last4'            => $validated['hold_card_last4'] ?? null,
+                'card_exp'              => $validated['hold_card_exp'] ?? null,
+                'sola_authorization_id' => $auth['authorization_id'] ?? null,
+                'status'                => ($auth['ok'] ?? false) ? 'authorized' : 'failed',
+                'placed_at'             => now(),
+                'notes'                 => ($auth['mock'] ?? false) ? 'MOCK — Sola not yet configured' : null,
+            ]);
+        }
+
+        $this->rental->pickupVehicle($reservation, \Illuminate\Support\Arr::only($validated,
+            ['vehicle_id','odometer_out','fuel_out','pickup_notes']));
 
         return redirect()->route('rental.reservations.show', $reservation)
-            ->with('success', 'Vehicle picked up. Rental is now active.');
+            ->with('success', 'Vehicle picked up. Rental is now active. Security deposit authorized.');
     }
 
     public function return(Request $request, Reservation $reservation)
@@ -111,17 +150,107 @@ class ReservationController extends Controller
             ->with('success', 'Reservation cancelled.');
     }
 
-    public function recordPayment(Request $request, Reservation $reservation)
+    public function recordPayment(Request $request, Reservation $reservation, \App\Services\SolaPaymentsService $sola)
     {
         $validated = $request->validate([
-            'payment_method' => 'required|in:credit_card,cash,check,transfer',
-            'amount' => 'required|numeric|min:0.01',
-            'reference' => 'nullable|string',
+            'payment_method' => 'required|in:cash,card_on_file,new_card,credit_card,check,transfer',
+            'amount'        => 'required|numeric|min:0.01',
+            'tendered'      => 'nullable|numeric|min:0',
+            'card_brand'    => 'nullable|string|max:20',
+            'card_last4'    => 'nullable|string|size:4',
+            'card_exp'      => 'nullable|string|max:7',
+            'card_cvc'      => 'nullable|string|max:4',
+            'sola_account'  => 'nullable|in:autogo,high_rental',
+            'reference'     => 'nullable|string',
         ]);
 
-        $this->rental->recordPayment($reservation, $validated);
+        $method = $validated['payment_method'];
+        $cardPayment = in_array($method, ['card_on_file','new_card','credit_card']);
 
-        return back()->with('success', 'Payment recorded.');
+        // For card payments, require a Sola account selection
+        if ($cardPayment && empty($validated['sola_account'])) {
+            return back()->withErrors(['sola_account' => 'Choose AutoGo or High Car Rental for card charges.']);
+        }
+
+        // Perform Sola charge if card
+        $solaResult = null;
+        if ($cardPayment) {
+            // If card_on_file, reuse the active hold's card metadata
+            $hold = $reservation->activeHold()->first();
+            $card = [
+                'brand' => $validated['card_brand'] ?? $hold?->card_brand,
+                'last4' => $validated['card_last4'] ?? $hold?->card_last4,
+                'exp'   => $validated['card_exp']   ?? $hold?->card_exp,
+                'cvc'   => $validated['card_cvc']   ?? null,
+            ];
+            $solaResult = $sola->charge(
+                account: $validated['sola_account'],
+                card: $card,
+                amount: (float) $validated['amount'],
+                description: "Rental {$reservation->reservation_number}",
+            );
+            if (!($solaResult['ok'] ?? false)) {
+                return back()->withErrors(['amount' => 'Payment failed: '.($solaResult['error'] ?? 'unknown')]);
+            }
+        }
+
+        // Record the payment row
+        \App\Models\RentalPayment::create([
+            'reservation_id' => $reservation->id,
+            'customer_id'    => $reservation->customer_id,
+            'payment_method' => $method,
+            'card_brand'     => $validated['card_brand'] ?? null,
+            'card_last4'     => $validated['card_last4'] ?? null,
+            'amount'         => $validated['amount'],
+            'change_due'     => $method === 'cash' ? max(0, ($validated['tendered'] ?? 0) - $validated['amount']) : null,
+            'reference'      => $validated['reference'] ?? ($solaResult['charge_id'] ?? null),
+            'status'         => 'completed',
+            'type'           => 'rental',
+            'sola_transaction_data' => $solaResult ? json_encode($solaResult) : null,
+            'processed_by'   => auth()->id(),
+            'paid_at'        => now(),
+        ]);
+
+        return back()->with('success', "Payment recorded ({$method}, $".number_format((float)$validated['amount'],2).").");
+    }
+
+    /** Release or capture a security hold. */
+    public function releaseHold(\App\Models\ReservationHold $hold, \App\Services\SolaPaymentsService $sola)
+    {
+        $sola->releaseHold($hold);
+        return back()->with('success', 'Security hold released.');
+    }
+
+    public function captureHold(\App\Models\ReservationHold $hold, \App\Services\SolaPaymentsService $sola)
+    {
+        $sola->captureHold($hold);
+        return back()->with('success', 'Hold captured as charge.');
+    }
+
+    /** After return, open a rental claim linked to the reservation. */
+    public function openClaim(Request $request, Reservation $reservation)
+    {
+        $data = $request->validate([
+            'damage_description' => 'required|string',
+            'priority'           => 'required|in:low,medium,high,urgent',
+            'insurance_company'  => 'nullable|string',
+            'insurance_claim_number' => 'nullable|string',
+        ]);
+
+        $claim = \App\Models\RentalClaim::create([
+            'customer_id'       => $reservation->customer_id,
+            'reservation_id'    => $reservation->id,
+            'vehicle_id'        => $reservation->vehicle_id,
+            'brand'             => 'high_rental',
+            'status'            => 'new',
+            'priority'          => $data['priority'],
+            'damage_description'=> $data['damage_description'],
+            'incident_date'     => $reservation->actual_return_date ?? now(),
+            'insurance_company' => $data['insurance_company'] ?? null,
+            'insurance_claim_number' => $data['insurance_claim_number'] ?? null,
+            'created_by'        => auth()->id(),
+        ]);
+        return redirect()->route('rental-claims.show', $claim)->with('success', 'Rental claim opened. Upload damage photos below.');
     }
 
     public function calendar(Request $request)

@@ -56,16 +56,16 @@ const sections = [
     },
     {
         id: 'sola',
-        title: 'Sola Payments',
+        title: 'Sola Payments — Two Accounts',
         icon: '💳',
-        desc: 'Process customer card / ACH payments for rentals, COD, lease deposits.',
+        desc: 'We keep two Sola merchants: AutoGo (lease/finance/body/tow) + High Car Rental (rentals + $250 security holds). Because Sola\'s UI shows only one key slot, we reuse the "Webhook secret" field as the High Rental API key. Hold-auths ALWAYS go to High Rental; final charges prompt operator to pick AutoGo or High Rental.',
         envFlag: 'sola',
         testKey: 'sola',
         fields: [
-            { key: 'sola_env',         label: 'Environment',  type: 'select', options: ['sandbox','live'] },
-            { key: 'sola_api_key',     label: 'API key',      type: 'password' },
-            { key: 'sola_merchant_id', label: 'Merchant ID',  type: 'text' },
-            { key: 'sola_webhook_secret', label: 'Webhook secret', type: 'password' },
+            { key: 'sola_env',            label: 'Environment',             type: 'select', options: ['sandbox','live'] },
+            { key: 'sola_api_key',        label: 'AutoGo API key',          type: 'password' },
+            { key: 'sola_webhook_secret', label: 'High Car Rental API key', type: 'password' },
+            { key: 'sola_merchant_id',    label: 'AutoGo Merchant ID',      type: 'text' },
         ],
     },
     {

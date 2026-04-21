@@ -10,6 +10,22 @@ const commentForm = useForm({ body: '' });
 const addComment = () => { commentForm.post(route('rental-claims.comment', c.id), { onSuccess: () => commentForm.reset() }); };
 const changeStatus = (status) => router.post(route('rental-claims.status', c.id), { status });
 
+// Damage photo upload
+const photoForm = useForm({ photos: [] });
+const onPhotos = (e) => { photoForm.photos = Array.from(e.target.files); };
+const uploadPhotos = () => {
+    if (!photoForm.photos.length) return;
+    photoForm.post(route('rental-claims.photos.store', c.id), {
+        forceFormData: true,
+        preserveScroll: true,
+        onSuccess: () => photoForm.reset('photos'),
+    });
+};
+const deletePhoto = (doc) => {
+    if (!confirm('Delete this photo?')) return;
+    router.delete(route('rental-claims.photos.destroy', [c.id, doc.id]), { preserveScroll: true });
+};
+
 const statusColors = { new: 'bg-blue-100 text-blue-800', pending_documents: 'bg-yellow-100 text-yellow-800', completed: 'bg-green-100 text-green-800', approved: 'bg-emerald-100 text-emerald-800' };
 </script>
 
@@ -57,6 +73,38 @@ const statusColors = { new: 'bg-blue-100 text-blue-800', pending_documents: 'bg-
                         <div v-if="c.insurance_claim_number">Claim #: {{ c.insurance_claim_number }}</div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Damage photos -->
+            <div class="bg-white rounded-xl border p-5">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-semibold text-gray-500 uppercase">📸 Damage Photos ({{ c.documents?.filter(d => d.type === 'damage_photo').length || 0 }})</h3>
+                    <label class="bg-rose-600 text-white px-3 py-1.5 rounded-lg text-sm cursor-pointer hover:bg-rose-700">
+                        📷 Add Photos
+                        <input type="file" multiple accept="image/*" capture="environment" @change="onPhotos" class="hidden" />
+                    </label>
+                </div>
+                <div v-if="photoForm.photos.length" class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3 flex items-center justify-between">
+                    <span class="text-sm">{{ photoForm.photos.length }} file(s) selected</span>
+                    <button @click="uploadPhotos" :disabled="photoForm.processing" class="px-4 py-1.5 bg-emerald-600 text-white rounded-lg text-sm disabled:opacity-50">
+                        {{ photoForm.processing ? 'Uploading…' : `Upload ${photoForm.photos.length} photo(s)` }}
+                    </button>
+                </div>
+                <div v-if="c.documents?.length" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <div v-for="d in c.documents.filter(x => x.type === 'damage_photo')" :key="d.id"
+                         class="relative aspect-square rounded-lg overflow-hidden border-2 border-rose-300 group">
+                        <a :href="`/storage/${d.path}`" target="_blank">
+                            <img :src="`/storage/${d.path}`" :alt="d.name" class="w-full h-full object-cover" />
+                        </a>
+                        <div class="absolute inset-x-0 bottom-0 bg-black/60 text-white px-2 py-1 flex items-center justify-between text-[10px]">
+                            <span class="truncate">{{ d.name }}</span>
+                            <button @click="deletePhoto(d)" class="opacity-0 group-hover:opacity-100 text-red-300 hover:text-white">×</button>
+                        </div>
+                    </div>
+                </div>
+                <p v-else class="text-sm text-gray-400 text-center py-4 italic">
+                    No photos yet — upload damage photos so insurance has full documentation.
+                </p>
             </div>
 
             <!-- Comments -->

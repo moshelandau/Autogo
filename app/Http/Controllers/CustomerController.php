@@ -193,13 +193,14 @@ class CustomerController extends Controller
             })
             ->orderBy('last_name')
             ->limit(20)
-            ->get(['id', 'first_name', 'last_name', 'email', 'phone', 'city', 'state']);
+            ->get(['id', 'first_name', 'last_name', 'email', 'phone', 'city', 'state', 'cached_outstanding_balance']);
 
         return response()->json([
             'data' => $customers->map(fn ($c) => [
                 'id'    => $c->id,
                 'label' => trim("{$c->first_name} {$c->last_name}"),
                 'sub'   => trim(implode(' · ', array_filter([$c->phone, $c->email, $c->city ? "{$c->city}, {$c->state}" : null]))),
+                'outstanding_balance' => (float) $c->cached_outstanding_balance,
             ]),
         ]);
     }

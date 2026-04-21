@@ -79,6 +79,16 @@ const kinds = [
         </template>
 
         <div class="p-6 space-y-5">
+            <!-- Outstanding balance flag -->
+            <div v-if="(customer.cached_outstanding_balance || 0) > 0"
+                 class="bg-red-50 border-2 border-red-300 rounded-xl p-4 flex items-center gap-3">
+                <span class="text-3xl">⚠️</span>
+                <div class="flex-1">
+                    <div class="font-bold text-red-900">OUTSTANDING BALANCE</div>
+                    <div class="text-sm text-red-800">This customer owes <strong>${{ Number(customer.cached_outstanding_balance).toFixed(2) }}</strong> from past rentals. Do NOT start a new rental until balance is collected.</div>
+                </div>
+            </div>
+
             <!-- Business stats -->
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div class="bg-white border rounded-xl p-4 text-center">

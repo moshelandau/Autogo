@@ -94,4 +94,41 @@ class RentalClaimController extends Controller
         $rentalClaim->comments()->create(['body' => $validated['body'], 'user_id' => auth()->id()]);
         return back()->with('success', 'Comment added.');
     }
+
+    /**
+     * Upload damage photos to a rental claim.
+     * Supports single or multiple files (form key: photos[] or photo).
+     */
+    public function uploadPhoto(Request $request, RentalClaim $rentalClaim)
+    {
+        $request->validate([
+            'photos'   => 'nullable|array',
+            'photos.*' => 'image|mimes:jpg,jpeg,png,heic,webp|max:15360',
+            'photo'    => 'nullable|image|mimes:jpg,jpeg,png,heic,webp|max:15360',
+            'name'     => 'nullable|string|max:255',
+        ]);
+
+        $files = $request->file('photos', []);
+        if ($single = $request->file('photo')) $files[] = $single;
+        if (empty($files)) abort(422, 'No photo provided');
+
+        foreach ($files as $f) {
+            $path = $f->store("rental-claims/{$rentalClaim->id}", 'public');
+            $rentalClaim->documents()->create([
+                'name'        => $request->input('name') ?: $f->getClientOriginalName(),
+                'type'        => 'damage_photo',
+                'path'        => $path,
+                'uploaded_by' => auth()->id(),
+            ]);
+        }
+        return back()->with('success', count($files).' photo(s) uploaded.');
+    }
+
+    public function deletePhoto(RentalClaim $rentalClaim, \App\Models\RentalClaimDocument $document)
+    {
+        abort_unless($document->rental_claim_id === $rentalClaim->id, 404);
+        \Illuminate\Support\Facades\Storage::disk('public')->delete($document->path);
+        $document->delete();
+        return back()->with('success', 'Photo deleted.');
+    }
 }

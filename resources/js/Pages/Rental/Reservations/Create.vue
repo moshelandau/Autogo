@@ -1,10 +1,12 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useForm, Link } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import CustomerSelect from '@/Components/CustomerSelect.vue';
 
 const props = defineProps({ customers: Array, vehicles: Array, locations: Array });
+
+const selectedCustomer = ref(null); // populated from CustomerSelect's @select event
 
 const form = useForm({
     customer_id: '', vehicle_id: '', vehicle_class: 'suv',
@@ -45,8 +47,18 @@ const submit = () => form.post(route('rental.reservations.store'));
                     <!-- Customer -->
                     <div>
                         <label class="block text-sm font-medium text-gray-700">Customer *</label>
-                        <CustomerSelect v-model="form.customer_id" class="mt-1" />
+                        <CustomerSelect v-model="form.customer_id" @select="selectedCustomer = $event" class="mt-1" />
                         <p v-if="form.errors.customer_id" class="mt-1 text-sm text-red-600">{{ form.errors.customer_id }}</p>
+
+                        <!-- Outstanding balance warning -->
+                        <div v-if="selectedCustomer && selectedCustomer.outstanding_balance > 0"
+                             class="mt-3 bg-red-50 border-2 border-red-300 rounded-lg p-3 flex items-start gap-2">
+                            <span class="text-2xl">⚠️</span>
+                            <div class="flex-1">
+                                <div class="font-bold text-red-900 text-sm">Customer owes ${{ Number(selectedCustomer.outstanding_balance).toFixed(2) }} from past rentals.</div>
+                                <div class="text-xs text-red-800">Collect outstanding balance before starting a new rental, or get manager approval.</div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

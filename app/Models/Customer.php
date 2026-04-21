@@ -18,7 +18,8 @@ class Customer extends Model
         'can_receive_sms', 'address', 'address_2', 'city', 'state', 'zip', 'country',
         'drivers_license_number', 'dl_expiration', 'dl_state', 'date_of_birth',
         'insurance_company', 'insurance_policy', 'credit_score',
-        'store_credit_balance', 'notes', 'is_active', 'hq_rentals_id',
+        'store_credit_balance', 'cached_outstanding_balance',
+        'notes', 'is_active', 'hq_rentals_id',
     ];
 
     protected function casts(): array
@@ -71,4 +72,27 @@ class Customer extends Model
     public function rentalClaims(): HasMany    { return $this->hasMany(RentalClaim::class)->latest(); }
     public function rentalPayments(): HasMany  { return $this->hasMany(RentalPayment::class)->latest(); }
     public function ezPassAccounts(): HasMany  { return $this->hasMany(EzPassAccount::class); }
+
+    /**
+     * Compute the live outstanding balance across all reservations.
+     * Sum of (total_price - total_paid) for any non-cancelled reservation > 0.
+     */
+    public function computeOutstandingBalance(): float
+    {
+        return (float) $this->reservations()
+            ->whereNotIn('status', ['cancelled'])
+            ->get()
+            ->sum(fn ($r) => max(0, (float)$r->total_price - (float)$r->total_paid));
+    }
+
+    /** Recompute and persist the cached outstanding balance. */
+    public function refreshOutstandingBalance(): void
+    {
+        $this->update(['cached_outstanding_balance' => $this->computeOutstandingBalance()]);
+    }
+
+    public function getHasOutstandingBalanceAttribute(): bool
+    {
+        return (float) $this->cached_outstanding_balance > 0;
+    }
 }
