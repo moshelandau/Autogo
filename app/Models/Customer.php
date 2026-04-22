@@ -109,6 +109,7 @@ class Customer extends Model
     public function rentalClaims(): HasMany    { return $this->hasMany(RentalClaim::class)->latest(); }
     public function rentalPayments(): HasMany  { return $this->hasMany(RentalPayment::class)->latest(); }
     public function ezPassAccounts(): HasMany  { return $this->hasMany(EzPassAccount::class); }
+    public function cards(): HasMany           { return $this->hasMany(CustomerCard::class); }
 
     /**
      * Compute the live outstanding balance across all reservations.

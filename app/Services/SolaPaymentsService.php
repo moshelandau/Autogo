@@ -158,6 +158,34 @@ class SolaPaymentsService
     }
 
     /**
+     * Tokenize a card on the chosen merchant via Cardknox cc:save.
+     * Returns ['success'=>bool, 'token'=>string, 'brand'=>string, 'last4'=>string, 'exp'=>string].
+     * The PAN flows through this method only — we never persist it.
+     */
+    public function saveCard(string $account, array $card): array
+    {
+        if (!$this->isConfigured($account)) return ['success' => false, 'error' => "No xKey for $account"];
+
+        $r = $this->call($account, array_merge([
+            'xCommand' => 'cc:save',
+        ], $this->cardFields($card)));
+        $d = $r['data'] ?? [];
+
+        if (($d['xStatus'] ?? '') !== 'Approved' || empty($d['xToken'])) {
+            return ['success' => false, 'error' => $d['xError'] ?? 'Tokenize failed', 'response' => $d];
+        }
+
+        return [
+            'success' => true,
+            'token'   => $d['xToken'],
+            'brand'   => strtolower($d['xCardType'] ?? 'card'),
+            'last4'   => substr(preg_replace('/\D/', '', $card['number'] ?? ''), -4),
+            'exp'     => $card['exp'] ?? '',
+            'response'=> $d,
+        ];
+    }
+
+    /**
      * Test the Cardknox connection for an xKey. We don't want to actually charge
      * or tokenize a card, so we send a lookup-only command that is auth-checked.
      */

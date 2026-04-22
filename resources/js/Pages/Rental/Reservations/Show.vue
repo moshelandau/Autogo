@@ -3,6 +3,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, useForm, router } from '@inertiajs/vue3';
 
 import { ref, computed } from 'vue';
+import CardOnFile from '@/Components/CardOnFile.vue';
 
 const props = defineProps({
     reservation: Object,
@@ -257,6 +258,8 @@ const analyzeImage = async (insp) => {
                 </div>
 
                 <!-- Rental Agreement PDF -->
+                <CardOnFile v-if="r.customer_id" :customer-id="r.customer_id" default-account="high_rental" />
+
                 <div class="bg-white rounded-xl border p-4 flex items-center justify-between">
                     <div>
                         <div class="font-bold text-gray-900">📄 Rental Agreement</div>

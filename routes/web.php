@@ -45,6 +45,13 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     Route::get('bot-sessions',     [\App\Http\Controllers\BotSessionController::class, 'index'])->name('bot-sessions.index');
     Route::get('bot-sessions/{session}', [\App\Http\Controllers\BotSessionController::class, 'show'])->name('bot-sessions.show');
     Route::post('scan/license-extract',      [\App\Http\Controllers\CustomerScanController::class, 'extractLicense'])->name('scan.license-extract');
+    Route::post('scan/any-extract',          [\App\Http\Controllers\CustomerScanController::class, 'extractAny'])->name('scan.any-extract');
+
+    // Tokenized cards on file (PAN -> Cardknox -> xToken; PAN never persisted)
+    Route::get   ('customers/{customer}/cards',                [\App\Http\Controllers\CustomerCardController::class, 'index'])->name('customers.cards.index');
+    Route::post  ('customers/{customer}/cards',                [\App\Http\Controllers\CustomerCardController::class, 'store'])->name('customers.cards.store');
+    Route::post  ('customers/{customer}/cards/{card}/default', [\App\Http\Controllers\CustomerCardController::class, 'setDefault'])->name('customers.cards.default');
+    Route::delete('customers/{customer}/cards/{card}',         [\App\Http\Controllers\CustomerCardController::class, 'destroy'])->name('customers.cards.destroy');
 
     // ── Car Rental Module ──────────────────────────────
     Route::prefix('rental')->name('rental.')->group(function () {

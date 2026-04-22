@@ -14,6 +14,59 @@ use Inertia\Inertia;
 class CustomerScanController extends Controller
 {
     /**
+     * Extract fields from a generic ID/CC/insurance image without persisting.
+     * Returns { type, fields } so the caller can route to the right pre-fill
+     * (license -> customer fields, credit_card -> CC entry, insurance ->
+     * customer.insurance_*).
+     *
+     * Pass ?expect=license|credit_card|insurance to bias classification.
+     */
+    public function extractAny(Request $request)
+    {
+        $request->validate(['file' => 'required|file|image|max:10240']);
+        if (empty(config('services.anthropic.api_key'))) {
+            return response()->json(['ok' => false, 'error' => 'Anthropic API key not configured'], 422);
+        }
+
+        $f = $request->file('file');
+        $b64  = base64_encode(file_get_contents($f->getRealPath()));
+        $mime = $f->getMimeType() ?: 'image/jpeg';
+        $expect = $request->input('expect', 'auto');
+
+        try {
+            $client = Anthropic::client(config('services.anthropic.api_key'));
+            $resp = $client->messages()->create([
+                'model'       => 'claude-3-5-sonnet-latest',
+                'max_tokens'  => 800,
+                'temperature' => 0,
+                'system'      => 'OCR cards/IDs. Output VALID JSON only.',
+                'messages'    => [[
+                    'role' => 'user',
+                    'content' => [
+                        ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $mime, 'data' => $b64]],
+                        ['type' => 'text', 'text' => 'Identify the document and extract fields. Output JSON: {
+                            "type": "drivers_license" | "credit_card" | "insurance_card" | "other",
+                            "fields": {
+                                "first_name": "", "last_name": "", "address": "", "city": "", "state": "", "zip": "",
+                                "drivers_license_number": "", "dl_state": "", "dl_expiration": "YYYY-MM-DD", "date_of_birth": "YYYY-MM-DD",
+                                "card_number": "", "card_brand": "visa|mc|amex|discover", "card_exp": "MM/YY", "cardholder": "",
+                                "insurance_company": "", "insurance_policy": "", "insurance_expiration": "YYYY-MM-DD"
+                            }
+                        }. Use empty string for missing fields. Caller hint: '.$expect.'.'],
+                    ],
+                ]],
+            ]);
+            $text = trim(preg_replace('/^```(?:json)?\s*|\s*```$/m', '', $resp->content[0]->text ?? ''));
+            $data = json_decode($text, true);
+            if (!is_array($data)) return response()->json(['ok' => false, 'error' => 'Could not parse'], 422);
+            return response()->json(['ok' => true, 'type' => $data['type'] ?? 'other', 'fields' => $data['fields'] ?? []]);
+        } catch (\Throwable $e) {
+            Log::warning('Scan extract failed', ['error' => $e->getMessage()]);
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Extract fields from a driver's license / ID image WITHOUT persisting
      * anything. Used by the "Scan License" button in customer-create modals
      * (CustomerSelect, reservation flows, deals, etc.) to pre-fill the form.
