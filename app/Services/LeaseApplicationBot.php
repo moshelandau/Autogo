@@ -9,7 +9,6 @@ use App\Models\Customer;
 use App\Models\CustomerDocument;
 use App\Models\Deal;
 use App\Models\LeaseApplicationSession;
-use Anthropic\Anthropic;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -520,8 +519,7 @@ class LeaseApplicationBot
             $extracted = [];
             if (!empty(config('services.anthropic.api_key'))) {
                 try {
-                    $client = Anthropic::client(config('services.anthropic.api_key'));
-                    $resp = $client->messages()->create([
+                    $resp = app(\App\Services\AiClient::class)->messages([
                         'model' => 'claude-3-5-sonnet-latest', 'max_tokens' => 800, 'temperature' => 0,
                         'system' => 'OCR US driver licenses. Output VALID JSON only.',
                         'messages' => [[

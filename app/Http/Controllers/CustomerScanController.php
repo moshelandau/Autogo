@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use App\Models\CustomerDocument;
-use Anthropic\Anthropic;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -34,8 +33,7 @@ class CustomerScanController extends Controller
         $expect = $request->input('expect', 'auto');
 
         try {
-            $client = Anthropic::client(config('services.anthropic.api_key'));
-            $resp = $client->messages()->create([
+            $resp = app(\App\Services\AiClient::class)->messages([
                 'model'       => 'claude-3-5-sonnet-latest',
                 'max_tokens'  => 800,
                 'temperature' => 0,
@@ -94,8 +92,7 @@ class CustomerScanController extends Controller
         }
 
         try {
-            $client = Anthropic::client(config('services.anthropic.api_key'));
-            $resp = $client->messages()->create([
+            $resp = app(\App\Services\AiClient::class)->messages([
                 'model'       => 'claude-3-5-sonnet-latest',
                 'max_tokens'  => 800,
                 'temperature' => 0,
@@ -190,9 +187,7 @@ class CustomerScanController extends Controller
      */
     private function classifyWithClaude(string $b64, string $mime): array
     {
-        $client = Anthropic::client(config('services.anthropic.api_key'));
-
-        $resp = $client->messages()->create([
+        $resp = app(\App\Services\AiClient::class)->messages([
             'model'       => 'claude-3-5-sonnet-latest',
             'max_tokens'  => 600,
             'temperature' => 0,

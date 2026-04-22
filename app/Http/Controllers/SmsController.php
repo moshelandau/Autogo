@@ -33,25 +33,50 @@ class SmsController extends Controller
             return back()->with('error', 'Telebroad is not configured. Add credentials in Settings.');
         }
 
-        // Save uploaded attachments to public disk and pass URLs to Telebroad MMS
-        $mediaUrls    = [];
-        $mediaRecords = [];
+        // Save attachments to public disk + build the {url, type, name} objects
+        // Telebroad expects (verified live: string-only arrays return code 444).
+        $mediaForApi      = [];   // → Telebroad
+        $mediaForLog      = [];   // → CommunicationLog.attachments.media
+        $bodyExtras       = [];   // appended to the SMS body for non-MMS-friendly types (PDF)
         if ($request->hasFile('attachments')) {
             foreach ($request->file('attachments') as $f) {
-                $name = 'sms-' . now()->format('YmdHis') . '-' . \Str::random(6) . '.' . $f->getClientOriginalExtension();
+                $ext  = $f->getClientOriginalExtension() ?: 'bin';
+                $name = 'sms-' . now()->format('YmdHis') . '-' . \Str::random(6) . '.' . $ext;
                 $path = $f->storeAs('sms-outbound', $name, 'public');
                 $url  = url('/storage/' . $path);
-                $mediaUrls[] = $url;
-                $mediaRecords[] = ['url' => $url, 'name' => $f->getClientOriginalName(), 'mime' => $f->getMimeType()];
+                // Some recorded webm voice notes get mime "video/webm" from the
+                // browser even though they're audio-only — normalize to audio/webm.
+                $mime = $f->getMimeType();
+                if (str_contains((string) $mime, 'webm')) $mime = 'audio/webm';
+
+                $mediaForLog[] = ['url' => $url, 'name' => $f->getClientOriginalName(), 'mime' => $mime];
+
+                if (str_starts_with((string) $mime, 'image/')) {
+                    $mediaForApi[] = ['url' => $url, 'type' => $mime];
+                } elseif (str_starts_with((string) $mime, 'audio/')) {
+                    $mediaForApi[] = ['url' => $url, 'type' => $mime];
+                } else {
+                    // PDF / other — Telebroad MMS doesn't reliably accept these.
+                    // Send as a download link in the SMS body instead.
+                    $bodyExtras[] = "📎 {$f->getClientOriginalName()}: {$url}";
+                }
             }
         }
 
-        $body = (string) ($validated['message'] ?? '');
-        if ($body === '' && empty($mediaUrls)) {
+        $body = trim((string) ($validated['message'] ?? ''));
+        if (!empty($bodyExtras)) {
+            $body = trim($body . "\n" . implode("\n", $bodyExtras));
+        }
+        if ($body === '' && empty($mediaForApi)) {
             return back()->with('error', 'Message body or at least one attachment is required.');
         }
 
-        $result = $this->telebroad->sendSms($validated['to'], $body, $mediaUrls);
+        $result = $this->telebroad->sendSms($validated['to'], $body, $mediaForApi);
+
+        // For the log, use whatever Caller-ID Telebroad ended up using
+        // (DB Setting first, env fallback) — same lookup the service does.
+        $fromNumber = (string) (\App\Models\Setting::getValue('telebroad_phone_number')
+            ?: config('services.telebroad.phone_number', ''));
 
         CommunicationLog::create([
             'subject_type' => $validated['subject_type'] ?? null,
@@ -60,10 +85,10 @@ class SmsController extends Controller
             'user_id'      => auth()->id(),
             'channel'      => 'sms',
             'direction'    => 'outbound',
-            'from'         => (string) config('services.telebroad.phone_number'),
+            'from'         => $fromNumber,
             'to'           => $validated['to'],
             'body'         => $body,
-            'attachments'  => !empty($mediaRecords) ? ['media' => $mediaRecords] : null,
+            'attachments'  => !empty($mediaForLog) ? ['media' => $mediaForLog] : null,
             'external_ref' => $result['external_id'] ?? null,
             'status'       => ($result['success'] ?? false) ? 'sent' : 'failed',
             'sent_at'      => now(),

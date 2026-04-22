@@ -87,7 +87,12 @@ class TelebroadWebhookController extends Controller
         }
 
         // Auto-link to customer by phone match
-        $customer = $from ? $this->findCustomerByPhone($from) : null;
+        // Look up the OTHER party — for inbound that's the sender (`from`),
+        // for outbound that's the recipient (`to`). Looking up by `from` on
+        // outbound would match whichever customer (wrongly) has our own
+        // business line stored as their phone.
+        $customerLookupNumber = $isInbound ? $from : $to;
+        $customer = $customerLookupNumber ? $this->findCustomerByPhone($customerLookupNumber) : null;
 
         // Parse MMS media — Telebroad sends `media` as a JSON-encoded string of URL array
         $mediaUrls = $this->parseMedia($payload['media'] ?? null);

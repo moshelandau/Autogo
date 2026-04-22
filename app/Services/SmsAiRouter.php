@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use Anthropic\Anthropic;
 use App\Models\CommunicationLog;
 use App\Models\Customer;
 use App\Models\User;
@@ -94,8 +93,7 @@ Otherwise pick "respond".
 TXT;
 
         try {
-            $client = Anthropic::client(config('services.anthropic.api_key'));
-            $resp = $client->messages()->create([
+            $resp = app(\App\Services\AiClient::class)->messages([
                 'model'       => (string) (\App\Models\Setting::getValue('ai_router_model') ?: 'claude-3-5-sonnet-latest'),
                 'max_tokens'  => 200,
                 'temperature' => 0,

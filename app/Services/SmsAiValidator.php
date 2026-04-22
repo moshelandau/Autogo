@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Services;
 
-use Anthropic\Anthropic;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -81,8 +80,7 @@ Output VALID JSON ONLY, no prose:
 TXT;
 
         try {
-            $client = Anthropic::client(config('services.anthropic.api_key'));
-            $resp = $client->messages()->create([
+            $resp = app(\App\Services\AiClient::class)->messages([
                 'model'       => (string) (\App\Models\Setting::getValue('ai_validator_model') ?: 'claude-3-5-haiku-latest'),
                 'max_tokens'  => 150,
                 'temperature' => 0,

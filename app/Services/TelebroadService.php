@@ -38,10 +38,12 @@ class TelebroadService
     }
 
     /**
-     * @param array $mediaUrls Optional MMS attachment URLs (verified via
-     *   Telebroad helpdesk article 4000110801 — `media` is a JSON array).
+     * @param array $media Optional MMS attachments. Either array of URL
+     *   strings, or array of ['url' => ..., 'type' => 'image/jpeg', 'name'?].
+     *   Telebroad expects a JSON array of objects with `url` + `type` (verified
+     *   live 2026-04-22 — string-only array returns code 444).
      */
-    public function sendSms(string $toNumber, string $message, array $mediaUrls = []): array
+    public function sendSms(string $toNumber, string $message, array $media = []): array
     {
         if (!$this->isConfigured()) return ['success' => false, 'error' => 'Telebroad is not configured'];
 
@@ -51,8 +53,16 @@ class TelebroadService
                 'receiver' => $this->formatPhoneNumber($toNumber),
                 'msgdata'  => $message,
             ];
-            if (!empty($mediaUrls)) {
-                $payload['media'] = json_encode(array_values($mediaUrls));
+            if (!empty($media)) {
+                $payload['media'] = json_encode(array_values(array_map(function ($m) {
+                    if (is_string($m)) {
+                        return ['url' => $m, 'type' => $this->guessMimeFromUrl($m)];
+                    }
+                    return [
+                        'url'  => $m['url']  ?? '',
+                        'type' => $m['type'] ?? $m['mime'] ?? $this->guessMimeFromUrl($m['url'] ?? ''),
+                    ];
+                }, $media)));
             }
             $response = Http::withBasicAuth($this->username, $this->password)
                 ->asForm()
@@ -121,6 +131,25 @@ class TelebroadService
             Log::error('Telebroad call exception', ['error' => $e->getMessage()]);
             return ['success' => false, 'error' => $e->getMessage()];
         }
+    }
+
+    private function guessMimeFromUrl(string $url): string
+    {
+        $ext = strtolower(pathinfo(parse_url($url, PHP_URL_PATH) ?? '', PATHINFO_EXTENSION));
+        return match ($ext) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'png'  => 'image/png',
+            'gif'  => 'image/gif',
+            'webp' => 'image/webp',
+            'mp4'  => 'video/mp4',
+            'mov'  => 'video/quicktime',
+            'mp3'  => 'audio/mpeg',
+            'm4a'  => 'audio/mp4',
+            'wav'  => 'audio/wav',
+            'webm' => 'audio/webm',  // assume audio (recorded voice notes)
+            'pdf'  => 'application/pdf',
+            default => 'application/octet-stream',
+        };
     }
 
     private function formatPhoneNumber(string $number): string

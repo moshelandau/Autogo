@@ -301,25 +301,22 @@ class SettingController extends Controller
     /** Tiny "ping" call against Anthropic to verify the API key works. */
     private function testAi(Request $r): array
     {
-        $key = $this->tval($r, 'api_key', 'anthropic_api_key', 'services.anthropic.api_key');
-        if (!$key) return ['ok' => false, 'message' => 'No Anthropic API key. Get one at console.anthropic.com.'];
-        $model = $this->tval($r, 'router_model', 'ai_router_model', 'services.anthropic.router_model') ?: 'claude-3-5-haiku-latest';
+        // Stash a key the user may have typed in the test field, so AiClient picks it up.
+        $typed = (string) $r->input('api_key', '');
+        if ($typed !== '') {
+            $original = config('services.anthropic.api_key');
+            config(['services.anthropic.api_key' => $typed]);
+        }
         try {
-            $client = \Anthropic\Anthropic::client($key);
-            $resp = $client->messages()->create([
-                'model'       => $model,
-                'max_tokens'  => 10,
-                'temperature' => 0,
-                'messages'    => [['role' => 'user', 'content' => 'Reply with the single word: OK']],
-            ]);
-            $text = trim((string) ($resp->content[0]->text ?? ''));
-            return ['ok' => true, 'message' => "✓ Anthropic key accepted · model: {$model} · response: \"{$text}\""];
-        } catch (\Throwable $e) {
-            $msg = $e->getMessage();
-            $hint = str_contains(strtolower($msg), 'authentication') || str_contains(strtolower($msg), 'invalid api key')
-                ? ' — key looks wrong or expired.'
-                : '';
-            return ['ok' => false, 'message' => "✗ Anthropic rejected: {$msg}{$hint}"];
+            $model = $this->tval($r, 'router_model', 'ai_router_model', 'services.anthropic.router_model') ?: 'claude-3-5-haiku-latest';
+            $svc = app(\App\Services\AiClient::class);
+            if (!$svc->isConfigured()) return ['ok' => false, 'message' => 'No Anthropic API key. Save one above first or add ANTHROPIC_API_KEY to .env.'];
+            $r2 = $svc->ping($model);
+            if ($r2['ok']) return ['ok' => true, 'message' => "✓ Anthropic key accepted · model: {$model} · response: \"{$r2['text']}\""];
+            $hint = preg_match('/(authentication|invalid api key|401)/i', $r2['error']) ? ' — key looks wrong or expired.' : '';
+            return ['ok' => false, 'message' => "✗ Anthropic rejected: {$r2['error']}{$hint}"];
+        } finally {
+            if ($typed !== '') config(['services.anthropic.api_key' => $original ?? null]);
         }
     }
 
