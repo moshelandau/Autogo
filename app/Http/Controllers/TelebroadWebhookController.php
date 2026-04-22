@@ -60,10 +60,25 @@ class TelebroadWebhookController extends Controller
         $isInbound = strtolower((string) $direction) === 'received'
             || !in_array(strtolower((string) $direction), ['sent', 'outbound', 'out'], true);
 
-        // Skip outbound echoes — every outbound SMS is already logged synchronously
-        // by SmsController when the user clicks Send. The webhook would create a duplicate.
+        // For outbound: skip ONLY if we already logged this exact message from
+        // SmsController (matches by Telebroad message id). Otherwise it was
+        // sent from somewhere else (Telebroad web UI, mobile app, another
+        // device) and we want to record it so the thread is complete.
         if (!$isInbound) {
-            return response()->json(['ok' => true, 'note' => 'outbound_echo_skipped']);
+            if ($messageId && CommunicationLog::where('external_ref', $messageId)->exists()) {
+                return response()->json(['ok' => true, 'note' => 'outbound_echo_skipped']);
+            }
+            // Also skip if we have a recent identical outbound to the same number
+            // (handles the race where the webhook arrives before SmsController saves)
+            $last10 = substr(preg_replace('/\D/', '', (string) $to), -10);
+            $recentDup = CommunicationLog::query()
+                ->where('channel', 'sms')->where('direction', 'outbound')
+                ->where('to', 'ilike', "%{$last10}")
+                ->where('body', $body)
+                ->where('created_at', '>=', now()->subSeconds(15))
+                ->exists();
+            if ($recentDup) return response()->json(['ok' => true, 'note' => 'outbound_dup_within_15s']);
+            // Otherwise: this came from outside AutoGo — log as outbound, no user_id
         }
 
         // Skip echoes of our own outbound to avoid duplicates

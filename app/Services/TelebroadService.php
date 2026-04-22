@@ -37,18 +37,26 @@ class TelebroadService
         return !empty($this->username) && !empty($this->password) && !empty($this->fromNumber);
     }
 
-    public function sendSms(string $toNumber, string $message): array
+    /**
+     * @param array $mediaUrls Optional MMS attachment URLs (verified via
+     *   Telebroad helpdesk article 4000110801 — `media` is a JSON array).
+     */
+    public function sendSms(string $toNumber, string $message, array $mediaUrls = []): array
     {
         if (!$this->isConfigured()) return ['success' => false, 'error' => 'Telebroad is not configured'];
 
         try {
+            $payload = [
+                'sms_line' => $this->formatPhoneNumber($this->fromNumber),
+                'receiver' => $this->formatPhoneNumber($toNumber),
+                'msgdata'  => $message,
+            ];
+            if (!empty($mediaUrls)) {
+                $payload['media'] = json_encode(array_values($mediaUrls));
+            }
             $response = Http::withBasicAuth($this->username, $this->password)
                 ->asForm()
-                ->post("{$this->apiUrl}/send/sms", [
-                    'sms_line' => $this->formatPhoneNumber($this->fromNumber),
-                    'receiver' => $this->formatPhoneNumber($toNumber),
-                    'msgdata' => $message,
-                ]);
+                ->post("{$this->apiUrl}/send/sms", $payload);
 
             $responseData = ['http_status' => $response->status(), 'body' => $response->json() ?? $response->body()];
             $hasBodyError = $response->json('error') !== null;

@@ -179,9 +179,16 @@ class SmsConversationController extends Controller
                 $q->where('from', 'ilike', "%{$last10}")
                   ->orWhere('to', 'ilike', "%{$last10}");
             })
+            ->with('user:id,name')
             ->orderBy('created_at')
             ->get(['id', 'direction', 'from', 'to', 'body', 'attachments', 'status', 'sent_at', 'created_at', 'user_id', 'customer_id', 'assigned_to'])
-            ->map(function ($m) { $m->body = $this->maskSensitive($m->body); return $m; });
+            ->map(function ($m) {
+                $m->body = $this->maskSensitive($m->body);
+                $m->sender_label = $m->direction === 'outbound'
+                    ? ($m->user?->name ?? ($m->attachments['_bot'] ?? false ? '🤖 Bot' : '🤖 System'))
+                    : null;
+                return $m;
+            });
 
         $customer = $messages->firstWhere('customer_id', '!=', null)?->customer_id
             ? Customer::find($messages->firstWhere('customer_id', '!=', null)->customer_id)
@@ -217,9 +224,16 @@ class SmsConversationController extends Controller
         $messages = CommunicationLog::query()
             ->where('channel', 'sms')
             ->where('customer_id', $customer->id)
+            ->with('user:id,name')
             ->orderBy('created_at')
-            ->get(['id', 'direction', 'from', 'to', 'body', 'attachments', 'status', 'sent_at', 'created_at', 'assigned_to'])
-            ->map(function ($m) { $m->body = $this->maskSensitive($m->body); return $m; });
+            ->get(['id', 'direction', 'from', 'to', 'body', 'attachments', 'status', 'sent_at', 'created_at', 'user_id', 'assigned_to'])
+            ->map(function ($m) {
+                $m->body = $this->maskSensitive($m->body);
+                $m->sender_label = $m->direction === 'outbound'
+                    ? ($m->user?->name ?? ($m->attachments['_bot'] ?? false ? '🤖 Bot' : '🤖 System'))
+                    : null;
+                return $m;
+            });
 
         $assignedTo = $messages->reverse()->firstWhere('assigned_to', '!=', null)?->assigned_to;
         $phone = $customer->phone;
