@@ -257,7 +257,17 @@ class RentalService
     // ── Calendar Data ──────────────────────────────────
     public function getCalendarData(string $start, string $end, array $filters = []): Collection
     {
-        $query = Reservation::with(['customer', 'vehicle', 'pickupLocation'])
+        // Only the columns the calendar UI actually renders — keeps payload tiny.
+        $query = Reservation::query()
+            ->with([
+                'customer:id,first_name,last_name',
+                'vehicle:id,year,make,model,license_plate,vehicle_class',
+                'pickupLocation:id,name',
+            ])
+            ->select([
+                'id', 'customer_id', 'vehicle_id', 'vehicle_class',
+                'pickup_date', 'return_date', 'pickup_location_id', 'status',
+            ])
             ->where('pickup_date', '<=', $end)
             ->where('return_date', '>=', $start);
 

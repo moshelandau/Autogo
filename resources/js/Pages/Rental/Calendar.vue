@@ -173,17 +173,30 @@ const vehicleLanes = computed(() => {
         }
     });
 
-    // Place CLASS-ONLY reservations on EVERY vehicle of the matching class
-    // (overlay color set on event.color server-side)
+    // Place CLASS-ONLY (pending) reservations ONE PER LANE, round-robin.
+    // If 1 pending SUV exists across 6 SUV lanes, only 1 lane shows it.
+    // If 2 pending SUVs exist, 2 different lanes each show one.
+    // The hover popover lists ALL pendings of that class so an operator
+    // can pick which customer they want to assign to THIS vehicle.
+    const pendingByClass = new Map(); // class -> [pending events]
     (props.events || []).forEach(ev => {
         if (ev.is_class_only && ev.vehicle_class) {
-            for (const lane of map.values()) {
-                if (lane.vehicleClass === ev.vehicle_class) {
-                    lane.events.push({ ...ev, _is_overlay: true });
-                }
-            }
+            if (!pendingByClass.has(ev.vehicle_class)) pendingByClass.set(ev.vehicle_class, []);
+            pendingByClass.get(ev.vehicle_class).push(ev);
         }
     });
+    for (const [vclass, pendings] of pendingByClass.entries()) {
+        const lanesOfClass = [...map.values()].filter(l => l.vehicleClass === vclass);
+        if (lanesOfClass.length === 0) {
+            // No matching vehicle in fleet — fall back to bottom unassigned bucket
+            pendings.forEach(p => lanesOfClass[0]?.events?.push({ ...p, _is_overlay: true, _all_pending_in_class: pendings }));
+            continue;
+        }
+        pendings.forEach((p, idx) => {
+            const lane = lanesOfClass[idx % lanesOfClass.length];
+            lane.events.push({ ...p, _is_overlay: true, _all_pending_in_class: pendings });
+        });
+    }
 
     // Truly unassigned (no class either) → bucket at the bottom
     const unassignedBucket = { key: 'unassigned', label: 'Unassigned (no class)', isUnassigned: true, events: [] };
@@ -528,39 +541,62 @@ const ymdSafe = (d) => d ? d.toISOString().slice(0, 10) : '';
 
                             <!-- Event bars positioned by % across the full range -->
                             <template v-for="seg in segmentsByVehicle[vi]" :key="seg.event.id + (seg.event._is_overlay ? '-ov' + vehicle.vehicleId : '')">
-                                <component :is="seg.event._is_overlay ? 'a' : Link"
-                                      :href="seg.event._is_overlay
-                                          ? `/rental/reservations/${seg.event.id}?assign_vehicle=${vehicle.vehicleId}`
-                                          : route('rental.reservations.show', seg.event.id)"
-                                      class="event-stripe absolute block transition-all duration-150 cursor-pointer overflow-hidden"
-                                      :class="[
-                                        seg.event._is_overlay ? 'bg-purple-500 ring-1 ring-purple-700 ring-offset-0' : statusBg(seg.event.status),
-                                        seg.event._is_overlay ? 'opacity-60 hover:opacity-100' : '',
-                                        seg.continuesLeft  ? 'rounded-l-none' : 'rounded-l',
-                                        seg.continuesRight ? 'rounded-r-none' : 'rounded-r',
-                                      ]"
-                                      :style="{
-                                          left:  `calc(${seg.leftPct}% + 1px)`,
-                                          width: `calc(${seg.widthPct}% - 2px)`,
-                                          top:   '3px',
-                                          height: (ROW_HEIGHT - 6) + 'px',
-                                          backgroundImage: seg.event._is_overlay ? 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(255,255,255,.25) 4px, rgba(255,255,255,.25) 8px)' : 'none',
-                                      }">
+                                <Link v-if="!seg.event._is_overlay"
+                                      :href="route('rental.reservations.show', seg.event.id)"
+                                      class="event-stripe absolute block transition-all duration-150 cursor-pointer overflow-hidden rounded"
+                                      :class="[ statusBg(seg.event.status),
+                                        seg.continuesLeft  ? 'rounded-l-none' : '',
+                                        seg.continuesRight ? 'rounded-r-none' : '' ]"
+                                      :style="{ left: `calc(${seg.leftPct}% + 1px)`, width: `calc(${seg.widthPct}% - 2px)`, top: '3px', height: (ROW_HEIGHT - 6) + 'px' }">
                                     <span class="stripe-label block text-white px-1.5 truncate font-medium leading-none pt-1">
-                                        <span v-if="seg.event._is_overlay">📍 </span>{{ seg.event.customer_name || seg.event.title }}
+                                        {{ seg.event.customer_name || seg.event.title }}
                                     </span>
                                     <span class="event-popover absolute hidden left-0 top-full mt-1 z-40 w-72 bg-white text-gray-900 text-xs rounded-lg shadow-xl border p-2.5 pointer-events-none">
                                         <span class="block font-semibold text-sm leading-tight mb-1">{{ seg.event.title }}</span>
                                         <span class="block text-[11px] text-gray-500">
                                             {{ new Date(seg.event.start).toLocaleDateString() }} → {{ new Date(seg.event.end).toLocaleDateString() }}
                                         </span>
-                                        <span class="inline-block mt-1.5 text-[10px] px-1.5 py-0.5 rounded text-white capitalize"
-                                              :class="seg.event._is_overlay ? 'bg-purple-600' : statusBg(seg.event.status)">
-                                            {{ seg.event._is_overlay ? `Class-pending (${seg.event.vehicle_class}) · click to ASSIGN to ${vehicle.label}` : seg.event.status }}
-                                        </span>
+                                        <span class="inline-block mt-1.5 text-[10px] px-1.5 py-0.5 rounded text-white capitalize" :class="statusBg(seg.event.status)">{{ seg.event.status }}</span>
                                         <span v-if="seg.event.location_name" class="block text-[10px] text-gray-500 mt-1">📍 {{ seg.event.location_name }}</span>
                                     </span>
-                                </component>
+                                </Link>
+
+                                <!-- PENDING (class-only) overlay: show 1 line on this lane,
+                                     but on hover list ALL pending reservations for this class
+                                     so the operator can pick which customer to assign HERE. -->
+                                <div v-else
+                                     class="event-stripe absolute block group cursor-pointer overflow-visible"
+                                     :style="{ left: `calc(${seg.leftPct}% + 1px)`, width: `calc(${seg.widthPct}% - 2px)`, top: '3px', height: (ROW_HEIGHT - 6) + 'px' }">
+                                    <div class="absolute inset-0 rounded bg-purple-500/80 ring-1 ring-purple-700 transition-opacity hover:opacity-100"
+                                         :style="{ backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(255,255,255,.25) 4px, rgba(255,255,255,.25) 8px)' }">
+                                        <span class="stripe-label block text-white px-1.5 truncate font-medium leading-none pt-1">
+                                            📍 PENDING — {{ seg.event.vehicle_class }}
+                                            <span v-if="seg.event._all_pending_in_class?.length > 1"
+                                                  class="ml-1 inline-flex items-center justify-center min-w-[16px] h-4 px-1 text-[10px] font-bold text-purple-900 bg-white rounded-full">
+                                                {{ seg.event._all_pending_in_class.length }}
+                                            </span>
+                                        </span>
+                                    </div>
+                                    <!-- Popover: all pending of this class with click-to-assign-here -->
+                                    <div class="event-popover absolute hidden left-0 top-full mt-1 z-50 w-80 bg-white text-gray-900 text-xs rounded-lg shadow-xl border p-2 group-hover:block">
+                                        <div class="font-semibold text-sm border-b pb-1.5 mb-1.5">
+                                            {{ seg.event._all_pending_in_class?.length || 1 }} pending {{ seg.event.vehicle_class }} request{{ (seg.event._all_pending_in_class?.length || 1) > 1 ? 's' : '' }}
+                                            <div class="text-[10px] text-gray-500 font-normal">Click a customer to assign to <strong>{{ vehicle.label }}</strong> and start pickup</div>
+                                        </div>
+                                        <ul class="divide-y max-h-72 overflow-y-auto">
+                                            <li v-for="p in (seg.event._all_pending_in_class || [seg.event])" :key="p.id">
+                                                <a :href="`/rental/reservations/${p.id}?assign_vehicle=${vehicle.vehicleId}`"
+                                                   class="block py-1.5 px-1 hover:bg-purple-50 rounded cursor-pointer">
+                                                    <div class="font-semibold">{{ p.customer_name || 'Unknown customer' }}</div>
+                                                    <div class="text-[10px] text-gray-500 flex justify-between">
+                                                        <span>{{ new Date(p.start).toLocaleDateString() }} → {{ new Date(p.end).toLocaleDateString() }}</span>
+                                                        <span v-if="p.location_name">📍 {{ p.location_name }}</span>
+                                                    </div>
+                                                </a>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
                             </template>
                         </div>
                     </div>
