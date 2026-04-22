@@ -54,6 +54,12 @@ const filteredTimeline = computed(() => {
     return props.timeline.filter(t => t.kind === kindFilter.value);
 });
 
+// Attachment type helpers (mime can be octet-stream from Telebroad → fall back to ext)
+const _ext = (att) => (att?.url || att?.name || '').toLowerCase().split('?')[0].split('.').pop();
+const isImage = (att) => (att?.mime || '').startsWith('image/') || ['jpg','jpeg','png','gif','webp','bmp','heic'].includes(_ext(att));
+const isAudio = (att) => (att?.mime || '').startsWith('audio/') || ['m4a','mp3','wav','webm','3gp','3gpp','amr','ogg','opus','aac','aiff'].includes(_ext(att));
+const isVideo = (att) => (att?.mime || '').startsWith('video/') || ['mp4','mov','m4v','mkv','avi'].includes(_ext(att));
+
 // ── SMS Messages tab ─────────────────────────────────────
 const messages = ref([]);
 const messagesLoading = ref(false);
@@ -373,11 +379,14 @@ const kinds = [
                                         <div class="px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap break-words"
                                             :class="m.direction === 'outbound' ? 'bg-indigo-600 text-white rounded-br-sm' : 'bg-white text-gray-900 border rounded-bl-sm'">
                                             <template v-if="m.attachments && m.attachments.media">
-                                                <a v-for="(att, i) in m.attachments.media" :key="i" :href="att.url" target="_blank" class="block mb-1 last:mb-0">
-                                                    <img v-if="att.mime && att.mime.startsWith('image/')" :src="att.url"
-                                                        class="rounded-lg max-w-full max-h-60 object-contain" :alt="att.name" />
-                                                    <span v-else class="underline">{{ att.name }}</span>
-                                                </a>
+                                                <div v-for="(att, i) in m.attachments.media" :key="i" class="mb-1 last:mb-0">
+                                                    <a v-if="isImage(att)" :href="att.url" target="_blank" class="block">
+                                                        <img :src="att.url" class="rounded-lg max-w-full max-h-60 object-contain" :alt="att.name" />
+                                                    </a>
+                                                    <audio v-else-if="isAudio(att)" controls preload="metadata" :src="att.url" class="w-full max-w-xs" />
+                                                    <video v-else-if="isVideo(att)" controls preload="metadata" :src="att.url" class="rounded-lg max-w-full max-h-60" />
+                                                    <a v-else :href="att.url" target="_blank" class="underline">📎 {{ att.name }}</a>
+                                                </div>
                                             </template>
                                             <span v-if="m.body">{{ m.body }}</span>
                                         </div>

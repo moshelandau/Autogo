@@ -181,6 +181,13 @@ class TelebroadWebhookController extends Controller
             'webp' => 'image/webp',
             'mp4'  => 'video/mp4',
             'mov'  => 'video/quicktime',
+            '3gp'  => 'audio/3gpp',
+            'm4a'  => 'audio/mp4',
+            'mp3'  => 'audio/mpeg',
+            'wav'  => 'audio/wav',
+            'webm' => 'audio/webm',
+            'amr'  => 'audio/amr',
+            'ogg'  => 'audio/ogg',
             'pdf'  => 'application/pdf',
             default => 'application/octet-stream',
         };
