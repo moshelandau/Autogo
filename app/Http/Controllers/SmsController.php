@@ -39,26 +39,43 @@ class SmsController extends Controller
         $mediaForLog      = [];   // → CommunicationLog.attachments.media
         $bodyExtras       = [];   // appended to the SMS body for non-MMS-friendly types (PDF)
         if ($request->hasFile('attachments')) {
+            $resizer = app(\App\Services\ImageResizer::class);
             foreach ($request->file('attachments') as $f) {
-                $ext  = $f->getClientOriginalExtension() ?: 'bin';
-                $name = 'sms-' . now()->format('YmdHis') . '-' . \Str::random(6) . '.' . $ext;
-                $path = $f->storeAs('sms-outbound', $name, 'public');
-                $url  = url('/storage/' . $path);
-                // Some recorded webm voice notes get mime "video/webm" from the
-                // browser even though they're audio-only — normalize to audio/webm.
-                $mime = $f->getMimeType();
-                if (str_contains((string) $mime, 'webm')) $mime = 'audio/webm';
+                $origMime = (string) $f->getMimeType();
+                $origName = $f->getClientOriginalName();
+                $bytes    = file_get_contents($f->getRealPath());
 
-                $mediaForLog[] = ['url' => $url, 'name' => $f->getClientOriginalName(), 'mime' => $mime];
+                // Browser-recorded webm voice notes sometimes report video/webm even
+                // though they're audio-only — normalize.
+                $mime = str_contains($origMime, 'webm') ? 'audio/webm' : $origMime;
 
-                if (str_starts_with((string) $mime, 'image/')) {
-                    $mediaForApi[] = ['url' => $url, 'type' => $mime];
-                } elseif (str_starts_with((string) $mime, 'audio/')) {
+                // Auto-shrink images so MMS payload stays under most carriers' cap (~600KB).
+                $extOut = $f->getClientOriginalExtension() ?: 'bin';
+                $resizeNote = '';
+                if (str_starts_with($mime, 'image/') && strlen($bytes) > \App\Services\ImageResizer::TARGET_MAX_BYTES) {
+                    $r = $resizer->fitForMms($bytes, $mime);
+                    if ($r['resized']) {
+                        $oldKb = (int) round(strlen($bytes) / 1024);
+                        $newKb = (int) round(strlen($r['bytes']) / 1024);
+                        $bytes  = $r['bytes'];
+                        $mime   = $r['mime'];
+                        $extOut = $r['extension'];
+                        $resizeNote = " (resized {$oldKb}KB→{$newKb}KB)";
+                    }
+                }
+
+                $name = 'sms-' . now()->format('YmdHis') . '-' . \Str::random(6) . '.' . $extOut;
+                \Storage::disk('public')->put('sms-outbound/' . $name, $bytes);
+                $url = url('/storage/sms-outbound/' . $name);
+
+                $mediaForLog[] = ['url' => $url, 'name' => $origName . $resizeNote, 'mime' => $mime];
+
+                if (str_starts_with($mime, 'image/') || str_starts_with($mime, 'audio/')) {
                     $mediaForApi[] = ['url' => $url, 'type' => $mime];
                 } else {
                     // PDF / other — Telebroad MMS doesn't reliably accept these.
                     // Send as a download link in the SMS body instead.
-                    $bodyExtras[] = "📎 {$f->getClientOriginalName()}: {$url}";
+                    $bodyExtras[] = "📎 {$origName}: {$url}";
                 }
             }
         }
