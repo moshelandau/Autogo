@@ -14,8 +14,32 @@ class SettingController extends Controller
 
     public function index()
     {
+        // Strip secret values out of the public settings map and send a parallel
+        // `secrets` map with masked previews instead. The UI shows "✓ saved (ends ●●●1234)"
+        // for any field that has a stored value, so users know one is saved without
+        // exposing the full value in HTML.
+        $all = $this->settings->getAll();
+        $secrets = [];
+        $publicSettings = [];
+        foreach ($all as $k => $v) {
+            if ($this->isSecretKey($k)) {
+                $publicSettings[$k] = ''; // never echo secrets back
+                if ($v !== null && $v !== '') {
+                    $str = (string) $v;
+                    $secrets[$k] = [
+                        'has'    => true,
+                        'length' => strlen($str),
+                        'masked' => str_repeat('•', max(0, min(8, strlen($str) - 4))) . substr($str, -4),
+                    ];
+                }
+            } else {
+                $publicSettings[$k] = $v;
+            }
+        }
+
         return Inertia::render('Settings/Index', [
-            'settings' => $this->settings->getAll(),
+            'settings' => $publicSettings,
+            'secrets'  => $secrets,
             'env' => [
                 // Surface what's configured in .env so the UI can show "configured ✓"
                 'telebroad'    => !empty(config('services.telebroad.username')),
@@ -44,6 +68,11 @@ class SettingController extends Controller
         ]);
 
         foreach ($validated['settings'] as $setting) {
+            // Don't wipe a saved secret just because the user left the field blank.
+            // Empty strings on secret-type keys are preserved as a no-op.
+            if ($this->isSecretKey($setting['key']) && ($setting['value'] === null || $setting['value'] === '')) {
+                continue;
+            }
             $this->settings->set($setting['key'], $setting['value'], $setting['group'] ?? 'general');
         }
 
@@ -81,11 +110,30 @@ class SettingController extends Controller
         }
     }
 
+    /** Centralised "is this key sensitive?" check. */
+    private function isSecretKey(string $key): bool
+    {
+        $patterns = ['password', 'secret', 'token', 'api_key', 'xkey', 's3_key', 's3_secret', 'access_key'];
+        $lower = strtolower($key);
+        foreach ($patterns as $p) if (str_contains($lower, $p)) return true;
+        return false;
+    }
+
+    /** Helper: read a tested value from request, fall back to saved Setting, then to .env config. */
+    private function tval(Request $r, string $field, string $settingKey, string $configPath): ?string
+    {
+        $v = $r->input($field);
+        if ($v !== null && $v !== '') return (string) $v;
+        $s = \App\Models\Setting::getValue($settingKey);
+        if ($s !== null && $s !== '') return (string) $s;
+        return config($configPath) ?: null;
+    }
+
     private function testTelebroad(Request $r): array
     {
-        $u   = $r->input('username') ?: config('services.telebroad.username');
-        $p   = $r->input('password') ?: config('services.telebroad.password');
-        $url = $r->input('api_url')  ?: config('services.telebroad.api_url');
+        $u   = $this->tval($r, 'username', 'telebroad_username',     'services.telebroad.username');
+        $p   = $this->tval($r, 'password', 'telebroad_password',     'services.telebroad.password');
+        $url = $this->tval($r, 'api_url',  'telebroad_api_url',      'services.telebroad.api_url');
         if (!$u || !$p) return ['ok' => false, 'message' => 'Telebroad username + password required'];
 
         // Telebroad TeleConsole REST — basic auth ping
@@ -121,7 +169,11 @@ class SettingController extends Controller
      */
     private function testSolaAccount(Request $r, string $account): array
     {
-        $xKey = $r->input('api_key'); // From the field the user just typed (not yet saved)
+        // Field name in the form is "api_key" for both; but the SAVED setting key
+        // differs per merchant.
+        $settingKey = $account === 'high_rental' ? 'sola_webhook_secret' : 'sola_api_key';
+        $configPath = $account === 'high_rental' ? 'services.sola.webhook_secret' : 'services.sola.api_key';
+        $xKey = $this->tval($r, 'api_key', $settingKey, $configPath);
         if (!$xKey) return ['ok' => false, 'message' => 'xKey for ' . ($account === 'high_rental' ? 'High Car Rental' : 'AutoGo') . ' is empty.'];
 
         // Temporarily override the config so the service uses THIS key for the test
@@ -142,8 +194,8 @@ class SettingController extends Controller
 
     private function testCredit700(Request $r): array
     {
-        $key = $r->input('api_key') ?: config('services.credit700.api_key');
-        $url = $r->input('api_url') ?: config('services.credit700.api_url', 'https://api.700credit.com');
+        $key = $this->tval($r, 'api_key', 'credit700_api_key', 'services.credit700.api_key');
+        $url = $this->tval($r, 'api_url', 'credit700_api_url', 'services.credit700.api_url') ?: 'https://api.700credit.com';
         if (!$key) return ['ok' => false, 'message' => '700Credit API key required'];
 
         $resp = Http::withToken($key)->acceptJson()->get("{$url}/health");
@@ -155,7 +207,7 @@ class SettingController extends Controller
 
     private function testAsana(Request $r): array
     {
-        $token = $r->input('token') ?: config('services.asana.token');
+        $token = $this->tval($r, 'token', 'asana_token', 'services.asana.token');
         if (!$token) return ['ok' => false, 'message' => 'Asana PAT required'];
 
         $resp = Http::withToken($token)->acceptJson()->get('https://app.asana.com/api/1.0/users/me');
@@ -167,8 +219,8 @@ class SettingController extends Controller
 
     private function testHqRentals(Request $r): array
     {
-        $key = $r->input('api_key') ?: config('services.hq_rentals.api_key');
-        $sub = $r->input('subdomain') ?: config('services.hq_rentals.subdomain', 'highrental');
+        $key = $this->tval($r, 'api_key',   'hq_rentals_api_key',   'services.hq_rentals.api_key');
+        $sub = $this->tval($r, 'subdomain', 'hq_rentals_subdomain', 'services.hq_rentals.subdomain') ?: 'highrental';
         if (!$key) return ['ok' => false, 'message' => 'HQ Rentals API key required'];
 
         $resp = Http::withToken($key)->acceptJson()
@@ -181,8 +233,8 @@ class SettingController extends Controller
 
     private function testCccOne(Request $r): array
     {
-        $u = $r->input('username') ?: config('services.ccc_one.username');
-        $p = $r->input('password') ?: config('services.ccc_one.password');
+        $u = $this->tval($r, 'username', 'ccc_one_username', 'services.ccc_one.username');
+        $p = $this->tval($r, 'password', 'ccc_one_password', 'services.ccc_one.password');
         if (!$u || !$p) return ['ok' => false, 'message' => 'CCC ONE username + password required'];
 
         // CCC ONE has no public REST API — we'd integrate via their EMS/Estimate XML feed or their portal scrape.
@@ -191,8 +243,8 @@ class SettingController extends Controller
 
     private function testTowbook(Request $r): array
     {
-        $cid = $r->input('client_id')     ?: config('services.towbook.client_id');
-        $sec = $r->input('client_secret') ?: config('services.towbook.client_secret');
+        $cid = $this->tval($r, 'client_id',     'towbook_client_id',     'services.towbook.client_id');
+        $sec = $this->tval($r, 'client_secret', 'towbook_client_secret', 'services.towbook.client_secret');
         if (!$cid || !$sec) return ['ok' => false, 'message' => 'TowBook client_id + client_secret required (request from support@towbook.com).'];
 
         $resp = Http::asForm()->post('https://api.towbook.com/oauth/token', [
@@ -215,8 +267,8 @@ class SettingController extends Controller
 
     private function testSwoop(Request $r): array
     {
-        $key = $r->input('api_key') ?: config('services.swoop.api_key');
-        $env = $r->input('env')     ?: config('services.swoop.env', 'sandbox');
+        $key = $this->tval($r, 'api_key', 'swoop_api_key', 'services.swoop.api_key');
+        $env = $this->tval($r, 'env',     'swoop_env',     'services.swoop.env') ?: 'sandbox';
         if (!$key) return ['ok' => false, 'message' => 'Swoop API key required (apply at https://www.swoopapi.com/)'];
         $base = $env === 'live' ? 'https://api.joinswoop.com' : 'https://api-staging.joinswoop.com';
         $resp = Http::withToken($key)->acceptJson()->get("{$base}/api/v1/jobs?limit=1");
