@@ -252,11 +252,25 @@ class CustomerController extends Controller
         $customers = Customer::query()
             ->where('is_active', true)
             ->when($q !== '', function ($query) use ($q) {
-                $query->where(function ($w) use ($q) {
+                $tokens = preg_split('/\s+/', $q);
+                $query->where(function ($w) use ($q, $tokens) {
                     $w->where('first_name', 'ilike', "%{$q}%")
                       ->orWhere('last_name', 'ilike', "%{$q}%")
                       ->orWhere('email', 'ilike', "%{$q}%")
-                      ->orWhere('phone', 'ilike', "%{$q}%");
+                      ->orWhere('phone', 'ilike', "%{$q}%")
+                      ->orWhere('secondary_phone', 'ilike', "%{$q}%")
+                      // "First Last" concatenation
+                      ->orWhereRaw("(coalesce(first_name,'') || ' ' || coalesce(last_name,'')) ilike ?", ["%{$q}%"]);
+                    if (count($tokens) > 1) {
+                        $w->orWhere(function ($ww) use ($tokens) {
+                            foreach ($tokens as $t) {
+                                $ww->where(function ($w3) use ($t) {
+                                    $w3->where('first_name', 'ilike', "%{$t}%")
+                                       ->orWhere('last_name', 'ilike', "%{$t}%");
+                                });
+                            }
+                        });
+                    }
                 });
             })
             ->orderBy('last_name')
