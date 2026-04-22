@@ -108,7 +108,7 @@ class TelebroadWebhookController extends Controller
 
         // Hand off to the lease/rental SMS bot. If it replied, the conversation
         // is bot-driven; staff still see everything in /sms but don't need to act.
-        if ($isInbound) {
+        if ($isInbound && $this->shouldRunBot((string) $from, (string) $body)) {
             try {
                 $bot = app(\App\Services\LeaseApplicationBot::class);
                 $mediaUrls = collect($mediaUrls ?? [])->all(); // already parsed above
@@ -147,6 +147,55 @@ class TelebroadWebhookController extends Controller
             'pdf'  => 'application/pdf',
             default => 'application/octet-stream',
         };
+    }
+
+    /**
+     * Decide whether the bot should respond to this inbound. Three guards:
+     *   1. Global kill switch (Setting "bot_disabled" = "1")
+     *   2. Auto-responder loop detection: if we've sent >= 3 outbound SMS
+     *      to this phone in the last 10 minutes, stop responding (likely
+     *      ping-ponging with a corporate auto-reply system)
+     *   3. Auto-responder fingerprint in the body (common patterns)
+     */
+    private function shouldRunBot(string $from, string $body): bool
+    {
+        // 1. Global kill switch
+        if ((string) \App\Models\Setting::getValue('bot_disabled') === '1') {
+            \Log::info('SMS bot suppressed (kill switch)', ['from' => $from]);
+            return false;
+        }
+
+        // 2. Loop guard — if we sent the SAME number 3+ messages in the last 10 min, stop
+        $recentOutbound = \App\Models\CommunicationLog::query()
+            ->where('channel', 'sms')->where('direction', 'outbound')
+            ->where('to', 'ilike', '%' . substr(preg_replace('/\D/', '', $from), -10))
+            ->where('created_at', '>=', now()->subMinutes(10))
+            ->count();
+        if ($recentOutbound >= 3) {
+            \Log::warning('SMS bot suppressed (rate limit — possible auto-responder loop)', [
+                'from' => $from, 'recent_outbound' => $recentOutbound,
+            ]);
+            return false;
+        }
+
+        // 3. Fingerprint common auto-responder bodies
+        $b = strtolower(trim($body));
+        $fingerprints = [
+            'auto-reply', 'auto reply', 'autoreply', 'automatic reply', 'automated message',
+            'do not reply', 'do-not-reply', 'noreply', 'no-reply',
+            'this is an automated', 'this mailbox is not monitored',
+            'out of office', 'currently away', 'reply stop to',
+            'msg&data rates', 'message and data rates', 'msg & data rates',
+            'unable to receive sms', 'cannot receive text',
+        ];
+        foreach ($fingerprints as $f) {
+            if (str_contains($b, $f)) {
+                \Log::warning('SMS bot suppressed (auto-responder fingerprint)', ['from' => $from, 'matched' => $f]);
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function pick(array $payload, array $keys): ?string
