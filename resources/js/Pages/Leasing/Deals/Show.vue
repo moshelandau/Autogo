@@ -126,6 +126,10 @@ const saveCalcAsQuote = () => {
                     <h2 class="font-semibold text-xl text-gray-800 leading-tight">Deal #{{ d.deal_number }}</h2>
                     <span class="px-2 py-1 text-xs rounded-full capitalize" :class="priorityColors[d.priority]">{{ d.priority }}</span>
                 </div>
+                <Link :href="route('leasing.deals.application.show', d.id)"
+                      class="px-4 py-2 text-sm font-semibold bg-emerald-600 text-white rounded-md hover:bg-emerald-700">
+                    📄 Application Form
+                </Link>
             </div>
         </template>
 

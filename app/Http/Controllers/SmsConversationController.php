@@ -137,6 +137,26 @@ class SmsConversationController extends Controller
     /**
      * Thread view: all messages with one phone number.
      */
+    /**
+     * Mask sensitive patterns in an SMS body for display (SSN, full card #s).
+     * The bot still has access to the real value via session.collected — only
+     * the chat-log rendering is sanitised so casual viewers can't read it.
+     */
+    private function maskSensitive(?string $body): ?string
+    {
+        if ($body === null || $body === '') return $body;
+        // SSN: XXX-XX-XXXX or 9 consecutive digits → ***-**-1234
+        $body = preg_replace_callback('/\b\d{3}-?\d{2}-?\d{4}\b/', function ($m) {
+            return '***-**-' . substr(preg_replace('/\D/', '', $m[0]), -4);
+        }, $body);
+        // Card numbers: 13–19 digits (with optional spaces/dashes) → •••• 1234
+        $body = preg_replace_callback('/\b(?:\d[ -]?){13,19}\b/', function ($m) {
+            $digits = preg_replace('/\D/', '', $m[0]);
+            return '•••• •••• •••• ' . substr($digits, -4);
+        }, $body);
+        return $body;
+    }
+
     public function show(string $phone)
     {
         $last10 = substr(preg_replace('/\D/', '', $phone), -10);
@@ -160,7 +180,8 @@ class SmsConversationController extends Controller
                   ->orWhere('to', 'ilike', "%{$last10}");
             })
             ->orderBy('created_at')
-            ->get(['id', 'direction', 'from', 'to', 'body', 'attachments', 'status', 'sent_at', 'created_at', 'user_id', 'customer_id', 'assigned_to']);
+            ->get(['id', 'direction', 'from', 'to', 'body', 'attachments', 'status', 'sent_at', 'created_at', 'user_id', 'customer_id', 'assigned_to'])
+            ->map(function ($m) { $m->body = $this->maskSensitive($m->body); return $m; });
 
         $customer = $messages->firstWhere('customer_id', '!=', null)?->customer_id
             ? Customer::find($messages->firstWhere('customer_id', '!=', null)->customer_id)
@@ -197,7 +218,8 @@ class SmsConversationController extends Controller
             ->where('channel', 'sms')
             ->where('customer_id', $customer->id)
             ->orderBy('created_at')
-            ->get(['id', 'direction', 'from', 'to', 'body', 'attachments', 'status', 'sent_at', 'created_at', 'assigned_to']);
+            ->get(['id', 'direction', 'from', 'to', 'body', 'attachments', 'status', 'sent_at', 'created_at', 'assigned_to'])
+            ->map(function ($m) { $m->body = $this->maskSensitive($m->body); return $m; });
 
         $assignedTo = $messages->reverse()->firstWhere('assigned_to', '!=', null)?->assigned_to;
         $phone = $customer->phone;
