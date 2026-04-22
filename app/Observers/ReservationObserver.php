@@ -53,7 +53,7 @@ class ReservationObserver
      */
     public function created(Reservation $r): void
     {
-        $this->revisions->snapshot($r, 'reservation_created', 'rental_agreement');
+        $this->safeSnapshot($r, 'reservation_created', 'rental_agreement');
     }
 
     public function updated(Reservation $r): void
@@ -79,6 +79,25 @@ class ReservationObserver
         };
 
         $docType = in_array($action, ['return', 'completed'], true) ? 'return_receipt' : 'rental_agreement';
-        $this->revisions->snapshot($r, $action, $docType);
+        $this->safeSnapshot($r, $action, $docType);
+    }
+
+    /**
+     * Snapshot wrapper that swallows PDF errors so a DomPDF blow-up never
+     * blocks the underlying reservation save. The error is logged so we can
+     * regenerate the snapshot manually later.
+     */
+    private function safeSnapshot(Reservation $r, string $action, string $docType): void
+    {
+        try {
+            $this->revisions->snapshot($r, $action, $docType);
+        } catch (\Throwable $e) {
+            \Log::warning('Agreement snapshot failed (continuing)', [
+                'reservation_id' => $r->id,
+                'action' => $action,
+                'doc' => $docType,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }
