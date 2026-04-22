@@ -20,6 +20,10 @@ class AgreementRevisionService
      */
     public function snapshot(Reservation $reservation, string $action, string $documentType = 'rental_agreement'): AgreementRevision
     {
+        // DomPDF is memory-hungry, especially with large signature data URLs
+        // and embedded images. Bump for this request only.
+        @ini_set('memory_limit', '512M');
+
         $reservation->loadMissing(['customer', 'vehicle', 'activeHold', 'payments', 'holds']);
 
         $view = $documentType === 'return_receipt' ? 'rental.return_receipt' : 'rental.agreement';

@@ -123,6 +123,7 @@ class LeaseApplicationFormController extends Controller
 
     public function pdf(Deal $deal)
     {
+        @ini_set('memory_limit', '512M');
         $payload = $this->buildPayload($deal);
         $pdf = Pdf::loadView('leasing.application_pdf', $payload)->setPaper('letter');
         return $pdf->stream("AutoGo-Application-{$deal->deal_number}.pdf");
@@ -157,6 +158,7 @@ class LeaseApplicationFormController extends Controller
             'message' => 'nullable|string',
         ]);
 
+        @ini_set('memory_limit', '512M');
         $payload = $this->buildPayload($deal);
         $pdf = Pdf::loadView('leasing.application_pdf', $payload)->setPaper('letter');
         $pdfPath = storage_path("app/tmp-application-{$deal->deal_number}.pdf");
