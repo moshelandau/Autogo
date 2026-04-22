@@ -27,9 +27,10 @@ class BotSessionController extends Controller
                     . ' ' .
                     ($collected['last_name']  ?? $s->customer?->last_name  ?? '')
                 );
-                $status = $s->completed_at ? 'completed'
-                    : ($s->aborted_at ? 'aborted'
-                    : (($s->last_inbound_at && $s->last_inbound_at->lt(now()->subDays(2))) ? 'stalled' : 'active'));
+                $status = $s->aborted_at ? 'aborted'
+                    : ($s->completed_at
+                        ? ($this->needsAttention($s) ? 'urgent' : 'completed')
+                        : (($s->last_inbound_at && $s->last_inbound_at->lt(now()->subDays(2))) ? 'stalled' : 'active'));
 
                 return [
                     'id'              => $s->id,
@@ -59,6 +60,20 @@ class BotSessionController extends Controller
             'session' => $session,
             'collected' => $session->collected ?? [],
         ]);
+    }
+
+    /**
+     * "Needs attention" = the customer finished telling the bot everything,
+     * but no staff member has picked up the resulting Deal/Reservation/Task yet.
+     */
+    private function needsAttention(\App\Models\LeaseApplicationSession $s): bool
+    {
+        if (in_array($s->flow, ['lease', 'finance'], true)) {
+            $deal = $s->deal;
+            return $deal && empty($deal->salesperson_id) && $deal->stage === 'application';
+        }
+        // Rental, towing, bodyshop — completion implies it needs follow-up
+        return true;
     }
 
     private function progressPct(string $flow, string $step, array $collected): int

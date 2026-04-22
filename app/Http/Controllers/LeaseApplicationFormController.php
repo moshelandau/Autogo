@@ -62,10 +62,11 @@ class LeaseApplicationFormController extends Controller
             }
             $cu->{$col} = $value ?: null;
             $cu->save();
-        } elseif ($key === 'vehicle_interest') {
+        } elseif ($key === 'vehicle_interest' || $key === 'signature_data_url') {
             $session = $this->ensureSession($deal);
             $collected = $session->collected ?? [];
-            $collected['vehicle_interest'] = $value;
+            $collected[$key] = $value;
+            if ($key === 'signature_data_url' && $value) $collected['signature_at'] = now()->toIso8601String();
             $session->update(['collected' => $collected]);
         } else {
             $session = $this->ensureSession($deal);
@@ -127,8 +128,29 @@ class LeaseApplicationFormController extends Controller
         return $pdf->stream("AutoGo-Application-{$deal->deal_number}.pdf");
     }
 
+    public function approveField(Request $request, Deal $deal)
+    {
+        $request->validate(['key' => 'required|string|max:60', 'approve' => 'required|boolean']);
+        $session = $this->ensureSession($deal);
+        $approvals = $session->approvals ?? [];
+        if ($request->boolean('approve')) {
+            $approvals[$request->input('key')] = ['by' => auth()->id(), 'at' => now()->toIso8601String()];
+        } else {
+            unset($approvals[$request->input('key')]);
+        }
+        $session->update(['approvals' => $approvals]);
+        return back()->with('success', $request->boolean('approve') ? 'Approved.' : 'Approval cleared.');
+    }
+
     public function emailToDealer(Request $request, Deal $deal)
     {
+        $session = $this->ensureSession($deal);
+        $approvals = $session->approvals ?? [];
+        $missing = array_diff(\App\Models\LeaseApplicationSession::APPROVAL_REQUIRED, array_keys($approvals));
+        if (!empty($missing)) {
+            return back()->with('error', 'Cannot email — these fields still need staff approval: ' . implode(', ', $missing));
+        }
+
         $data = $request->validate([
             'to'      => 'required|email',
             'subject' => 'nullable|string|max:200',
@@ -171,8 +193,11 @@ class LeaseApplicationFormController extends Controller
     private function buildPayload(Deal $deal): array
     {
         $deal->load('customer');
-        $session = LeaseApplicationSession::where('customer_id', $deal->customer_id)
-            ->whereNotNull('completed_at')->latest('id')->first()
+        // Prefer the session that produced THIS deal; otherwise the latest
+        // completed session for the customer; otherwise any session.
+        $session = LeaseApplicationSession::where('deal_id', $deal->id)->latest('id')->first()
+            ?? LeaseApplicationSession::where('customer_id', $deal->customer_id)
+                ->whereNotNull('completed_at')->latest('id')->first()
             ?? LeaseApplicationSession::where('customer_id', $deal->customer_id)
                 ->latest('id')->first();
         $c = $session?->collected ?? [];
@@ -224,6 +249,15 @@ class LeaseApplicationFormController extends Controller
             'vehicle_interest' => $c['vehicle_interest'] ?? trim(($deal->vehicle_year ?? '') . ' ' . ($deal->vehicle_make ?? '') . ' ' . ($deal->vehicle_model ?? '')),
         ];
 
-        return ['deal' => $deal, 'session' => $session, 'fields' => $fields];
+        $fields['signature_data_url'] = $c['signature_data_url'] ?? '';
+        $fields['signature_at']       = $c['signature_at'] ?? '';
+
+        return [
+            'deal' => $deal,
+            'session' => $session,
+            'fields' => $fields,
+            'approvals' => $session?->approvals ?? [],
+            'approvalRequired' => \App\Models\LeaseApplicationSession::APPROVAL_REQUIRED,
+        ];
     }
 }

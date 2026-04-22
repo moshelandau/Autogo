@@ -9,6 +9,7 @@ const statusClass = (s) => ({
     stalled:   'bg-yellow-100 text-yellow-800 border-yellow-300',
     aborted:   'bg-gray-200 text-gray-700 border-gray-300',
     completed: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+    urgent:    'bg-red-100 text-red-800 border-red-300 animate-pulse font-bold',
 }[s] || 'bg-gray-100 text-gray-700');
 
 const fmt = (iso) => iso ? new Date(iso).toLocaleString() : '—';
@@ -38,9 +39,10 @@ const fmt = (iso) => iso ? new Date(iso).toLocaleString() : '—';
                         </tr>
                     </thead>
                     <tbody class="divide-y">
-                        <tr v-for="s in sessions" :key="s.id" class="hover:bg-gray-50">
+                        <tr v-for="s in sessions" :key="s.id" class="hover:bg-gray-50 cursor-pointer"
+                            @click="$inertia.visit(route('bot-sessions.show', s.id))">
                             <td class="px-4 py-3">
-                                <div class="font-medium text-gray-900">{{ s.name }}</div>
+                                <Link :href="route('bot-sessions.show', s.id)" class="font-medium text-indigo-700 hover:text-indigo-900">{{ s.name }}</Link>
                                 <div class="text-xs text-gray-500">{{ s.phone }}</div>
                             </td>
                             <td class="px-4 py-3 capitalize">{{ s.flow }}</td>

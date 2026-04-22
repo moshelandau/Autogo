@@ -33,10 +33,20 @@ class HandleInertiaRequests extends Middleware
     private function getBotPendingCount(): int
     {
         try {
-            return \App\Models\LeaseApplicationSession::query()
-                ->whereNull('completed_at')
-                ->whereNull('aborted_at')
+            // In-progress (not done, not aborted) + completed-but-unhandled lease/finance Deals
+            $inProgress = \App\Models\LeaseApplicationSession::query()
+                ->whereNull('completed_at')->whereNull('aborted_at')->count();
+            $unhandledDeals = \App\Models\LeaseApplicationSession::query()
+                ->whereNotNull('completed_at')->whereNull('aborted_at')
+                ->whereIn('flow', ['lease', 'finance'])
+                ->whereHas('deal', fn ($q) => $q->whereNull('salesperson_id')->where('stage', 'application'))
                 ->count();
+            $unhandledOther = \App\Models\LeaseApplicationSession::query()
+                ->whereNotNull('completed_at')->whereNull('aborted_at')
+                ->whereIn('flow', ['rental', 'towing', 'bodyshop'])
+                ->whereDoesntHave('deal')
+                ->count();
+            return $inProgress + $unhandledDeals + $unhandledOther;
         } catch (\Throwable) { return 0; }
     }
 

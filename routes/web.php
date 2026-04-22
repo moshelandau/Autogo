@@ -131,6 +131,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::get('deals/{deal}/application',         [\App\Http\Controllers\LeaseApplicationFormController::class, 'show'])->name('deals.application.show');
         Route::put('deals/{deal}/application',         [\App\Http\Controllers\LeaseApplicationFormController::class, 'update'])->name('deals.application.update');
         Route::get('deals/{deal}/application/pdf',     [\App\Http\Controllers\LeaseApplicationFormController::class, 'pdf'])->name('deals.application.pdf');
+        Route::post('deals/{deal}/application/approve',[\App\Http\Controllers\LeaseApplicationFormController::class, 'approveField'])->name('deals.application.approve');
         Route::post('deals/{deal}/application/email',  [\App\Http\Controllers\LeaseApplicationFormController::class, 'emailToDealer'])->name('deals.application.email');
 
         // VIN Decode API

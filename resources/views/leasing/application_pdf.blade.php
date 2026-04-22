@@ -3,13 +3,14 @@
 <head>
 <meta charset="utf-8">
 <style>
-    body { font-family: DejaVu Sans, sans-serif; font-size: 10px; color: #111; }
+    @page { margin: 0.4in; }
+    body { font-family: DejaVu Sans, sans-serif; font-size: 8.5px; color: #111; line-height: 1.25; }
     .header { display: flex; justify-content: space-between; border-bottom: 2px solid #111; padding-bottom: 6px; margin-bottom: 12px; }
     .brand { font-size: 22px; font-weight: bold; color: #c00; }
     .small { font-size: 9px; color: #444; }
     .section-h { background: #ddd; padding: 4px 8px; font-weight: bold; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 14px; }
     table.fields { width: 100%; border-collapse: collapse; margin-top: 6px; }
-    table.fields td { border: 1px solid #999; padding: 6px 8px; vertical-align: bottom; }
+    table.fields td { border: 1px solid #999; padding: 3px 5px; vertical-align: bottom; }
     table.fields .label { color: #555; font-size: 8px; display: block; margin-bottom: 2px; }
     .auth { color: #c00; font-style: italic; padding: 8px; border: 1px solid #c00; margin-top: 14px; font-size: 9px; }
     .sig-row { margin-top: 18px; }
@@ -106,14 +107,20 @@
     connection with the proposed transaction to the financial institutions disclose.</strong>
 </div>
 
-<table style="width:100%; margin-top:18px">
+<table style="width:100%; margin-top:10px">
     <tr>
-        <td style="width:70%"><div class="sig-line"></div><div class="small">Signature of applicant</div></td>
-        <td style="width:30%; padding-left:12px"><div class="sig-line"></div><div class="small">Date</div></td>
-    </tr>
-    <tr>
-        <td><div class="sig-line"></div><div class="small">Signature of co-applicant, if for joint account</div></td>
-        <td style="padding-left:12px"><div class="sig-line"></div><div class="small">Date</div></td>
+        <td style="width:70%; vertical-align:bottom">
+            @if(!empty($fields['signature_data_url']))
+                <img src="{{ $fields['signature_data_url'] }}" style="max-height:40px; display:block;" />
+                <div style="border-top:1px solid #111; padding-top:1px"><div class="small">Signature of applicant (electronic)</div></div>
+            @else
+                <div class="sig-line"></div><div class="small">Signature of applicant</div>
+            @endif
+        </td>
+        <td style="width:30%; padding-left:12px; vertical-align:bottom">
+            <div style="border-bottom:1px solid #111; height:40px; padding:6px 0;">{{ !empty($fields['signature_at']) ? \Carbon\Carbon::parse($fields['signature_at'])->format('m/d/Y') : '' }}</div>
+            <div class="small">Date</div>
+        </td>
     </tr>
 </table>
 

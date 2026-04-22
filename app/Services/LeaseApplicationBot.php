@@ -31,7 +31,9 @@ use Illuminate\Support\Str;
 class LeaseApplicationBot
 {
     public const STEPS_LEASE = [
-        ['key' => 'first_name',        'prompt' => "Great — let's start your lease/finance application. What's your FIRST name?"],
+        ['key' => 'license_image_front', 'prompt' => "Let's start with your DRIVER'S LICENSE. Please TEXT a photo of the FRONT of your license. (We'll auto-read your name, DL #, expiration, and address.)", 'expects' => 'image'],
+        ['key' => 'license_image_back',  'prompt' => "Now please TEXT a photo of the BACK of your license.", 'expects' => 'image'],
+        ['key' => 'first_name',        'prompt' => "Great — what's your FIRST name? (we'll confirm what we read)"],
         ['key' => 'last_name',         'prompt' => "Thanks {first_name}. And your LAST name?"],
         ['key' => 'date_of_birth',     'prompt' => "Date of birth? (MM/DD/YYYY)"],
         ['key' => 'ssn',               'prompt' => "Your full SSN? (XXX-XX-XXXX). Used only for the credit application."],
@@ -79,7 +81,8 @@ class LeaseApplicationBot
         ['key' => 'last_name',         'prompt' => "Thanks {first_name}. LAST name?"],
         ['key' => 'email',             'prompt' => "Email address?"],
         ['key' => 'date_of_birth',     'prompt' => "Date of birth? (MM/DD/YYYY) — required for the rental agreement."],
-        ['key' => 'license_image',     'prompt' => "Please TEXT a photo of the FRONT of your driver's license. (We'll auto-read your name, DL #, expiration, and address.)", 'expects' => 'image'],
+        ['key' => 'license_image_front', 'prompt' => "Please TEXT a photo of the FRONT of your driver's license. (We'll auto-read your name, DL #, expiration, and address.)", 'expects' => 'image'],
+        ['key' => 'license_image_back',  'prompt' => "Now please TEXT a photo of the BACK of your license.", 'expects' => 'image'],
         ['key' => 'address_confirmation', 'prompt' => "Got your license. Is this address correct? Reply YES, or text the correct address."],
         ['key' => 'has_insurance',     'prompt' => "Do you have your own auto insurance? (yes / no)"],
         ['key' => 'insurance_company', 'prompt' => "Insurance company name?", 'requires' => 'has_insurance'],
@@ -362,22 +365,27 @@ class LeaseApplicationBot
         $step = $steps[$stepIdx];
         $collected = $session->collected ?? [];
 
-        // Image step (license_image) needs an MMS attachment
+        // Image step (license_image_front / license_image_back) needs MMS
         if (($step['expects'] ?? null) === 'image') {
             if (empty($mediaUrls)) {
-                $this->reply($session->phone, "I need an actual photo of your license — please TEXT (MMS) the front of your driver's license.");
+                $side = str_contains($step['key'], 'back') ? 'BACK' : 'FRONT';
+                $this->reply($session->phone, "I need an actual photo — please TEXT (MMS) the {$side} of your driver's license.");
                 return true;
             }
             $extracted = $this->ingestLicenseImage($session, $mediaUrls[0]);
-            $collected['license_image_url']   = $mediaUrls[0];
-            $collected['license_extracted']   = $extracted;
-            // Pre-fill name + DOB + address fields if not already set
-            foreach (['first_name','last_name','date_of_birth','address','city','state','zip'] as $k) {
-                if (empty($collected[$k]) && !empty($extracted[$k])) $collected[$k] = $extracted[$k];
+            $collected[$step['key'] . '_url'] = $mediaUrls[0];      // license_image_front_url, _back_url
+            $collected[$step['key'] . '_path'] = $extracted['_stored_path'] ?? null;
+
+            // Only the FRONT is OCR'd for identity fields
+            if ($step['key'] === 'license_image_front') {
+                $collected['license_extracted'] = $extracted;
+                foreach (['first_name','last_name','date_of_birth','address','city','state','zip'] as $k) {
+                    if (empty($collected[$k]) && !empty($extracted[$k])) $collected[$k] = $extracted[$k];
+                }
+                if (!empty($extracted['drivers_license_number'])) $collected['drivers_license_number'] = $extracted['drivers_license_number'];
+                if (!empty($extracted['dl_state']))               $collected['dl_state']               = $extracted['dl_state'];
+                if (!empty($extracted['dl_expiration']))          $collected['dl_expiration']          = $extracted['dl_expiration'];
             }
-            $collected['drivers_license_number'] = $extracted['drivers_license_number'] ?? null;
-            $collected['dl_state']               = $extracted['dl_state'] ?? null;
-            $collected['dl_expiration']          = $extracted['dl_expiration'] ?? null;
         } elseif ($step['key'] !== '__done__') {
             $collected[$step['key']] = $this->normalize($step['key'], $body);
         }
@@ -554,18 +562,18 @@ class LeaseApplicationBot
         $customer->is_active = true;
         $customer->save();
 
-        // If we ingested a license image, attach it as a CustomerDocument
-        $extracted = $c['license_extracted'] ?? [];
-        if (!empty($extracted['_stored_path'])) {
+        // Attach license images (front + back) as CustomerDocuments if we have them
+        foreach (['front', 'back'] as $side) {
+            $path = $c['license_image_' . $side . '_path'] ?? null;
+            if (!$path) continue;
             CustomerDocument::create([
                 'customer_id'   => $customer->id,
-                'type'          => 'drivers_license_front',
-                'label'         => trim(($c['first_name'] ?? '') . ' ' . ($c['last_name'] ?? '') . ' · ' . ($c['drivers_license_number'] ?? ''), ' ·'),
-                'disk'          => $extracted['_stored_disk'] ?? 'public',
-                'path'          => $extracted['_stored_path'],
-                'original_name' => basename($extracted['_stored_path']),
+                'type'          => 'drivers_license_' . $side,
+                'label'         => trim(($c['first_name'] ?? '') . ' ' . ($c['last_name'] ?? '') . ' · ' . ($c['drivers_license_number'] ?? '') . " ({$side})", ' ·'),
+                'disk'          => 'public',
+                'path'          => $path,
+                'original_name' => basename($path),
                 'mime_type'     => 'image/jpeg',
-                'size_bytes'    => $extracted['_stored_size'] ?? null,
                 'expires_at'    => $this->parseDate($c['dl_expiration'] ?? null),
                 'uploaded_by'   => null,
             ]);
