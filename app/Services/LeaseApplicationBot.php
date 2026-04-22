@@ -164,7 +164,7 @@ class LeaseApplicationBot
         // STOP at any time
         if ($session && in_array($text, self::STOP_WORDS, true)) {
             $session->update(['aborted_at' => now()]);
-            $this->reply($fromPhone, "OK — cancelled. Reply APPLY (lease) or RENT (rental) to start over.");
+            $this->reply($fromPhone, "OK — cancelled. Text HELP to start over.");
             return true;
         }
 
@@ -172,56 +172,57 @@ class LeaseApplicationBot
             return $this->advanceSession($session, $body, $mediaUrls);
         }
 
-        // Decide intent
-        $isUnknown = $customer === null;
-        $wantsLease    = $this->matchesAny($text, self::TRIGGERS_LEASE);
-        $wantsRental   = $this->matchesAny($text, self::TRIGGERS_RENTAL);
-        $wantsFinance  = $this->matchesAny($text, self::TRIGGERS_FINANCE);
-        $wantsTowing   = $this->matchesAny($text, self::TRIGGERS_TOWING);
-        $wantsBodyshop = $this->matchesAny($text, self::TRIGGERS_BODYSHOP);
-        $anyTrigger = $wantsLease || $wantsRental || $wantsFinance || $wantsTowing || $wantsBodyshop;
+        // ── No active session: only start one on STRICT, exact trigger words. ──
+        // help / new / car  → menu of all options
+        // rental            → rental flow
+        // lease             → lease flow
+        // tow / towing      → towing flow
+        // bodyshop          → bodyshop flow
+        // finance           → finance flow
+        // Anything else from someone with no active session → bot stays SILENT.
+        // Manual triggers via triggerManually() (Customer page button) bypass this.
+        $strict = preg_replace('/[^a-z]/', '', $text);  // letters only, lowercase
+        $flow = match ($strict) {
+            'lease'                                 => 'lease',
+            'rental', 'rent'                        => 'rental',
+            'tow', 'towing'                         => 'towing',
+            'bodyshop', 'body', 'collision'         => 'bodyshop',
+            'finance', 'financing'                  => 'finance',
+            default                                 => null,
+        };
+        $wantsMenu = in_array($strict, ['help', 'new', 'car', 'menu', 'options', 'start'], true);
 
-        if (!$isUnknown && !$anyTrigger) {
-            // Known customer chatting normally — leave for staff
+        if (!$flow && !$wantsMenu) {
+            // Not a recognized trigger — silent. Staff sees the message in /sms.
             return false;
         }
 
-        // Need to pick a flow if ambiguous — send a numbered menu
-        if (!$wantsLease && !$wantsRental) {
-            $menu = "Hi! 👋 This is AutoGo. How can we help? Reply with a number:\n\n"
-                  . "1 — Lease a car\n"
-                  . "2 — Rent a car\n"
-                  . "3 — Finance a car\n"
-                  . "4 — Towing service\n"
-                  . "5 — Bodyshop / collision repair\n\n"
-                  . "Reply STOP to stop messages.";
-            $this->reply($fromPhone, $menu);
-            LeaseApplicationSession::create([
-                'phone' => $fromPhone, 'flow' => 'intent', 'current_step' => '__intent__',
-                'collected' => [], 'customer_id' => $customer?->id, 'last_inbound_at' => now(),
-            ]);
+        if ($flow) {
+            // Block rental self-service when balance is owed
+            if ($flow === 'rental' && $customer && $customer->hasOutstandingBalance()) {
+                $bal = number_format((float) $customer->cached_outstanding_balance, 2);
+                $this->reply($fromPhone, "Hi {$customer->first_name} — there's an outstanding balance of \${$bal} on your account. Please contact our office to resolve it before starting a new rental. Thanks!");
+                return true;
+            }
+            $this->startFlow($fromPhone, $customer, $flow);
             return true;
         }
 
-        $flow = match (true) {
-            $wantsLease    => 'lease',
-            $wantsRental   => 'rental',
-            $wantsFinance  => 'finance',
-            $wantsTowing   => 'towing',
-            $wantsBodyshop => 'bodyshop',
-            default        => 'lease',
-        };
-
-        // Rental self-service requires zero outstanding balance
-        if ($flow === 'rental' && $customer && $customer->hasOutstandingBalance()) {
-            $bal = number_format((float) $customer->cached_outstanding_balance, 2);
-            $this->reply($fromPhone, "Hi {$customer->first_name} — there's an outstanding balance of \${$bal} on your account. Please contact our office to resolve it before starting a new rental. Thanks!");
-            return true;
-        }
-
-        $this->startFlow($fromPhone, $customer, $flow);
+        // Menu request — ask which one
+        $menu = "Hi! 👋 This is AutoGo. How can we help? Reply with a number or word:\n\n"
+              . "1 LEASE — lease/finance a car\n"
+              . "2 RENTAL — rent a car\n"
+              . "3 TOW — towing\n"
+              . "4 BODYSHOP — collision repair\n\n"
+              . "Reply STOP to opt out.";
+        $this->reply($fromPhone, $menu);
+        LeaseApplicationSession::create([
+            'phone' => $fromPhone, 'flow' => 'intent', 'current_step' => '__intent__',
+            'collected' => [], 'customer_id' => $customer?->id, 'last_inbound_at' => now(),
+        ]);
         return true;
     }
+
 
     private function stepsFor(string $flow): array
     {
@@ -387,7 +388,29 @@ class LeaseApplicationBot
                 if (!empty($extracted['dl_expiration']))          $collected['dl_expiration']          = $extracted['dl_expiration'];
             }
         } elseif ($step['key'] !== '__done__') {
-            $collected[$step['key']] = $this->normalize($step['key'], $body);
+            // AI validates the answer matches what was asked. May reject (re-ask
+            // with hint), skip (customer refused), accept (save), or escalate.
+            $validation = app(\App\Services\SmsAiValidator::class)
+                ->validate($step['key'], $this->renderPrompt($step, $session), $body);
+
+            if ($validation['action'] === 'reject') {
+                // Don't advance — re-ask with the model's hint.
+                $hint = $validation['message'] ?: "Sorry, I didn't catch that.";
+                $this->reply($session->phone, "{$hint}\n\n" . $this->renderPrompt($step, $session));
+                $session->update(['last_inbound_at' => now()]);
+                return true;
+            }
+            if ($validation['action'] === 'skip') {
+                $collected[$step['key']] = '';  // empty, but advance
+            } elseif ($validation['action'] === 'escalate') {
+                $session->update(['aborted_at' => now(), 'last_inbound_at' => now()]);
+                $msg = $validation['message'] ?: "Got it — a team member will follow up shortly.";
+                $this->reply($session->phone, $msg);
+                return true;
+            } else {
+                // accept — store the cleaned/parsed value (after our existing normalize pass)
+                $collected[$step['key']] = $this->normalize($step['key'], $validation['parsed'] ?? $body);
+            }
         }
 
         $next = $this->nextApplicableStep($steps, $stepIdx, $collected);
