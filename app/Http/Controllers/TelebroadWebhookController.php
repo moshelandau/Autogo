@@ -106,15 +106,32 @@ class TelebroadWebhookController extends Controller
             $this->notifyStaff($log, $customer);
         }
 
-        // Hand off to the lease/rental SMS bot. If it replied, the conversation
-        // is bot-driven; staff still see everything in /sms but don't need to act.
-        if ($isInbound && $this->shouldRunBot((string) $from, (string) $body)) {
-            try {
-                $bot = app(\App\Services\LeaseApplicationBot::class);
-                $mediaUrls = collect($mediaUrls ?? [])->all(); // already parsed above
-                $bot->handleInbound((string) $from, (string) $body, $customer, $mediaUrls);
-            } catch (\Throwable $e) {
-                Log::warning('Bot handleInbound failed', ['error' => $e->getMessage()]);
+        // AI router (layer 0) → rule-based safeguards (layer 1-3) → bot.
+        if ($isInbound) {
+            $decision = app(\App\Services\SmsAiRouter::class)->decide((string) $from, (string) $body, $customer);
+            Log::info('SmsAiRouter decision', ['from' => $from, ...$decision]);
+
+            if ($decision['action'] === 'silent') {
+                // AI says don't reply (auto-responder, spam, customer asked to stop, etc.)
+            } elseif ($decision['action'] === 'escalate') {
+                // Human-only — assign the conversation if a specific staffer was named
+                if (!empty($decision['assignee'])) {
+                    \App\Models\CommunicationLog::query()
+                        ->where('channel', 'sms')
+                        ->where(function ($q) use ($from) {
+                            $last10 = substr(preg_replace('/\D/', '', $from), -10);
+                            $q->where('from', 'ilike', "%{$last10}")->orWhere('to', 'ilike', "%{$last10}");
+                        })
+                        ->update(['assigned_to' => $decision['assignee']]);
+                }
+            } elseif ($this->shouldRunBot((string) $from, (string) $body)) {
+                try {
+                    $bot = app(\App\Services\LeaseApplicationBot::class);
+                    $mediaUrls = collect($mediaUrls ?? [])->all();
+                    $bot->handleInbound((string) $from, (string) $body, $customer, $mediaUrls);
+                } catch (\Throwable $e) {
+                    Log::warning('Bot handleInbound failed', ['error' => $e->getMessage()]);
+                }
             }
         }
 
