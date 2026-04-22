@@ -10,6 +10,11 @@ defineProps({ title: String });
 const page = usePage();
 const sidebarOpen = ref(true);
 const mobileMenuOpen = ref(false);
+const botBannerDismissed = ref(typeof sessionStorage !== 'undefined' && sessionStorage.getItem('bot_banner_dismissed') === '1');
+const dismissBotBanner = () => {
+    botBannerDismissed.value = true;
+    try { sessionStorage.setItem('bot_banner_dismissed', '1'); } catch (e) {}
+};
 
 const currentRoute = computed(() => route().current());
 
@@ -197,7 +202,7 @@ const icons = {
                                         {{ $page.props.smsUnreadCount }}
                                     </span>
                                     <span v-if="item.route === 'bot-sessions.index' && ($page.props.botPendingCount || 0) > 0"
-                                        class="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[11px] font-bold text-white bg-orange-500 rounded-full">
+                                        class="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[11px] font-bold text-white bg-orange-500 rounded-full animate-pulse ring-2 ring-orange-300">
                                         {{ $page.props.botPendingCount }}
                                     </span>
                                 </Link>
@@ -351,6 +356,28 @@ const icons = {
                         </div>
                     </div>
                 </header>
+
+                <!-- Pending bot intakes — site-wide attention banner -->
+                <Link v-if="($page.props.botPendingCount || 0) > 0 && !botBannerDismissed"
+                    :href="route('bot-sessions.index')"
+                    class="block bg-gradient-to-r from-orange-500 via-red-500 to-orange-500 text-white px-6 py-3 text-sm font-semibold shadow-md animate-pulse hover:opacity-95">
+                    <div class="flex items-center justify-between max-w-7xl mx-auto">
+                        <div class="flex items-center gap-3">
+                            <span class="text-2xl">🚨</span>
+                            <span>
+                                <strong>{{ $page.props.botPendingCount }}</strong>
+                                {{ $page.props.botPendingCount === 1 ? 'application is' : 'applications are' }}
+                                in progress via SMS bot — click to follow up
+                            </span>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <span class="underline">View intakes →</span>
+                            <button @click.prevent="dismissBotBanner"
+                                class="text-white/80 hover:text-white text-lg leading-none px-2"
+                                title="Hide for this session">×</button>
+                        </div>
+                    </div>
+                </Link>
 
                 <!-- Page Content -->
                 <main class="flex-1 overflow-y-auto">
