@@ -165,15 +165,24 @@ class TelebroadWebhookController extends Controller
             return false;
         }
 
-        // 2. Loop guard — if we sent the SAME number 3+ messages in the last 10 min, stop
-        $recentOutbound = \App\Models\CommunicationLog::query()
+        // 2. Loop guard — only suppress if we keep sending the SAME message.
+        //    A normal multi-step bot conversation sends DIFFERENT prompts at
+        //    each step (name → DOB → SSN → ...) so high outbound count alone
+        //    is fine. A stuck loop = same body repeating because the
+        //    customer/auto-responder keeps replying with something the bot
+        //    can't advance past.
+        $last10 = substr(preg_replace('/\D/', '', $from), -10);
+        $recentBodies = \App\Models\CommunicationLog::query()
             ->where('channel', 'sms')->where('direction', 'outbound')
-            ->where('to', 'ilike', '%' . substr(preg_replace('/\D/', '', $from), -10))
+            ->where('to', 'ilike', "%{$last10}")
             ->where('created_at', '>=', now()->subMinutes(10))
-            ->count();
-        if ($recentOutbound >= 3) {
-            \Log::warning('SMS bot suppressed (rate limit — possible auto-responder loop)', [
-                'from' => $from, 'recent_outbound' => $recentOutbound,
+            ->pluck('body');
+        // Group by body and find any that repeats 3+ times
+        $repeats = $recentBodies->countBy(fn ($b) => trim((string) $b))->filter(fn ($n) => $n >= 3);
+        if ($repeats->isNotEmpty()) {
+            \Log::warning('SMS bot suppressed (same message repeated — likely stuck/loop)', [
+                'from' => $from, 'repeated_body' => substr($repeats->keys()->first() ?? '', 0, 80),
+                'count' => $repeats->first(),
             ]);
             return false;
         }
