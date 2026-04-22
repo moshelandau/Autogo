@@ -11,29 +11,7 @@ class CustomerController extends Controller
     public function index(Request $request)
     {
         $customers = Customer::query()
-            ->when($request->search, function ($query, $search) {
-                $search = trim($search);
-                $tokens = preg_split('/\s+/', $search);
-                $query->where(function ($q) use ($search, $tokens) {
-                    $q->where('first_name', 'ilike', "%{$search}%")
-                      ->orWhere('last_name', 'ilike', "%{$search}%")
-                      ->orWhere('email',     'ilike', "%{$search}%")
-                      ->orWhere('phone',     'ilike', "%{$search}%")
-                      ->orWhere('secondary_phone', 'ilike', "%{$search}%")
-                      // Match against "First Last" concatenation (covers "Moshe Landau")
-                      ->orWhereRaw("(coalesce(first_name,'') || ' ' || coalesce(last_name,'')) ilike ?", ["%{$search}%"]);
-                    if (count($tokens) > 1) {
-                        $q->orWhere(function ($w) use ($tokens) {
-                            foreach ($tokens as $t) {
-                                $w->where(function ($ww) use ($t) {
-                                    $ww->where('first_name', 'ilike', "%{$t}%")
-                                       ->orWhere('last_name', 'ilike', "%{$t}%");
-                                });
-                            }
-                        });
-                    }
-                });
-            })
+            ->search($request->search)
             ->when($request->boolean('active_only', true), fn($q) => $q->where('is_active', true))
             ->orderBy('last_name')
             ->paginate(25)
@@ -251,28 +229,7 @@ class CustomerController extends Controller
         $q = trim((string) $request->input('q', ''));
         $customers = Customer::query()
             ->where('is_active', true)
-            ->when($q !== '', function ($query) use ($q) {
-                $tokens = preg_split('/\s+/', $q);
-                $query->where(function ($w) use ($q, $tokens) {
-                    $w->where('first_name', 'ilike', "%{$q}%")
-                      ->orWhere('last_name', 'ilike', "%{$q}%")
-                      ->orWhere('email', 'ilike', "%{$q}%")
-                      ->orWhere('phone', 'ilike', "%{$q}%")
-                      ->orWhere('secondary_phone', 'ilike', "%{$q}%")
-                      // "First Last" concatenation
-                      ->orWhereRaw("(coalesce(first_name,'') || ' ' || coalesce(last_name,'')) ilike ?", ["%{$q}%"]);
-                    if (count($tokens) > 1) {
-                        $w->orWhere(function ($ww) use ($tokens) {
-                            foreach ($tokens as $t) {
-                                $ww->where(function ($w3) use ($t) {
-                                    $w3->where('first_name', 'ilike', "%{$t}%")
-                                       ->orWhere('last_name', 'ilike', "%{$t}%");
-                                });
-                            }
-                        });
-                    }
-                });
-            })
+            ->search($q)
             ->orderBy('last_name')
             ->limit(20)
             ->get(['id', 'first_name', 'last_name', 'email', 'phone', 'city', 'state', 'cached_outstanding_balance']);

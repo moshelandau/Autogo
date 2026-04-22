@@ -17,9 +17,7 @@ class RentalClaimController extends Controller
             ->when($request->brand, fn($q, $b) => $q->where('brand', $b))
             ->when($request->search, function ($q, $search) {
                 $q->where(function ($q2) use ($search) {
-                    $q2->whereHas('customer', fn($q3) =>
-                        $q3->where('first_name', 'ilike', "%{$search}%")
-                           ->orWhere('last_name', 'ilike', "%{$search}%"))
+                    $q2->whereHas('customer', fn($q3) => $q3->search($search))
                        ->orWhere('insurance_claim_number', 'ilike', "%{$search}%");
                 });
             })

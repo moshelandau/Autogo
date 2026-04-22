@@ -13,9 +13,7 @@ class EzPassController extends Controller
     {
         $accounts = EzPassAccount::with('customer')
             ->when($request->search, function ($q, $s) {
-                $q->whereHas('customer', fn($q2) =>
-                    $q2->where('first_name', 'ilike', "%{$s}%")
-                       ->orWhere('last_name', 'ilike', "%{$s}%"))
+                $q->whereHas('customer', fn($q2) => $q2->search($s))
                    ->orWhere('account_number', 'ilike', "%{$s}%")
                    ->orWhere('tag_number', 'ilike', "%{$s}%");
             })

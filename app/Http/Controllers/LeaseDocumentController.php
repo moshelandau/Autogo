@@ -15,9 +15,7 @@ class LeaseDocumentController extends Controller
         $checklists = LeaseDocumentChecklist::with(['customer', 'deal', 'items'])
             ->when($request->status, fn($q, $s) => $q->where('status', $s))
             ->when($request->search, function ($q, $search) {
-                $q->whereHas('customer', fn($q2) =>
-                    $q2->where('first_name', 'ilike', "%{$search}%")
-                       ->orWhere('last_name', 'ilike', "%{$search}%"));
+                $q->whereHas('customer', fn($q2) => $q2->search($search));
             })
             ->orderByDesc('created_at')
             ->paginate(25)->withQueryString();

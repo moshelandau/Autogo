@@ -54,9 +54,7 @@ class LeasingService
                     $q2->where('deal_number', 'ilike', "%{$search}%")
                        ->orWhere('vehicle_make', 'ilike', "%{$search}%")
                        ->orWhere('vehicle_model', 'ilike', "%{$search}%")
-                       ->orWhereHas('customer', fn($q3) =>
-                           $q3->where('first_name', 'ilike', "%{$search}%")
-                              ->orWhere('last_name', 'ilike', "%{$search}%"));
+                       ->orWhereHas('customer', fn($q3) => $q3->search($search));
                 });
             })
             ->orderByDesc('updated_at')

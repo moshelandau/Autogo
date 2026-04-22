@@ -34,6 +34,43 @@ class Customer extends Model
         ];
     }
 
+    /**
+     * Reusable customer text search.
+     *
+     * Matches against first_name, last_name, email, phone, secondary_phone,
+     * the concatenated "first_name last_name", and (when multi-word)
+     * AND-across-tokens against name fields so word order doesn't matter.
+     *
+     * Usage:
+     *     Customer::query()->search($q)->get()
+     *     SomeModel::whereHas('customer', fn($q) => $q->search($search))
+     */
+    public function scopeSearch($query, ?string $term)
+    {
+        $term = trim((string) $term);
+        if ($term === '') return $query;
+        $tokens = preg_split('/\s+/', $term);
+
+        return $query->where(function ($w) use ($term, $tokens) {
+            $w->where('first_name', 'ilike', "%{$term}%")
+              ->orWhere('last_name', 'ilike', "%{$term}%")
+              ->orWhere('email', 'ilike', "%{$term}%")
+              ->orWhere('phone', 'ilike', "%{$term}%")
+              ->orWhere('secondary_phone', 'ilike', "%{$term}%")
+              ->orWhereRaw("(coalesce(first_name,'') || ' ' || coalesce(last_name,'')) ilike ?", ["%{$term}%"]);
+            if (count($tokens) > 1) {
+                $w->orWhere(function ($ww) use ($tokens) {
+                    foreach ($tokens as $t) {
+                        $ww->where(function ($w3) use ($t) {
+                            $w3->where('first_name', 'ilike', "%{$t}%")
+                               ->orWhere('last_name', 'ilike', "%{$t}%");
+                        });
+                    }
+                });
+            }
+        });
+    }
+
     public function getFullNameAttribute(): string
     {
         return trim("{$this->first_name} {$this->last_name}");

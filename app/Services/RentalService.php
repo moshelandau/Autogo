@@ -105,9 +105,7 @@ class RentalService
             ->when($search, function ($q, $search) {
                 $q->where(function ($q2) use ($search) {
                     $q2->where('reservation_number', 'ilike', "%{$search}%")
-                       ->orWhereHas('customer', fn($q3) => $q3->where('first_name', 'ilike', "%{$search}%")
-                           ->orWhere('last_name', 'ilike', "%{$search}%")
-                           ->orWhere('phone', 'ilike', "%{$search}%"));
+                       ->orWhereHas('customer', fn($q3) => $q3->search($search));
                 });
             })
             ->orderByDesc('pickup_date')
