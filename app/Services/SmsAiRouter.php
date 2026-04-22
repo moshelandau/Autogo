@@ -30,6 +30,9 @@ class SmsAiRouter
 {
     public function decide(string $fromPhone, string $incomingBody, ?Customer $customer): array
     {
+        if ((string) \App\Models\Setting::getValue('ai_router_disabled') === '1') {
+            return ['action' => 'respond', 'assignee' => null, 'reason' => 'ai_router_disabled_setting'];
+        }
         if (empty(config('services.anthropic.api_key'))) {
             return ['action' => 'respond', 'assignee' => null, 'reason' => 'no_anthropic_key'];
         }
@@ -93,7 +96,7 @@ TXT;
         try {
             $client = Anthropic::client(config('services.anthropic.api_key'));
             $resp = $client->messages()->create([
-                'model'       => 'claude-3-5-sonnet-latest',
+                'model'       => (string) (\App\Models\Setting::getValue('ai_router_model') ?: 'claude-3-5-sonnet-latest'),
                 'max_tokens'  => 200,
                 'temperature' => 0,
                 'system'      => 'You are a precise dispatcher. Output JSON only.',

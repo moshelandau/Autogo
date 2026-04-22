@@ -47,6 +47,9 @@ class SmsAiValidator
             return ['action' => 'accept', 'parsed' => $raw, 'message' => ''];
         }
 
+        if ((string) \App\Models\Setting::getValue('ai_validator_disabled') === '1') {
+            return ['action' => 'accept', 'parsed' => $raw, 'message' => ''];
+        }
         if (empty(config('services.anthropic.api_key'))) {
             return ['action' => 'accept', 'parsed' => $raw, 'message' => ''];
         }
@@ -80,7 +83,7 @@ TXT;
         try {
             $client = Anthropic::client(config('services.anthropic.api_key'));
             $resp = $client->messages()->create([
-                'model'       => 'claude-3-5-haiku-latest',  // cheap+fast for per-step validation
+                'model'       => (string) (\App\Models\Setting::getValue('ai_validator_model') ?: 'claude-3-5-haiku-latest'),
                 'max_tokens'  => 150,
                 'temperature' => 0,
                 'system'      => 'You are a strict form validator. Output JSON only.',

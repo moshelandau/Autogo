@@ -46,9 +46,23 @@ const sections = [
         id: 'sms_bot',
         title: 'SMS Application Bot',
         icon: '🤖',
-        desc: 'Auto-reply bot that walks customers through lease/rental/towing/bodyshop intake by text. Auto-suppresses on detected loops (3+ replies in 10 min) and on auto-responder fingerprints (auto-reply, do-not-reply, out-of-office, msg&data rates, etc.).',
+        desc: 'Auto-reply bot that walks customers through lease/rental/towing/bodyshop intake by text. Triggers ONLY on exact words (help / new / car / lease / rental / tow / bodyshop). Auto-suppresses on detected loops (3+ identical replies in 10 min) and on auto-responder fingerprints (auto-reply, do-not-reply, out-of-office, msg&data rates, etc.).',
         fields: [
             { key: 'bot_disabled', label: 'Kill switch — set to "1" to silence the bot system-wide', type: 'text', placeholder: '0' },
+        ],
+    },
+    {
+        id: 'ai',
+        title: 'AI (Anthropic Claude)',
+        icon: '🧠',
+        desc: 'Powers SMS routing (respond/silent/escalate), per-answer validation, license/insurance/credit-card OCR, and document classification. Get a key at console.anthropic.com.',
+        envFlag: 'anthropic',
+        fields: [
+            { key: 'anthropic_api_key',     label: 'Anthropic API key (sk-ant-…)',  type: 'password' },
+            { key: 'ai_router_model',       label: 'SMS router model',              type: 'text', placeholder: 'claude-3-5-sonnet-latest' },
+            { key: 'ai_validator_model',    label: 'Per-answer validator model',    type: 'text', placeholder: 'claude-3-5-haiku-latest' },
+            { key: 'ai_router_disabled',    label: 'Kill switch for AI router (set "1" to bypass; rule-based safeguards still apply)', type: 'text', placeholder: '0' },
+            { key: 'ai_validator_disabled', label: 'Kill switch for per-answer validator (set "1" to skip)', type: 'text', placeholder: '0' },
         ],
     },
     {

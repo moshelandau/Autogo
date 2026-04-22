@@ -22,6 +22,14 @@ class AppServiceProvider extends ServiceProvider
         \App\Models\RentalPayment::observe(\App\Observers\PaymentBalanceObserver::class);
         \App\Models\Reservation::observe(\App\Observers\ReservationObserver::class);
 
+        // Override Anthropic key from DB Settings (Settings → AI UI).
+        try {
+            if (\Schema::hasTable('settings')) {
+                $key = \App\Models\Setting::getValue('anthropic_api_key');
+                if ($key) config(['services.anthropic.api_key' => $key]);
+            }
+        } catch (\Throwable) {}
+
         // Override S3 disk config from DB Settings (Settings → Storage UI).
         // Wrapped in try because boot runs before migrations on a fresh install.
         try {

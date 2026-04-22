@@ -54,6 +54,7 @@ class SettingController extends Controller
                 'allstate_roadside' => !empty(config('services.allstate_roadside.api_key')) || !empty(config('services.allstate_roadside.username')),
                 'mail'         => !empty(config('mail.mailers.smtp.host')),
                 's3'           => !empty(config('filesystems.disks.s3.key')),
+                'anthropic'    => !empty(config('services.anthropic.api_key')) || !empty(\App\Models\Setting::getValue('anthropic_api_key')),
             ],
         ]);
     }
