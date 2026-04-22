@@ -101,6 +101,7 @@ class SettingController extends Controller
                 'allstate_roadside' => $this->testAllstate($request),
                 'mail'      => $this->testMail($request),
                 's3'        => $this->testS3($request),
+                'ai'        => $this->testAi($request),
                 default     => ['ok' => false, 'message' => "Unknown integration: {$integration}"],
             });
         } catch (\Throwable $e) {
@@ -295,6 +296,31 @@ class SettingController extends Controller
         });
 
         return ['ok' => true, 'message' => "Sent test email to {$to} via " . config('mail.default')];
+    }
+
+    /** Tiny "ping" call against Anthropic to verify the API key works. */
+    private function testAi(Request $r): array
+    {
+        $key = $this->tval($r, 'api_key', 'anthropic_api_key', 'services.anthropic.api_key');
+        if (!$key) return ['ok' => false, 'message' => 'No Anthropic API key. Get one at console.anthropic.com.'];
+        $model = $this->tval($r, 'router_model', 'ai_router_model', 'services.anthropic.router_model') ?: 'claude-3-5-haiku-latest';
+        try {
+            $client = \Anthropic\Anthropic::client($key);
+            $resp = $client->messages()->create([
+                'model'       => $model,
+                'max_tokens'  => 10,
+                'temperature' => 0,
+                'messages'    => [['role' => 'user', 'content' => 'Reply with the single word: OK']],
+            ]);
+            $text = trim((string) ($resp->content[0]->text ?? ''));
+            return ['ok' => true, 'message' => "✓ Anthropic key accepted · model: {$model} · response: \"{$text}\""];
+        } catch (\Throwable $e) {
+            $msg = $e->getMessage();
+            $hint = str_contains(strtolower($msg), 'authentication') || str_contains(strtolower($msg), 'invalid api key')
+                ? ' — key looks wrong or expired.'
+                : '';
+            return ['ok' => false, 'message' => "✗ Anthropic rejected: {$msg}{$hint}"];
+        }
     }
 
     private function testS3(Request $r): array

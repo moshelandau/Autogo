@@ -57,6 +57,7 @@ const sections = [
         icon: '🧠',
         desc: 'AI is used to read scanned licenses/IDs/cards, decide who should answer each text (bot, human, or stay quiet), and check that customer answers actually fit the question. Get an API key at console.anthropic.com.',
         envFlag: 'anthropic',
+        testKey: 'ai',
         fields: [
             { key: 'anthropic_api_key',     label: 'AI API key (Anthropic — starts with sk-ant-…)',  type: 'password' },
             { key: 'ai_router_disabled', label: 'AI smart-reply (decides whether to text back, stay quiet, or hand to staff)', type: 'toggle', onLabel: 'On — AI decides per message', offLabel: 'Off — bot uses simple rules only', invert: true },
