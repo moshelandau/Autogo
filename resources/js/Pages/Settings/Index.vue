@@ -43,6 +43,15 @@ const sections = [
         ],
     },
     {
+        id: 'sms_bot',
+        title: 'SMS Application Bot',
+        icon: '🤖',
+        desc: 'Auto-reply bot that walks customers through lease/rental/towing/bodyshop intake by text. Auto-suppresses on detected loops (3+ replies in 10 min) and on auto-responder fingerprints (auto-reply, do-not-reply, out-of-office, msg&data rates, etc.).',
+        fields: [
+            { key: 'bot_disabled', label: 'Kill switch — set to "1" to silence the bot system-wide', type: 'text', placeholder: '0' },
+        ],
+    },
+    {
         id: 'twilio',
         title: 'Twilio (Backup SMS)',
         icon: '💬',
