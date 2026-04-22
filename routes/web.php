@@ -59,6 +59,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::post('reservations/{reservation}/pickup', [ReservationController::class, 'pickup'])->name('reservations.pickup');
         Route::post('reservations/{reservation}/return', [ReservationController::class, 'return'])->name('reservations.return');
         Route::post('reservations/{reservation}/cancel', [ReservationController::class, 'cancel'])->name('reservations.cancel');
+        Route::post('reservations/{reservation}/generate-agreement', [ReservationController::class, 'generateAgreement'])->name('reservations.generate-agreement');
         Route::post('reservations/{reservation}/payment', [ReservationController::class, 'recordPayment'])->name('reservations.payment');
         Route::post('reservations/{reservation}/open-claim', [ReservationController::class, 'openClaim'])->name('reservations.openClaim');
         Route::get('reservations/{reservation}/agreement/preview', [\App\Http\Controllers\RentalAgreementController::class, 'preview'])->name('reservations.agreement.preview');

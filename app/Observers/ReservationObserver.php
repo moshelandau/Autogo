@@ -53,7 +53,10 @@ class ReservationObserver
      */
     public function created(Reservation $r): void
     {
-        $this->safeSnapshot($r, 'reservation_created', 'rental_agreement');
+        // PHASE 1: don't snapshot on bare create — most created reservations
+        // don't yet have a vehicle/dates/customer signature, so the agreement
+        // PDF would be incomplete anyway. Snapshot triggers on real state
+        // transitions below (vehicle assigned, picked up, returned, etc.).
     }
 
     public function updated(Reservation $r): void
@@ -79,25 +82,11 @@ class ReservationObserver
         };
 
         $docType = in_array($action, ['return', 'completed'], true) ? 'return_receipt' : 'rental_agreement';
-        $this->safeSnapshot($r, $action, $docType);
-    }
 
-    /**
-     * Snapshot wrapper that swallows PDF errors so a DomPDF blow-up never
-     * blocks the underlying reservation save. The error is logged so we can
-     * regenerate the snapshot manually later.
-     */
-    private function safeSnapshot(Reservation $r, string $action, string $docType): void
-    {
-        try {
-            $this->revisions->snapshot($r, $action, $docType);
-        } catch (\Throwable $e) {
-            \Log::warning('Agreement snapshot failed (continuing)', [
-                'reservation_id' => $r->id,
-                'action' => $action,
-                'doc' => $docType,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        // PHASE 2: dispatch the snapshot to the queue worker (Supervisor).
+        // The HTTP request returns immediately; PDF generates in the
+        // background within seconds. Job has try/catch so a failure never
+        // blocks the user, and is retried up to 3 times.
+        \App\Jobs\GenerateAgreementSnapshot::dispatch($r->id, $action, $docType);
     }
 }

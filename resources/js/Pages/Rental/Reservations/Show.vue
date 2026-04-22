@@ -270,6 +270,11 @@ const analyzeImage = async (insp) => {
                               class="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700">
                             {{ r.lease_agreement_path ? 'Regenerate' : 'Generate' }} PDF
                         </Link>
+                        <Link :href="route('rental.reservations.generate-agreement', r.id)" method="post" as="button"
+                              data="{type: 'rental_agreement'}"
+                              class="text-xs px-3 py-1.5 bg-emerald-600 text-white rounded hover:bg-emerald-700">
+                            📸 Tamper-Evident Snapshot
+                        </Link>
                     </div>
                 </div>
 

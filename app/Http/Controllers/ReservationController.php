@@ -76,6 +76,18 @@ class ReservationController extends Controller
             ->with('success', 'Reservation created.');
     }
 
+    /**
+     * Manually generate (or regenerate) the rental agreement / return receipt
+     * PDF for a reservation. Uses the queue so the response is immediate.
+     */
+    public function generateAgreement(Request $request, Reservation $reservation)
+    {
+        $type = $request->input('type', 'rental_agreement');
+        $action = $type === 'return_receipt' ? 'manual_return_receipt' : 'manual_regenerate';
+        \App\Jobs\GenerateAgreementSnapshot::dispatch($reservation->id, $action, $type);
+        return back()->with('success', '📄 PDF generation queued — refresh in a few seconds.');
+    }
+
     public function show(Request $request, Reservation $reservation)
     {
         // One-click assign from calendar overlay: ?assign_vehicle=ID
