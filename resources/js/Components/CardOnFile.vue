@@ -103,17 +103,13 @@ const onScanFile = async (e) => {
                 <p class="text-[11px] text-gray-500">Tokenized via Cardknox. Full card # never stored.</p>
             </div>
             <div class="flex gap-2 flex-wrap">
+                <a :href="route('customers.scan', customerId)" target="_blank"
+                   class="text-xs px-3 py-1.5 bg-purple-600 text-white rounded hover:bg-purple-700 font-semibold">
+                    🖨 Scan with Plustek (auto-classify)
+                </a>
                 <button type="button" @click="triggerScan('credit_card')" :disabled="scanBusy==='credit_card'"
                         class="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50">
-                    {{ scanBusy==='credit_card' ? 'Scanning…' : '📷 Scan CC' }}
-                </button>
-                <button type="button" @click="triggerScan('license')" :disabled="scanBusy==='license'"
-                        class="text-xs px-3 py-1.5 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50">
-                    {{ scanBusy==='license' ? 'Scanning…' : '📷 Scan License' }}
-                </button>
-                <button type="button" @click="triggerScan('insurance')" :disabled="scanBusy==='insurance'"
-                        class="text-xs px-3 py-1.5 bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50">
-                    {{ scanBusy==='insurance' ? 'Scanning…' : '📷 Scan Insurance' }}
+                    {{ scanBusy==='credit_card' ? 'Scanning…' : '📷 Phone CC' }}
                 </button>
                 <button type="button" @click="showAdd = !showAdd"
                         class="text-xs px-3 py-1.5 bg-gray-900 text-white rounded hover:bg-black">
