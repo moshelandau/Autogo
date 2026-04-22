@@ -44,25 +44,25 @@ const sections = [
     },
     {
         id: 'sms_bot',
-        title: 'SMS Application Bot',
+        title: 'SMS Auto-Reply Bot',
         icon: '🤖',
-        desc: 'Auto-reply bot that walks customers through lease/rental/towing/bodyshop intake by text. Triggers ONLY on exact words (help / new / car / lease / rental / tow / bodyshop). Auto-suppresses on detected loops (3+ identical replies in 10 min) and on auto-responder fingerprints (auto-reply, do-not-reply, out-of-office, msg&data rates, etc.).',
+        desc: 'Replies to customer texts automatically — walks them through lease, rental, towing, or bodyshop intake. Only starts a new conversation when the customer texts an exact keyword (help, new, car, lease, rental, tow, bodyshop). Stops itself if it detects a loop or auto-responder.',
         fields: [
-            { key: 'bot_disabled', label: 'Kill switch — set to "1" to silence the bot system-wide', type: 'text', placeholder: '0' },
+            { key: 'bot_disabled', label: 'Auto-reply bot', type: 'toggle', onLabel: 'On — bot replies to customers', offLabel: 'Off — bot is silent', invert: true },
         ],
     },
     {
         id: 'ai',
-        title: 'AI (Anthropic Claude)',
+        title: 'AI Settings',
         icon: '🧠',
-        desc: 'Powers SMS routing (respond/silent/escalate), per-answer validation, license/insurance/credit-card OCR, and document classification. Get a key at console.anthropic.com.',
+        desc: 'AI is used to read scanned licenses/IDs/cards, decide who should answer each text (bot, human, or stay quiet), and check that customer answers actually fit the question. Get an API key at console.anthropic.com.',
         envFlag: 'anthropic',
         fields: [
-            { key: 'anthropic_api_key',     label: 'Anthropic API key (sk-ant-…)',  type: 'password' },
-            { key: 'ai_router_model',       label: 'SMS router model',              type: 'text', placeholder: 'claude-3-5-sonnet-latest' },
-            { key: 'ai_validator_model',    label: 'Per-answer validator model',    type: 'text', placeholder: 'claude-3-5-haiku-latest' },
-            { key: 'ai_router_disabled',    label: 'Kill switch for AI router (set "1" to bypass; rule-based safeguards still apply)', type: 'text', placeholder: '0' },
-            { key: 'ai_validator_disabled', label: 'Kill switch for per-answer validator (set "1" to skip)', type: 'text', placeholder: '0' },
+            { key: 'anthropic_api_key',     label: 'AI API key (Anthropic — starts with sk-ant-…)',  type: 'password' },
+            { key: 'ai_router_disabled', label: 'AI smart-reply (decides whether to text back, stay quiet, or hand to staff)', type: 'toggle', onLabel: 'On — AI decides per message', offLabel: 'Off — bot uses simple rules only', invert: true },
+            { key: 'ai_validator_disabled', label: 'AI answer checker (re-asks if the customer types something that doesn\u2019t fit the question)', type: 'toggle', onLabel: 'On — AI checks each answer', offLabel: 'Off — accept any answer as-is', invert: true },
+            { key: 'ai_router_model',       label: 'Model used for smart-reply (advanced — leave blank to use default)',          type: 'text', placeholder: 'claude-3-5-sonnet-latest' },
+            { key: 'ai_validator_model',    label: 'Model used for answer checker (advanced — leave blank to use default)',       type: 'text', placeholder: 'claude-3-5-haiku-latest' },
         ],
     },
     {
@@ -240,6 +240,25 @@ const flash = ref(null);
 const testResults = reactive({});
 const testing = reactive({});
 
+// Plain-English ON/OFF toggle helpers.
+// Stored value is always the string "1" or "0". When `invert: true`, we
+// display the inverse (so a "*_disabled" setting that stores "1" reads "Off").
+const isToggleOn = (f) => {
+    const stored = String(model[f.key] ?? '0') === '1';
+    return f.invert ? !stored : stored;
+};
+const toggleField = (f) => {
+    const currentlyOn = isToggleOn(f);
+    const next = currentlyOn ? false : true;
+    const stored = f.invert ? !next : next;
+    model[f.key] = stored ? '1' : '0';
+    // Auto-save toggles immediately so users don't have to hunt for the Save button
+    router.post(route('settings.update'), {
+        settings: [{ key: f.key, value: model[f.key], group: sections.find(s => s.fields.includes(f))?.id ?? 'general' }],
+    }, { preserveScroll: true, preserveState: true, replace: true,
+         onSuccess: () => { flash.value = { ok: true, msg: `${f.label.split('(')[0].trim()}: ${next ? 'On' : 'Off'}` }; setTimeout(() => flash.value = null, 2500); } });
+};
+
 const save = () => {
     saving.value = true;
     flash.value = null;
@@ -370,6 +389,28 @@ const scrollTo = (id) => {
                                     class="w-full border-gray-300 rounded-lg text-sm">
                                     <option v-for="o in f.options" :key="o" :value="o">{{ o }}</option>
                                 </select>
+                                <!--
+                                    Plain-English ON/OFF toggle.
+                                    `invert: true` flips the display so that ON corresponds to
+                                    the saved value being "0" — useful for "*_disabled" settings
+                                    where stored "1" actually means "off".
+                                -->
+                                <div v-else-if="f.type === 'toggle'" class="flex items-center gap-3">
+                                    <button type="button"
+                                        @click="toggleField(f)"
+                                        :class="[
+                                            'relative inline-flex h-7 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500',
+                                            isToggleOn(f) ? 'bg-emerald-500' : 'bg-gray-300'
+                                        ]">
+                                        <span :class="[
+                                            'pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                                            isToggleOn(f) ? 'translate-x-5' : 'translate-x-0'
+                                        ]" />
+                                    </button>
+                                    <span class="text-sm" :class="isToggleOn(f) ? 'text-emerald-700 font-semibold' : 'text-gray-500'">
+                                        {{ isToggleOn(f) ? f.onLabel : f.offLabel }}
+                                    </span>
+                                </div>
                                 <input v-else v-model="model[f.key]" :type="f.type"
                                     :placeholder="secrets[f.key]?.has ? 'leave blank to keep saved value' : (f.placeholder || '')"
                                     class="w-full border-gray-300 rounded-lg text-sm"
