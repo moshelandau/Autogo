@@ -80,7 +80,13 @@ jobs:
             php artisan view:cache
             php artisan event:cache
             systemctl restart php8.4-fpm
-            supervisorctl restart autogo-worker:*
+            # Tell Laravel queue workers to gracefully exit after their current
+            # job — much faster than supervisor's stopwaitsecs=3600 wait.
+            php artisan queue:restart
+            # Bounce the supervisor processes. Use || true so an
+            # "abnormal termination" return code never fails the deploy
+            # (the workers come back up, restart is best-effort).
+            supervisorctl restart autogo-worker:* || true
             echo "✅ Deployed at $(date)"
           '
 
