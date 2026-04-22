@@ -276,13 +276,25 @@ class LeaseApplicationBot
             return;
         }
 
-        // Brand-new customer — go straight into questions
+        // Towing/bodyshop or no-existing-customer path: pre-fill anything we
+        // already know so the bot doesn't waste questions asking for it.
         $steps = $this->stepsFor($flow);
+        $prefill = $customer ? array_filter([
+            'first_name' => $customer->first_name,
+            'last_name'  => $customer->last_name,
+            'email'      => $customer->email,
+            'address'    => $customer->address,
+            'city'       => $customer->city,
+            'state'      => $customer->state,
+            'zip'        => $customer->zip,
+        ]) : [];
+
+        $first = $this->firstUnfilledStep($steps, $prefill) ?? $steps[0];
         $session = LeaseApplicationSession::create([
             'phone'        => $phone,
             'flow'         => $flow,
-            'current_step' => $steps[0]['key'],
-            'collected'    => [],
+            'current_step' => $first['key'],
+            'collected'    => $prefill,
             'customer_id'  => $customer?->id,
             'last_inbound_at' => now(),
         ]);
@@ -295,7 +307,7 @@ class LeaseApplicationBot
             default            => "Hi! 👋 This is AutoGo. Reply STOP to opt out.",
         };
         $this->reply($phone, $intro);
-        $this->reply($phone, $this->renderPrompt($steps[0], $session));
+        $this->reply($phone, $this->renderPrompt($first, $session));
     }
 
     private function advanceSession(LeaseApplicationSession $session, string $body, array $mediaUrls): bool
