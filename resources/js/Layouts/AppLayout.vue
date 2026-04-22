@@ -35,6 +35,7 @@ const navSections = [
             { name: 'Dashboard', route: 'dashboard', icon: 'home', pattern: 'dashboard', pageKey: 'dashboard' },
             { name: 'Customers', route: 'customers.index', icon: 'users', pattern: 'customers.*', pageKey: 'customers' },
             { name: 'SMS Inbox', route: 'sms.index', icon: 'mail', pattern: 'sms.*', pageKey: 'customers' },
+            { name: 'Bot Intakes', route: 'bot-sessions.index', icon: 'clipboard', pattern: 'bot-sessions.*', pageKey: 'customers' },
         ]
     },
     {
@@ -194,6 +195,10 @@ const icons = {
                                     <span v-if="item.route === 'sms.index' && ($page.props.smsUnreadCount || 0) > 0"
                                         class="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[11px] font-bold text-white bg-red-500 rounded-full">
                                         {{ $page.props.smsUnreadCount }}
+                                    </span>
+                                    <span v-if="item.route === 'bot-sessions.index' && ($page.props.botPendingCount || 0) > 0"
+                                        class="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[11px] font-bold text-white bg-orange-500 rounded-full">
+                                        {{ $page.props.botPendingCount }}
                                     </span>
                                 </Link>
                             </li>

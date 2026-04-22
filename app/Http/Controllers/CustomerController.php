@@ -80,6 +80,33 @@ class CustomerController extends Controller
             ->with('success', 'Customer created successfully.');
     }
 
+    /**
+     * Send the SMS bot intro to a customer's phone (or any number).
+     * Manual trigger from the Customer Show page when staff wants to start
+     * a lease or rental application without waiting for the customer to text in.
+     */
+    public function textApplication(Request $request, Customer $customer)
+    {
+        $validated = $request->validate([
+            'flow'  => 'required|in:lease,rental,finance,towing,bodyshop',
+            'phone' => 'nullable|string|max:20',
+        ]);
+
+        $phone = $validated['phone'] ?? $customer->phone;
+        if (!$phone) return back()->with('error', 'No phone number provided and customer has none on file.');
+
+        // Normalize to E.164-ish (digits only, prefix US "1" if 10 digits)
+        $digits = preg_replace('/\D/', '', $phone);
+        if (strlen($digits) === 10) $digits = '1' . $digits;
+
+        try {
+            app(\App\Services\LeaseApplicationBot::class)->triggerManually($digits, $validated['flow'], $customer);
+            return back()->with('success', "📱 {$validated['flow']} application sent to {$phone}.");
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Send failed: ' . $e->getMessage());
+        }
+    }
+
     public function show(Customer $customer)
     {
         $customer->load([

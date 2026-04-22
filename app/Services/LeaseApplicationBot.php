@@ -91,11 +91,61 @@ class LeaseApplicationBot
         ['key' => '__done__',          'prompt' => "All set ✅ — your rental request is in. A team member will text you to confirm a vehicle and total. Reply STOP to opt out."],
     ];
 
-    public const TRIGGERS_LEASE  = ['apply', 'lease', 'leasing', 'finance', 'application'];
-    public const TRIGGERS_RENTAL = ['rent', 'rental', 'rentals', 'hire'];
-    public const STOP_WORDS      = ['stop', 'cancel', 'quit', 'unsubscribe'];
+    public const STEPS_TOWING = [
+        ['key' => 'first_name',      'prompt' => "🚛 AutoGo Towing — quick details please. Your FIRST name?"],
+        ['key' => 'last_name',       'prompt' => "Last name?"],
+        ['key' => 'pickup_location', 'prompt' => "Where is the vehicle? (street address, intersection, or landmark)"],
+        ['key' => 'dropoff_location','prompt' => "Where should it be towed TO? (e.g. AutoGo bodyshop, your home, dealership)"],
+        ['key' => 'vehicle',         'prompt' => "Year/make/model/color of the vehicle? (e.g. 2021 Toyota Camry, white)"],
+        ['key' => 'situation',       'prompt' => "What happened? (accident / breakdown / lockout / battery / out of gas / other)"],
+        ['key' => 'wheels_turn',     'prompt' => "Do all 4 wheels still turn? (yes / no — affects truck type)"],
+        ['key' => 'urgency',         'prompt' => "How urgent? (now / today / tomorrow / scheduled)"],
+        ['key' => '__done__',        'prompt' => "Got it ✅ — dispatching now. We'll call you within 5 minutes to confirm ETA. Reply STOP to opt out."],
+    ];
+
+    public const STEPS_BODYSHOP = [
+        ['key' => 'first_name',     'prompt' => "🔧 AutoGo Bodyshop — let's get an estimate. Your FIRST name?"],
+        ['key' => 'last_name',      'prompt' => "Last name?"],
+        ['key' => 'vehicle',        'prompt' => "Year/make/model? (e.g. 2022 Honda Accord)"],
+        ['key' => 'damage_area',    'prompt' => "What part of the car is damaged? (front bumper / driver door / hood / etc.)"],
+        ['key' => 'has_photos',     'prompt' => "Can you TEXT us photos of the damage? (yes / no — if yes, just reply with photos and we'll attach them)"],
+        ['key' => 'is_insurance_claim', 'prompt' => "Is this an insurance claim? (yes / no)"],
+        ['key' => 'insurance_company', 'prompt' => "Which insurance company?", 'requires' => 'is_insurance_claim'],
+        ['key' => 'claim_number',      'prompt' => "Claim number? (or 'pending' if not opened yet)", 'requires' => 'is_insurance_claim'],
+        ['key' => 'preferred_drop_off','prompt' => "When would you like to drop off the car? (today / this week / next week / specific date)"],
+        ['key' => 'rental_needed',     'prompt' => "Will you need a rental car while it's being repaired? (yes / no)"],
+        ['key' => '__done__',          'prompt' => "Thanks ✅ — your estimate request is in. A team member will text/call you to schedule a drop-off. Reply STOP to opt out."],
+    ];
+
+    public const TRIGGERS_LEASE   = ['apply', 'lease', 'leasing', 'application'];
+    public const TRIGGERS_RENTAL  = ['rent', 'rental', 'rentals', 'hire'];
+    public const TRIGGERS_FINANCE = ['finance', 'financing', 'loan'];
+    public const TRIGGERS_TOWING  = ['tow', 'towing', 'stuck', 'breakdown', 'lockout'];
+    public const TRIGGERS_BODYSHOP= ['body', 'bodyshop', 'collision', 'repair', 'estimate'];
+    public const STOP_WORDS       = ['stop', 'cancel', 'quit', 'unsubscribe'];
 
     public function __construct(private readonly TelebroadService $telebroad) {}
+
+    /**
+     * Manually kick off a bot conversation to a customer's phone. Used by the
+     * "Text Application" button in the Customer Show page — staff picks a flow
+     * (lease or rental) and the bot sends the intro + first question.
+     */
+    public function triggerManually(string $phone, string $flow, ?Customer $customer = null): void
+    {
+        // Abandon any active session for this phone so the new one is clean
+        LeaseApplicationSession::where('phone', $phone)
+            ->whereNull('completed_at')->whereNull('aborted_at')
+            ->update(['aborted_at' => now()]);
+
+        // If no customer passed but we can match the number, link them
+        if (!$customer) {
+            $last10 = substr(preg_replace('/\D/', '', $phone), -10);
+            $customer = Customer::where('phone', 'ilike', "%{$last10}")->first();
+        }
+
+        $this->startFlow($phone, $customer, $flow);
+    }
 
     /**
      * @param array $mediaUrls Image URLs from inbound MMS (parsed from Telebroad webhook)
@@ -121,19 +171,28 @@ class LeaseApplicationBot
 
         // Decide intent
         $isUnknown = $customer === null;
-        $wantsLease  = $this->matchesAny($text, self::TRIGGERS_LEASE);
-        $wantsRental = $this->matchesAny($text, self::TRIGGERS_RENTAL);
+        $wantsLease    = $this->matchesAny($text, self::TRIGGERS_LEASE);
+        $wantsRental   = $this->matchesAny($text, self::TRIGGERS_RENTAL);
+        $wantsFinance  = $this->matchesAny($text, self::TRIGGERS_FINANCE);
+        $wantsTowing   = $this->matchesAny($text, self::TRIGGERS_TOWING);
+        $wantsBodyshop = $this->matchesAny($text, self::TRIGGERS_BODYSHOP);
+        $anyTrigger = $wantsLease || $wantsRental || $wantsFinance || $wantsTowing || $wantsBodyshop;
 
-        if (!$isUnknown && !$wantsLease && !$wantsRental) {
+        if (!$isUnknown && !$anyTrigger) {
             // Known customer chatting normally — leave for staff
             return false;
         }
 
-        // Need to pick a flow if ambiguous
+        // Need to pick a flow if ambiguous — send a numbered menu
         if (!$wantsLease && !$wantsRental) {
-            // Unknown sender, no clear intent — ask
-            $this->reply($fromPhone, "Hi! 👋 This is AutoGo. Are you looking to RENT a car, or LEASE/FINANCE one? (reply: rent / lease)");
-            // Park them in a tiny intent-only session
+            $menu = "Hi! 👋 This is AutoGo. How can we help? Reply with a number:\n\n"
+                  . "1 — Lease a car\n"
+                  . "2 — Rent a car\n"
+                  . "3 — Finance a car\n"
+                  . "4 — Towing service\n"
+                  . "5 — Bodyshop / collision repair\n\n"
+                  . "Reply STOP to stop messages.";
+            $this->reply($fromPhone, $menu);
             LeaseApplicationSession::create([
                 'phone' => $fromPhone, 'flow' => 'intent', 'current_step' => '__intent__',
                 'collected' => [], 'customer_id' => $customer?->id, 'last_inbound_at' => now(),
@@ -141,7 +200,14 @@ class LeaseApplicationBot
             return true;
         }
 
-        $flow = $wantsLease ? 'lease' : 'rental';
+        $flow = match (true) {
+            $wantsLease    => 'lease',
+            $wantsRental   => 'rental',
+            $wantsFinance  => 'finance',
+            $wantsTowing   => 'towing',
+            $wantsBodyshop => 'bodyshop',
+            default        => 'lease',
+        };
 
         // Rental self-service requires zero outstanding balance
         if ($flow === 'rental' && $customer && $customer->hasOutstandingBalance()) {
@@ -154,11 +220,25 @@ class LeaseApplicationBot
         return true;
     }
 
+    private function stepsFor(string $flow): array
+    {
+        return match ($flow) {
+            'lease', 'finance' => self::STEPS_LEASE,   // finance shares the credit-app structure
+            'rental'           => self::STEPS_RENTAL,
+            'towing'           => self::STEPS_TOWING,
+            'bodyshop'         => self::STEPS_BODYSHOP,
+            default            => self::STEPS_LEASE,
+        };
+    }
+
     private function startFlow(string $phone, ?Customer $customer, string $flow): void
     {
+        // For Towing and Bodyshop we don't really need to confirm address; just go.
+        $skipConfirm = in_array($flow, ['towing', 'bodyshop'], true);
+
         // If we already know this customer, prefill what we have and ask them
         // to confirm name + address + phone before continuing.
-        if ($customer) {
+        if ($customer && !$skipConfirm) {
             $session = LeaseApplicationSession::create([
                 'phone'        => $phone,
                 'flow'         => $flow,
@@ -182,9 +262,11 @@ class LeaseApplicationBot
                 'last_inbound_at' => now(),
             ]);
 
-            $intro = $flow === 'lease'
-                ? "Hi {$customer->first_name}! 👋 This is AutoGo Leasing — starting your lease/finance application."
-                : "Hi {$customer->first_name}! 👋 This is AutoGo Rentals — setting up your rental.";
+            $intro = match ($flow) {
+                'lease', 'finance' => "Hi {$customer->first_name}! 👋 This is AutoGo Leasing — starting your application.",
+                'rental'           => "Hi {$customer->first_name}! 👋 This is AutoGo Rentals — setting up your rental.",
+                default            => "Hi {$customer->first_name}! 👋",
+            };
             $this->reply($phone, $intro);
 
             $name = trim(($customer->first_name ?? '') . ' ' . ($customer->last_name ?? ''));
@@ -195,19 +277,23 @@ class LeaseApplicationBot
         }
 
         // Brand-new customer — go straight into questions
-        $steps = $flow === 'lease' ? self::STEPS_LEASE : self::STEPS_RENTAL;
+        $steps = $this->stepsFor($flow);
         $session = LeaseApplicationSession::create([
             'phone'        => $phone,
             'flow'         => $flow,
             'current_step' => $steps[0]['key'],
             'collected'    => [],
-            'customer_id'  => null,
+            'customer_id'  => $customer?->id,
             'last_inbound_at' => now(),
         ]);
 
-        $intro = $flow === 'lease'
-            ? "Hi! 👋 This is AutoGo Leasing. I'll text a few quick questions to start your lease/finance application. Reply STOP to opt out."
-            : "Hi! 👋 This is AutoGo Rentals. I'll text a few quick questions to set up your rental. Reply STOP to opt out.";
+        $intro = match ($flow) {
+            'lease', 'finance' => "Hi! 👋 This is AutoGo Leasing. I'll text a few quick questions for your application. Reply STOP to opt out.",
+            'rental'           => "Hi! 👋 This is AutoGo Rentals. I'll text a few quick questions to set up your rental. Reply STOP to opt out.",
+            'towing'           => "Hi! 👋 This is AutoGo Towing. I'll text a few quick questions to dispatch a truck. Reply STOP to opt out.",
+            'bodyshop'         => "Hi! 👋 This is AutoGo Bodyshop. I'll text a few quick questions for your repair estimate. Reply STOP to opt out.",
+            default            => "Hi! 👋 This is AutoGo. Reply STOP to opt out.",
+        };
         $this->reply($phone, $intro);
         $this->reply($phone, $this->renderPrompt($steps[0], $session));
     }
@@ -216,17 +302,30 @@ class LeaseApplicationBot
     {
         $text = strtolower(trim($body));
 
-        // Intent-pick session waiting for "rent" or "lease"
+        // Intent-pick session: accept either keyword or menu number
         if ($session->flow === 'intent') {
-            if ($this->matchesAny($text, self::TRIGGERS_LEASE))  { $session->delete(); $this->startFlow($session->phone, $session->customer, 'lease');  return true; }
-            if ($this->matchesAny($text, self::TRIGGERS_RENTAL)) { $session->delete(); $this->startFlow($session->phone, $session->customer, 'rental'); return true; }
-            $this->reply($session->phone, "Please reply RENT or LEASE.");
+            $digit = trim($text);
+            $flowMap = ['1' => 'lease', '2' => 'rental', '3' => 'finance', '4' => 'towing', '5' => 'bodyshop'];
+            $chosen = $flowMap[$digit] ?? null;
+            if (!$chosen) {
+                if ($this->matchesAny($text, self::TRIGGERS_LEASE))  $chosen = 'lease';
+                elseif ($this->matchesAny($text, self::TRIGGERS_RENTAL)) $chosen = 'rental';
+                elseif (str_contains($text, 'tow'))     $chosen = 'towing';
+                elseif (str_contains($text, 'body') || str_contains($text, 'collision') || str_contains($text, 'repair')) $chosen = 'bodyshop';
+                elseif (str_contains($text, 'finance')) $chosen = 'finance';
+            }
+            if ($chosen) {
+                $session->delete();
+                $this->startFlow($session->phone, $session->customer, $chosen);
+                return true;
+            }
+            $this->reply($session->phone, "Please reply 1, 2, 3, 4, or 5.");
             return true;
         }
 
         // Existing-customer confirmation step
         if ($session->current_step === '__confirm_existing__') {
-            $steps = $session->flow === 'lease' ? self::STEPS_LEASE : self::STEPS_RENTAL;
+            $steps = $this->stepsFor($session->flow);
             $collected = $session->collected ?? [];
             if (in_array($text, ['yes', 'y', 'correct', 'confirm', 'right', 'yep', 'yup', 'ok'], true)) {
                 // Skip ahead to the first step we don't have a value for
@@ -245,7 +344,7 @@ class LeaseApplicationBot
             return true;
         }
 
-        $steps   = $session->flow === 'lease' ? self::STEPS_LEASE : self::STEPS_RENTAL;
+        $steps   = $this->stepsFor($session->flow);
         $stepIdx = $this->indexOfStep($steps, $session->current_step);
         if ($stepIdx === null) return false;
         $step = $steps[$stepIdx];
@@ -462,10 +561,11 @@ class LeaseApplicationBot
 
         $session->customer_id = $customer->id;
 
-        if ($session->flow === 'lease') {
+        if (in_array($session->flow, ['lease', 'finance'], true)) {
             $deal = Deal::create([
+                'deal_number'  => Deal::generateDealNumber(),
                 'customer_id'  => $customer->id,
-                'payment_type' => 'lease',
+                'payment_type' => $session->flow === 'finance' ? 'finance' : 'lease',
                 'stage'        => 'application',
                 'priority'     => 'medium',
                 'notes'        => $this->buildNote($session->flow, $c),
@@ -473,6 +573,22 @@ class LeaseApplicationBot
             $session->deal_id = $deal->id;
             $session->update(['completed_at' => now()]);
             $this->reply($session->phone, "All set ✅ — your application is in (Deal #{$deal->deal_number}). A team member will reach out shortly. Reply STOP to opt out.");
+        } elseif (in_array($session->flow, ['towing', 'bodyshop'], true)) {
+            // Towing + Bodyshop don't have a strict structured target yet.
+            // Save as a tagged note on the customer + complete the session;
+            // staff sees it in the Bot Intakes list and can route from there.
+            \App\Models\OfficeTask::create([
+                'title'       => strtoupper($session->flow) . ' request from ' . trim($c['first_name'] ?? '' . ' ' . ($c['last_name'] ?? '')),
+                'description' => $this->buildNote($session->flow, $c) . "\n\nFrom phone: {$session->phone}",
+                'customer_id' => $customer->id,
+                'priority'    => $session->flow === 'towing' ? 'high' : 'medium',
+                'status'      => 'pending',
+            ]);
+            $session->update(['completed_at' => now()]);
+            $msg = $session->flow === 'towing'
+                ? "Thanks ✅ — dispatcher will call you in about 5 minutes."
+                : "Thanks ✅ — bodyshop will text you to schedule your drop-off.";
+            $this->reply($session->phone, $msg);
         } else {
             // RENTAL — create a draft Reservation if dates parse cleanly; otherwise leave as note for staff
             $deal = null;

@@ -26,7 +26,18 @@ class HandleInertiaRequests extends Middleware
             ],
             'notifications' => fn () => $this->getNotifications($request),
             'smsUnreadCount' => fn () => $this->getSmsUnreadCount($request),
+            'botPendingCount' => fn () => $this->getBotPendingCount(),
         ];
+    }
+
+    private function getBotPendingCount(): int
+    {
+        try {
+            return \App\Models\LeaseApplicationSession::query()
+                ->whereNull('completed_at')
+                ->whereNull('aborted_at')
+                ->count();
+        } catch (\Throwable) { return 0; }
     }
 
     private function getSmsUnreadCount(Request $request): int

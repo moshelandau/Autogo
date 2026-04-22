@@ -39,6 +39,11 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     Route::post('customers-quick', [CustomerController::class, 'quickStore'])->name('customers.quick-store');
     Route::get('customers/{customer}/scan',  [\App\Http\Controllers\CustomerScanController::class, 'index'])->name('customers.scan');
     Route::post('customers/{customer}/scan', [\App\Http\Controllers\CustomerScanController::class, 'ingest'])->name('customers.scan.ingest');
+    Route::post('customers/{customer}/text-application', [\App\Http\Controllers\CustomerController::class, 'textApplication'])->name('customers.text-application');
+
+    // SMS bot intake sessions (lease/rental) — including incomplete
+    Route::get('bot-sessions',     [\App\Http\Controllers\BotSessionController::class, 'index'])->name('bot-sessions.index');
+    Route::get('bot-sessions/{session}', [\App\Http\Controllers\BotSessionController::class, 'show'])->name('bot-sessions.show');
     Route::post('scan/license-extract',      [\App\Http\Controllers\CustomerScanController::class, 'extractLicense'])->name('scan.license-extract');
 
     // ── Car Rental Module ──────────────────────────────
