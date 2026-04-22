@@ -91,4 +91,55 @@ class ImageResizer
             default      => 'bin',
         };
     }
+
+    /**
+     * Convert browser-recorded webm/ogg audio to AAC (m4a). Carriers typically
+     * accept M4A/AMR/3GPP for MMS audio; webm is a web-only format and gets
+     * stripped silently. Requires ffmpeg on the server (prod has it).
+     *
+     * @return array{bytes:string,mime:string,extension:string,converted:bool}
+     */
+    public function convertAudioForMms(string $bytes, string $originalMime): array
+    {
+        $unchanged = ['bytes' => $bytes, 'mime' => $originalMime, 'extension' => $this->audioExtFor($originalMime), 'converted' => false];
+
+        // Only need to convert browser-only formats; carriers handle mp3/m4a/amr/3gp natively
+        if (!in_array($originalMime, ['audio/webm', 'audio/ogg', 'video/webm'], true)) return $unchanged;
+
+        $ffmpeg = trim((string) shell_exec('which ffmpeg 2>/dev/null'));
+        if ($ffmpeg === '') return $unchanged;
+
+        try {
+            $tmpIn  = tempnam(sys_get_temp_dir(), 'sms-in-')  . '.webm';
+            $tmpOut = tempnam(sys_get_temp_dir(), 'sms-out-') . '.m4a';
+            file_put_contents($tmpIn, $bytes);
+            $cmd = escapeshellcmd($ffmpeg) . ' -y -i ' . escapeshellarg($tmpIn) . ' -vn -c:a aac -b:a 64k ' . escapeshellarg($tmpOut) . ' 2>&1';
+            $out = shell_exec($cmd);
+            $converted = @file_get_contents($tmpOut);
+            @unlink($tmpIn);
+            @unlink($tmpOut);
+            if (!$converted) {
+                \Log::warning('Audio convert failed', ['ffmpeg_output' => substr((string) $out, -300)]);
+                return $unchanged;
+            }
+            return ['bytes' => $converted, 'mime' => 'audio/mp4', 'extension' => 'm4a', 'converted' => true];
+        } catch (\Throwable $e) {
+            \Log::warning('Audio convert exception', ['error' => $e->getMessage()]);
+            return $unchanged;
+        }
+    }
+
+    private function audioExtFor(string $mime): string
+    {
+        return match ($mime) {
+            'audio/mp4'   => 'm4a',
+            'audio/mpeg'  => 'mp3',
+            'audio/wav'   => 'wav',
+            'audio/webm'  => 'webm',
+            'audio/ogg'   => 'ogg',
+            'audio/3gpp'  => '3gp',
+            'audio/amr'   => 'amr',
+            default       => 'bin',
+        };
+    }
 }

@@ -63,6 +63,19 @@ class SmsController extends Controller
                         $resizeNote = " (resized {$oldKb}KB→{$newKb}KB)";
                     }
                 }
+                // Convert browser-recorded webm/ogg audio to M4A — carriers
+                // strip web-only audio formats. ffmpeg required (installed on prod).
+                if (in_array($mime, ['audio/webm', 'audio/ogg', 'video/webm'], true)) {
+                    $a = $resizer->convertAudioForMms($bytes, $mime);
+                    if ($a['converted']) {
+                        $oldKb = (int) round(strlen($bytes) / 1024);
+                        $newKb = (int) round(strlen($a['bytes']) / 1024);
+                        $bytes  = $a['bytes'];
+                        $mime   = $a['mime'];
+                        $extOut = $a['extension'];
+                        $resizeNote = " (converted webm→m4a, {$oldKb}KB→{$newKb}KB)";
+                    }
+                }
 
                 $name = 'sms-' . now()->format('YmdHis') . '-' . \Str::random(6) . '.' . $extOut;
                 \Storage::disk('public')->put('sms-outbound/' . $name, $bytes);
