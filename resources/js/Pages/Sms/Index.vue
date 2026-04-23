@@ -89,9 +89,10 @@ const fmtTime = (iso) => {
                                 <div class="flex flex-col items-end gap-1 ml-2 flex-shrink-0">
                                     <div class="flex items-center gap-2">
                                         <span class="text-xs text-gray-500">{{ fmtTime(c.last_at) }}</span>
-                                        <span v-if="c.resolved" title="Resolved"
-                                            class="inline-flex items-center justify-center w-5 h-5 text-white bg-emerald-500 rounded-full">
+                                        <span v-if="c.resolved" title="Resolved — done"
+                                            class="inline-flex items-center justify-center px-2 py-0.5 text-[10px] font-semibold text-gray-600 bg-white border border-gray-300 rounded-full uppercase tracking-wider gap-1">
                                             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                                            done
                                         </span>
                                         <span v-else-if="c.unread_count > 0"
                                             class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold text-white bg-green-500 rounded-full">

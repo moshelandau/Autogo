@@ -167,8 +167,21 @@ class LeaseApplicationBot
             return true;
         }
 
-        if ($session) {
+        // Even mid-session, an exact trigger word should restart fresh — lets
+        // a customer escape a stuck flow by texting "help" / "car" / "rental" / etc.
+        $strict = preg_replace('/[^a-z]/', '', $text);
+        $isTopLevelTrigger = in_array($strict, [
+            'help', 'new', 'car', 'menu', 'options', 'start',
+            'lease', 'rental', 'rent', 'tow', 'towing',
+            'bodyshop', 'body', 'collision', 'finance', 'financing',
+        ], true);
+
+        if ($session && !$isTopLevelTrigger) {
             return $this->advanceSession($session, $body, $mediaUrls);
+        }
+        if ($session && $isTopLevelTrigger) {
+            $session->update(['aborted_at' => now()]);
+            $session = null;  // fall through to new-conversation logic
         }
 
         // ── No active session: only start one on STRICT, exact trigger words. ──
