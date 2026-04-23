@@ -62,6 +62,7 @@ const sections = [
             { key: 'anthropic_api_key',     label: 'AI API key (Anthropic — starts with sk-ant-…)',  type: 'password' },
             { key: 'ai_router_disabled', label: 'AI smart-reply (decides whether to text back, stay quiet, or hand to staff)', type: 'toggle', onLabel: 'On — AI decides per message', offLabel: 'Off — bot uses simple rules only', invert: true },
             { key: 'ai_validator_disabled', label: 'AI answer checker (re-asks if the customer types something that doesn\u2019t fit the question)', type: 'toggle', onLabel: 'On — AI checks each answer', offLabel: 'Off — accept any answer as-is', invert: true },
+            { key: 'ai_agent_disabled', label: 'AI conversational agent (handles sidetracks like "add a phone" mid-flow naturally)', type: 'toggle', onLabel: 'On — AI drives mid-flow conversation', offLabel: 'Off — strict step-by-step questions', invert: true },
             { key: 'ai_router_model',       label: 'Model used for smart-reply (advanced — leave blank to use default)',          type: 'text', placeholder: 'claude-sonnet-4-5' },
             { key: 'ai_validator_model',    label: 'Model used for answer checker (advanced — leave blank to use default)',       type: 'text', placeholder: 'claude-haiku-4-5' },
         ],

@@ -177,6 +177,19 @@ class LeaseApplicationBot
         ], true);
 
         if ($session && !$isTopLevelTrigger) {
+            // Try the AI agent first — it handles sidetracks, free-form
+            // replies, and non-priority field updates naturally. Falls
+            // through to the rule-based advanceSession() if the agent
+            // bails (no API key, image step, unclear decision).
+            if ((string) \App\Models\Setting::getValue('ai_agent_disabled') !== '1') {
+                try {
+                    if (app(\App\Services\SmsAgentBot::class)->handle($session, $body, $mediaUrls)) {
+                        return true;
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('SmsAgentBot failed, falling back', ['error' => $e->getMessage()]);
+                }
+            }
             return $this->advanceSession($session, $body, $mediaUrls);
         }
         if ($session && $isTopLevelTrigger) {
