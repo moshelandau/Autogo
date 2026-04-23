@@ -35,7 +35,7 @@ class LeaseApplicationBot
         ['key' => 'first_name',        'prompt' => "Great — what's your FIRST name? (we'll confirm what we read)"],
         ['key' => 'last_name',         'prompt' => "Thanks {first_name}. And your LAST name?"],
         ['key' => 'date_of_birth',     'prompt' => "Date of birth? (MM/DD/YYYY)"],
-        ['key' => 'ssn',               'prompt' => "Your full SSN? (XXX-XX-XXXX). Used only for the credit application."],
+        ['key' => 'ssn',               'prompt' => "Your full SSN? (XXX-XX-XXXX). Used only to run the credit application — we mask it on display and never share it. If you'd rather enter it on a secure web form, reply SECURE."],
         ['key' => 'address',           'prompt' => "Current home street address?"],
         ['key' => 'city',              'prompt' => "City?"],
         ['key' => 'state',             'prompt' => "State? (2-letter, e.g. NY)"],
@@ -71,8 +71,8 @@ class LeaseApplicationBot
         ['key' => 'co_position',         'prompt' => "Co-applicant position?",          'requires' => 'has_coapplicant'],
         ['key' => 'co_annual_income',    'prompt' => "Co-applicant annual income? ($)", 'requires' => 'has_coapplicant'],
 
-        ['key' => 'vehicle_interest', 'prompt' => "Last question — what vehicle are you interested in? (year/make/model, or just describe)"],
-        ['key' => '__done__',         'prompt' => "All set ✅ — your application is in. A team member will reach out with options shortly. Reply STOP to opt out."],
+        ['key' => 'vehicle_interest', 'prompt' => "Last question — what vehicle are you interested in? (year/make/model, or just describe). Lender approval and final terms are subject to a credit decision."],
+        ['key' => '__done__',         'prompt' => "Got it — your application is in. A team member will reach out with options after the credit review."],
     ];
 
     public const STEPS_RENTAL = [
@@ -89,12 +89,12 @@ class LeaseApplicationBot
         ['key' => 'pickup_date',       'prompt' => "Pick-up date? (MM/DD/YYYY)"],
         ['key' => 'pickup_location',   'prompt' => "Pick up at MONROE or MONSEY?"],
         ['key' => 'return_date',       'prompt' => "Return date? (MM/DD/YYYY)"],
-        ['key' => 'vehicle_preference','prompt' => "Any vehicle preference? (e.g. SUV, sedan, minivan — or 'whatever's available')"],
-        ['key' => '__done__',          'prompt' => "All set ✅ — your rental request is in. A team member will text you to confirm a vehicle and total. Reply STOP to opt out."],
+        ['key' => 'vehicle_preference','prompt' => "Any vehicle preference? (e.g. SUV, sedan, minivan — or 'whatever's available'). Final vehicle and pricing confirmed by our team."],
+        ['key' => '__done__',          'prompt' => "Got it — your request is in. A team member will text you to confirm vehicle availability and pricing."],
     ];
 
     public const STEPS_TOWING = [
-        ['key' => 'first_name',      'prompt' => "🚛 AutoGo Towing — quick details please. Your FIRST name?"],
+        ['key' => 'first_name',      'prompt' => "🚛 AutoGo Towing — quick details please. ⚠️ If this is a medical or roadway emergency, call 911 first.\n\nYour FIRST name?"],
         ['key' => 'last_name',       'prompt' => "Last name?"],
         ['key' => 'pickup_location', 'prompt' => "Where is the vehicle? (street address, intersection, or landmark)"],
         ['key' => 'dropoff_location','prompt' => "Where should it be towed TO? (e.g. AutoGo bodyshop, your home, dealership)"],
@@ -102,7 +102,7 @@ class LeaseApplicationBot
         ['key' => 'situation',       'prompt' => "What happened? (accident / breakdown / lockout / battery / out of gas / other)"],
         ['key' => 'wheels_turn',     'prompt' => "Do all 4 wheels still turn? (yes / no — affects truck type)"],
         ['key' => 'urgency',         'prompt' => "How urgent? (now / today / tomorrow / scheduled)"],
-        ['key' => '__done__',        'prompt' => "Got it ✅ — dispatching now. We'll call you within 5 minutes to confirm ETA. Reply STOP to opt out."],
+        ['key' => '__done__',        'prompt' => "Got it — request received. A dispatcher will call you back to confirm vehicle availability and ETA."],
     ];
 
     public const STEPS_BODYSHOP = [
@@ -115,8 +115,8 @@ class LeaseApplicationBot
         ['key' => 'insurance_company', 'prompt' => "Which insurance company?", 'requires' => 'is_insurance_claim'],
         ['key' => 'claim_number',      'prompt' => "Claim number? (or 'pending' if not opened yet)", 'requires' => 'is_insurance_claim'],
         ['key' => 'preferred_drop_off','prompt' => "When would you like to drop off the car? (today / this week / next week / specific date)"],
-        ['key' => 'rental_needed',     'prompt' => "Will you need a rental car while it's being repaired? (yes / no)"],
-        ['key' => '__done__',          'prompt' => "Thanks ✅ — your estimate request is in. A team member will text/call you to schedule a drop-off. Reply STOP to opt out."],
+        ['key' => 'rental_needed',     'prompt' => "Will you need a rental car while it's being repaired? (yes / no — we'll let you know if a loaner is available)"],
+        ['key' => '__done__',          'prompt' => "Thanks — your estimate request is in. A team member will text/call you to schedule a drop-off. The estimate itself is provided after we see the vehicle."],
     ];
 
     public const TRIGGERS_LEASE   = ['apply', 'lease', 'leasing', 'application'];
@@ -225,8 +225,7 @@ class LeaseApplicationBot
               . "1 LEASE — lease/finance a car\n"
               . "2 RENTAL — rent a car\n"
               . "3 TOW — towing\n"
-              . "4 BODYSHOP — collision repair\n\n"
-              . "Reply STOP to opt out.";
+              . "4 BODYSHOP — collision repair";
         $this->reply($fromPhone, $menu);
         LeaseApplicationSession::create([
             'phone' => $fromPhone, 'flow' => 'intent', 'current_step' => '__intent__',
@@ -337,6 +336,8 @@ class LeaseApplicationBot
             $intro = match ($flow) {
                 'lease', 'finance' => "Hi {$customer->first_name}! 👋 This is AutoGo Leasing — starting your application.",
                 'rental'           => "Hi {$customer->first_name}! 👋 This is AutoGo Rentals — setting up your rental.",
+                'towing'           => "Hi {$customer->first_name}! 👋 This is AutoGo Towing.",
+                'bodyshop'         => "Hi {$customer->first_name}! 👋 This is AutoGo Bodyshop.",
                 default            => "Hi {$customer->first_name}! 👋",
             };
             $this->reply($phone, $intro);
@@ -372,11 +373,11 @@ class LeaseApplicationBot
         ]);
 
         $intro = match ($flow) {
-            'lease', 'finance' => "Hi! 👋 This is AutoGo Leasing. I'll text a few quick questions for your application. Reply STOP to opt out.",
-            'rental'           => "Hi! 👋 This is AutoGo Rentals. I'll text a few quick questions to set up your rental. Reply STOP to opt out.",
-            'towing'           => "Hi! 👋 This is AutoGo Towing. I'll text a few quick questions to dispatch a truck. Reply STOP to opt out.",
-            'bodyshop'         => "Hi! 👋 This is AutoGo Bodyshop. I'll text a few quick questions for your repair estimate. Reply STOP to opt out.",
-            default            => "Hi! 👋 This is AutoGo. Reply STOP to opt out.",
+            'lease', 'finance' => "Hi! 👋 This is AutoGo Leasing — let's start your application.",
+            'rental'           => "Hi! 👋 This is AutoGo Rentals — let's set up your rental.",
+            'towing'           => "Hi! 👋 This is AutoGo Towing.",
+            'bodyshop'         => "Hi! 👋 This is AutoGo Bodyshop — let's get a quick estimate request started.",
+            default            => "Hi! 👋 This is AutoGo.",
         };
         $this->reply($phone, $intro);
         $this->reply($phone, $this->renderPrompt($first, $session));
@@ -403,7 +404,7 @@ class LeaseApplicationBot
                 $this->startFlow($session->phone, $session->customer, $chosen);
                 return true;
             }
-            $this->reply($session->phone, "Please reply 1, 2, 3, 4, or 5.");
+            $this->reply($session->phone, "Please reply with one of: 1 LEASE, 2 RENTAL, 3 TOW, 4 BODYSHOP.");
             return true;
         }
 
@@ -702,7 +703,7 @@ class LeaseApplicationBot
             ]);
             $session->deal_id = $deal->id;
             $session->update(['completed_at' => now()]);
-            $this->reply($session->phone, "All set ✅ — your application is in (Deal #{$deal->deal_number}). A team member will reach out shortly. Reply STOP to opt out.");
+            $this->reply($session->phone, "Got it — your application is in. A team member will reach out shortly.");
         } elseif (in_array($session->flow, ['towing', 'bodyshop'], true)) {
             // Towing + Bodyshop don't have a strict structured target yet.
             // Save as a tagged note on the customer + complete the session;
