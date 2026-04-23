@@ -124,6 +124,15 @@ class TelebroadWebhookController extends Controller
         // Notify staff on inbound
         if ($isInbound) {
             $this->notifyStaff($log, $customer);
+
+            // Auto-reopen any resolved conversation when the customer texts
+            // back — they clearly aren't done with us. Staff has to re-Resolve.
+            $key = \App\Models\SmsConversationState::normalize((string) $from);
+            if ($key !== '') {
+                \App\Models\SmsConversationState::where('phone_last10', $key)
+                    ->whereNotNull('resolved_at')
+                    ->update(['resolved_at' => null, 'resolved_by' => null, 'resolve_note' => null]);
+            }
         }
 
         // AI router (layer 0) → rule-based safeguards (layer 1-3) → bot.

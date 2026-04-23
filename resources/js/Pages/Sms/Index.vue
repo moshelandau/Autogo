@@ -77,9 +77,9 @@ const fmtTime = (iso) => {
                                     {{ (c.customer_name || c.phone).charAt(0).toUpperCase() }}
                                 </div>
                                 <div class="flex-1 min-w-0">
-                                    <p class="font-medium truncate" :class="c.resolved ? 'text-gray-500 line-through' : 'text-gray-900'">
+                                    <p class="font-medium truncate" :class="c.resolved ? 'text-gray-500' : 'text-gray-900'">
                                         {{ c.customer_name || c.phone }}
-                                        <span v-if="c.customer_name" class="text-xs text-gray-400 font-normal ml-1 no-underline">{{ c.phone }}</span>
+                                        <span v-if="c.customer_name" class="text-xs text-gray-400 font-normal ml-1">{{ c.phone }}</span>
                                     </p>
                                     <p class="text-sm text-gray-600 truncate mt-0.5">
                                         <span v-if="c.last_dir === 'outbound'" class="text-gray-400">You: </span>

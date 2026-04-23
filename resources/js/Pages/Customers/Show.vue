@@ -426,6 +426,10 @@ const kinds = [
                                     <option :value="null">— Unassigned —</option>
                                     <option v-for="u in smsStaff" :key="u.id" :value="u.id">{{ u.name }}</option>
                                 </select>
+                                <button v-if="!smsResolved" @click="resolveMsgThread"
+                                    class="text-xs px-2 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700">✓ Resolve</button>
+                                <button v-else @click="unresolveMsgThread"
+                                    class="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">↩ Reopen</button>
                                 <button v-if="lastReadInboundMsg" @click="markLastUnread"
                                     class="text-xs text-orange-600 hover:text-orange-800 underline">Mark unread</button>
                                 <Link :href="route('sms.show', customer.phone)" class="text-xs text-indigo-600 hover:text-indigo-800">Open full view →</Link>
@@ -452,21 +456,56 @@ const kinds = [
                                             </template>
                                             <span v-if="m.body">{{ m.body }}</span>
                                         </div>
-                                        <div class="text-[11px] text-gray-400 mt-0.5"
-                                            :class="m.direction === 'outbound' ? 'text-right' : 'text-left'">
-                                            {{ new Date(m.sent_at || m.created_at).toLocaleString() }}
+                                        <div class="text-[11px] text-gray-400 mt-0.5 flex items-center gap-2"
+                                            :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
+                                            <span>{{ new Date(m.sent_at || m.created_at).toLocaleString() }}</span>
+                                            <span v-if="m.direction === 'outbound' && m.sender_label" class="text-gray-500">· {{ m.sender_label }}</span>
+                                            <span v-if="m.direction === 'outbound'">· {{ m.status }}</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        <form @submit.prevent="sendReply" class="mt-3 flex items-end gap-2">
-                            <textarea v-model="replyForm.message" rows="2" placeholder="Type a message…"
-                                class="flex-1 border-gray-300 rounded-md text-sm resize-none focus:border-indigo-500 focus:ring-indigo-500" />
-                            <button type="submit" :disabled="replyForm.processing || !replyForm.message.trim()"
-                                class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
-                                {{ replyForm.processing ? 'Sending…' : 'Send' }}
-                            </button>
+                        <form @submit.prevent="sendReply" class="mt-3 space-y-2">
+                            <div v-if="msgAttachments.length" class="flex flex-wrap gap-2">
+                                <span v-for="(a, i) in msgAttachments" :key="i"
+                                    class="inline-flex items-center gap-1 px-2 py-1 text-xs bg-indigo-50 border border-indigo-200 rounded-full">
+                                    📎 {{ a.name }} ({{ Math.round(a.size/1024) }}KB)
+                                    <button type="button" @click="removeMsgAttachment(i)" class="text-indigo-600 hover:text-indigo-900 ml-1">×</button>
+                                </span>
+                            </div>
+                            <div class="flex items-end gap-2">
+                                <textarea v-model="replyForm.message" rows="2" placeholder="Type a message…"
+                                    class="flex-1 border-gray-300 rounded-md text-sm resize-none focus:border-indigo-500 focus:ring-indigo-500" />
+                                <button type="submit" :disabled="replyForm.processing || (!replyForm.message.trim() && !msgAttachments.length)"
+                                    class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+                                    {{ replyForm.processing ? 'Sending…' : 'Send' }}
+                                </button>
+                            </div>
+                            <div class="flex items-center gap-1 relative">
+                                <input ref="msgFileInput" type="file" multiple class="hidden" @change="onPickMsgFile"
+                                       accept="image/*,application/pdf,audio/*" />
+                                <button type="button" @click="msgFileInput?.click()" title="Attach file" class="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded">📎</button>
+                                <button type="button" @click="toggleMsgVoice" :title="msgRecording ? 'Stop recording' : 'Record voice'"
+                                        class="p-1.5 hover:bg-gray-100 rounded"
+                                        :class="msgRecording ? 'text-red-600 animate-pulse' : 'text-gray-500 hover:text-gray-900'">🎙</button>
+                                <button type="button" @click="msgShowEmojis = !msgShowEmojis" title="Emojis" class="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded">😊</button>
+                                <button type="button" @click="loadMsgTemplates(); msgShowTemplates = !msgShowTemplates" title="Templates" class="p-1.5 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded">📋</button>
+                                <span class="ml-auto text-[11px] text-gray-400">{{ replyForm.message.length }}/1600</span>
+                                <div v-if="msgShowEmojis" class="absolute bottom-full mb-2 left-12 bg-white border rounded-lg shadow-lg p-2 z-30 grid grid-cols-7 gap-1">
+                                    <button v-for="e in MSG_EMOJIS" :key="e" type="button" @click="insertMsgEmoji(e)"
+                                            class="text-xl hover:bg-gray-100 rounded p-1">{{ e }}</button>
+                                </div>
+                                <div v-if="msgShowTemplates" class="absolute bottom-full mb-2 left-24 bg-white border rounded-lg shadow-lg w-80 max-h-72 overflow-y-auto z-30">
+                                    <div class="p-2 border-b text-xs font-semibold text-gray-700">Saved templates</div>
+                                    <button v-for="t in msgTemplates" :key="t.id" type="button" @click="useMsgTemplate(t)"
+                                            class="block w-full text-left px-3 py-2 hover:bg-indigo-50 border-b last:border-b-0">
+                                        <div class="text-sm font-medium">{{ t.label }}</div>
+                                        <div class="text-[11px] text-gray-500 truncate">{{ t.body }}</div>
+                                    </button>
+                                    <div v-if="!msgTemplates.length" class="p-3 text-xs text-gray-400 text-center">No templates yet</div>
+                                </div>
+                            </div>
                         </form>
                     </div>
                 </div>

@@ -223,6 +223,62 @@ class LeaseApplicationBot
     }
 
 
+    /**
+     * Ask AI which collected field(s) the customer wants to update based on
+     * their free-text reply ("just my address", "the phone is wrong", etc.).
+     * Returns the list of collected-keys to wipe. Has a regex fallback if
+     * AI isn't configured / errors out.
+     */
+    private function aiPickFieldsToUpdate(string $reply, array $availableKeys): array
+    {
+        // Regex shortcuts first (covers 95% of real replies + works without AI)
+        $r = strtolower($reply);
+        $hits = [];
+        $map = [
+            'first_name' => ['first name', 'firstname'],
+            'last_name'  => ['last name', 'lastname', 'surname'],
+            'address'    => ['address', 'street'],
+            'city'       => ['city'],
+            'state'      => ['state'],
+            'zip'        => ['zip', 'postal'],
+            'phone'      => ['phone', 'number', 'cell', 'mobile'],
+            'email'      => ['email', 'mail'],
+        ];
+        foreach ($map as $field => $needles) {
+            if (!in_array($field, $availableKeys, true)) continue;
+            foreach ($needles as $n) if (str_contains($r, $n)) { $hits[] = $field; break; }
+        }
+        if (in_array('name', explode(' ', $r), true) && !in_array('first_name', $hits, true) && !in_array('last_name', $hits, true)) {
+            // bare "name" → both
+            $hits[] = 'first_name'; $hits[] = 'last_name';
+        }
+        if (!empty($hits)) return array_values(array_unique($hits));
+
+        // AI fallback for ambiguous replies
+        try {
+            $resp = app(\App\Services\AiClient::class)->messages([
+                'model'       => 'claude-haiku-4-5',
+                'max_tokens'  => 80,
+                'temperature' => 0,
+                'system'      => 'Return JSON only.',
+                'messages'    => [['role' => 'user', 'content' =>
+                    "User wants to update something on file. Which field(s) from this list:\n"
+                    . implode(', ', ['first_name','last_name','address','city','state','zip','phone','email']) . "\n"
+                    . "Their reply: \"{$reply}\"\n"
+                    . "Output JSON: {\"fields\":[\"address\"]}"
+                ]],
+            ]);
+            $text = trim(preg_replace('/^```(?:json)?\s*|\s*```$/m', '', $resp->content[0]->text ?? ''));
+            $data = json_decode($text, true);
+            if (is_array($data) && !empty($data['fields'])) {
+                return array_values(array_intersect($data['fields'], ['first_name','last_name','address','city','state','zip','phone','email']));
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('aiPickFieldsToUpdate failed', ['error' => $e->getMessage()]);
+        }
+        return [];
+    }
+
     private function stepsFor(string $flow): array
     {
         return match ($flow) {
@@ -338,12 +394,11 @@ class LeaseApplicationBot
             return true;
         }
 
-        // Existing-customer confirmation step
+        // Existing-customer confirmation step.
         if ($session->current_step === '__confirm_existing__') {
             $steps = $this->stepsFor($session->flow);
             $collected = $session->collected ?? [];
             if (in_array($text, ['yes', 'y', 'correct', 'confirm', 'right', 'yep', 'yup', 'ok'], true)) {
-                // Skip ahead to the first step we don't have a value for
                 $next = $this->firstUnfilledStep($steps, $collected);
                 $session->update(['current_step' => $next['key'] ?? '__done__']);
                 if ($next === null || $next['key'] === '__done__') { $this->finalize($session); return true; }
@@ -351,11 +406,32 @@ class LeaseApplicationBot
                 $this->reply($session->phone, $this->renderPrompt($next, $session));
                 return true;
             }
-            // Anything else = wants to update. Wipe identity fields so we re-collect.
-            foreach (['first_name','last_name','address','city','state','zip'] as $k) unset($collected[$k]);
-            $session->update(['collected' => $collected, 'current_step' => $steps[0]['key']]);
-            $this->reply($session->phone, "No problem — let's update.");
-            $this->reply($session->phone, $this->renderPrompt($steps[0], $session));
+            // They said NO (or anything else). Don't wipe everything — ask
+            // which field needs updating, then only re-collect that one.
+            $session->update(['current_step' => '__confirm_what_to_update__']);
+            $this->reply($session->phone, "No problem — what needs to be updated? (e.g. \"my address\", \"phone number\", \"name\")");
+            return true;
+        }
+
+        // Customer told us "what to update" — let AI pick the field(s),
+        // wipe just those, then ask for the new value(s).
+        if ($session->current_step === '__confirm_what_to_update__') {
+            $steps = $this->stepsFor($session->flow);
+            $collected = $session->collected ?? [];
+            $fieldsToFix = $this->aiPickFieldsToUpdate($body, array_keys($collected));
+            if (empty($fieldsToFix)) {
+                $this->reply($session->phone, "Sorry, didn't catch that — which field? (name / address / city / state / zip / phone / email)");
+                return true;
+            }
+            foreach ($fieldsToFix as $k) unset($collected[$k]);
+            $next = $this->firstUnfilledStep($steps, $collected);
+            $session->update([
+                'collected'    => $collected,
+                'current_step' => $next['key'] ?? '__done__',
+            ]);
+            if ($next === null || $next['key'] === '__done__') { $this->finalize($session); return true; }
+            $this->reply($session->phone, "Got it — updating: " . implode(', ', $fieldsToFix));
+            $this->reply($session->phone, $this->renderPrompt($next, $session));
             return true;
         }
 
