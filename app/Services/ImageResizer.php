@@ -111,18 +111,22 @@ class ImageResizer
 
         try {
             $tmpIn  = tempnam(sys_get_temp_dir(), 'sms-in-')  . '.webm';
-            $tmpOut = tempnam(sys_get_temp_dir(), 'sms-out-') . '.m4a';
+            $tmpOut = tempnam(sys_get_temp_dir(), 'sms-out-') . '.3gp';
             file_put_contents($tmpIn, $bytes);
-            $cmd = escapeshellcmd($ffmpeg) . ' -y -i ' . escapeshellarg($tmpIn) . ' -vn -c:a aac -b:a 64k ' . escapeshellarg($tmpOut) . ' 2>&1';
+            // 3GPP container (mono, 8kHz, AAC-LC, 24kbps) — universally
+            // recognised by carriers and by phone messaging apps as a
+            // voice note (not a generic media/video file).
+            $cmd = escapeshellcmd($ffmpeg) . ' -y -i ' . escapeshellarg($tmpIn)
+                 . ' -vn -ac 1 -ar 8000 -c:a aac -b:a 24k -f 3gp '
+                 . escapeshellarg($tmpOut) . ' 2>&1';
             $out = shell_exec($cmd);
             $converted = @file_get_contents($tmpOut);
-            @unlink($tmpIn);
-            @unlink($tmpOut);
+            @unlink($tmpIn); @unlink($tmpOut);
             if (!$converted) {
                 \Log::warning('Audio convert failed', ['ffmpeg_output' => substr((string) $out, -300)]);
                 return $unchanged;
             }
-            return ['bytes' => $converted, 'mime' => 'audio/mp4', 'extension' => 'm4a', 'converted' => true];
+            return ['bytes' => $converted, 'mime' => 'audio/3gpp', 'extension' => '3gp', 'converted' => true];
         } catch (\Throwable $e) {
             \Log::warning('Audio convert exception', ['error' => $e->getMessage()]);
             return $unchanged;
