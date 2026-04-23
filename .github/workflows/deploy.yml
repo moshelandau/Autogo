@@ -65,6 +65,8 @@ jobs:
             --exclude='public/storage' \
             --exclude='public/hot' \
             --exclude='tests' \
+            --exclude='bootstrap/cache/*.php' \
+            --exclude='database/database.sqlite' \
             ./ root@217.216.91.93:/var/www/autogo/
 
       - name: Run migrations + cache + restart on server
@@ -74,6 +76,10 @@ jobs:
             chown -R www-data:www-data .
             chmod -R 775 storage bootstrap/cache
             php artisan migrate --force
+            # Wipe ALL stale caches first — the runner ships bootstrap/cache
+            # files via rsync that may contain its own paths/defaults. We
+            # rebuild from prod .env afterwards.
+            rm -f bootstrap/cache/config.php bootstrap/cache/routes-v7.php bootstrap/cache/events.php bootstrap/cache/packages.php bootstrap/cache/services.php
             php artisan optimize:clear
             php artisan config:cache
             php artisan route:cache
@@ -81,11 +87,11 @@ jobs:
             php artisan event:cache
             systemctl restart php8.4-fpm
             # Tell Laravel queue workers to gracefully exit after their current
-            # job — much faster than supervisor's stopwaitsecs=3600 wait.
-            php artisan queue:restart
-            # Bounce the supervisor processes. Use || true so an
-            # "abnormal termination" return code never fails the deploy
-            # (the workers come back up, restart is best-effort).
+            # job — much faster than supervisor stopwaitsecs=3600 wait. Guarded
+            # because cache backend hiccups have failed the whole deploy before.
+            php artisan queue:restart || true
+            # Bounce the supervisor processes. || true so an "abnormal
+            # termination" return code never fails the deploy.
             supervisorctl restart autogo-worker:* || true
             echo "✅ Deployed at $(date)"
           '
