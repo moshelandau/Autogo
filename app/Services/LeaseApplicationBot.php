@@ -235,6 +235,22 @@ class LeaseApplicationBot
     }
 
 
+    /** Friendly prompt for each identity field when the customer wants to update it. */
+    private function updatePromptFor(string $field): string
+    {
+        return match ($field) {
+            'first_name' => "What's the correct FIRST name?",
+            'last_name'  => "And the correct LAST name?",
+            'address'    => "What's the correct street address?",
+            'city'       => "City?",
+            'state'      => "State? (2-letter, e.g. NY)",
+            'zip'        => "ZIP code?",
+            'phone'      => "What's the best phone number to reach you on?",
+            'email'      => "What's the correct email address?",
+            default      => "What's the correct {$field}?",
+        };
+    }
+
     /**
      * Ask AI which collected field(s) the customer wants to update based on
      * their free-text reply ("just my address", "the phone is wrong", etc.).
@@ -428,23 +444,47 @@ class LeaseApplicationBot
         }
 
         // Customer told us "what to update" — let AI pick the field(s),
-        // wipe just those, then ask for the new value(s).
+        // queue them for collection, ask the first one.
         if ($session->current_step === '__confirm_what_to_update__') {
-            $steps = $this->stepsFor($session->flow);
             $collected = $session->collected ?? [];
             $fieldsToFix = $this->aiPickFieldsToUpdate($body, array_keys($collected));
             if (empty($fieldsToFix)) {
                 $this->reply($session->phone, "Sorry, didn't catch that — which field? (name / address / city / state / zip / phone / email)");
                 return true;
             }
+            // Wipe what they want to update + queue them on the session
             foreach ($fieldsToFix as $k) unset($collected[$k]);
-            $next = $this->firstUnfilledStep($steps, $collected);
+            $collected['__update_queue__'] = $fieldsToFix;
+            $first = $fieldsToFix[0];
             $session->update([
                 'collected'    => $collected,
-                'current_step' => $next['key'] ?? '__done__',
+                'current_step' => '__update_' . $first . '__',
             ]);
+            $this->reply($session->phone, "Got it — let's update: " . implode(', ', $fieldsToFix));
+            $this->reply($session->phone, $this->updatePromptFor($first));
+            return true;
+        }
+
+        // Inside an active update of a single identity field
+        if (str_starts_with($session->current_step, '__update_')) {
+            $field = substr($session->current_step, strlen('__update_'), -2);
+            $collected = $session->collected ?? [];
+            $collected[$field] = $this->normalize($field, trim($body));
+            $queue = (array) ($collected['__update_queue__'] ?? []);
+            array_shift($queue); // remove the one we just answered
+            if (!empty($queue)) {
+                $collected['__update_queue__'] = $queue;
+                $session->update(['collected' => $collected, 'current_step' => '__update_' . $queue[0] . '__']);
+                $this->reply($session->phone, $this->updatePromptFor($queue[0]));
+                return true;
+            }
+            // Updates done → go to the first unfilled step of the regular flow
+            unset($collected['__update_queue__']);
+            $steps = $this->stepsFor($session->flow);
+            $next  = $this->firstUnfilledStep($steps, $collected);
+            $session->update(['collected' => $collected, 'current_step' => $next['key'] ?? '__done__']);
             if ($next === null || $next['key'] === '__done__') { $this->finalize($session); return true; }
-            $this->reply($session->phone, "Got it — updating: " . implode(', ', $fieldsToFix));
+            $this->reply($session->phone, "Updated. Continuing.");
             $this->reply($session->phone, $this->renderPrompt($next, $session));
             return true;
         }
