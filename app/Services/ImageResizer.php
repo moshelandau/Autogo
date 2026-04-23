@@ -111,13 +111,15 @@ class ImageResizer
 
         try {
             $tmpIn  = tempnam(sys_get_temp_dir(), 'sms-in-')  . '.webm';
-            $tmpOut = tempnam(sys_get_temp_dir(), 'sms-out-') . '.3gp';
+            $tmpOut = tempnam(sys_get_temp_dir(), 'sms-out-') . '.mp3';
             file_put_contents($tmpIn, $bytes);
-            // 3GPP container (mono, 8kHz, AAC-LC, 24kbps) — universally
-            // recognised by carriers and by phone messaging apps as a
-            // voice note (not a generic media/video file).
+            // MP3 mono 44.1kHz 64kbps — sniffed live from Telebroad's own
+            // web UI (file `voice_note_MM_DD_YYYY_HH_MM_SS.mp3`, magic
+            // bytes ff fb). Phones display MP3 voice with the proper
+            // waveform + voice-note UI; M4A/3GP fall through to a
+            // generic video/media player.
             $cmd = escapeshellcmd($ffmpeg) . ' -y -i ' . escapeshellarg($tmpIn)
-                 . ' -vn -ac 1 -ar 8000 -c:a aac -b:a 24k -f 3gp '
+                 . ' -vn -ac 1 -ar 44100 -c:a libmp3lame -b:a 64k '
                  . escapeshellarg($tmpOut) . ' 2>&1';
             $out = shell_exec($cmd);
             $converted = @file_get_contents($tmpOut);
@@ -126,7 +128,7 @@ class ImageResizer
                 \Log::warning('Audio convert failed', ['ffmpeg_output' => substr((string) $out, -300)]);
                 return $unchanged;
             }
-            return ['bytes' => $converted, 'mime' => 'audio/3gpp', 'extension' => '3gp', 'converted' => true];
+            return ['bytes' => $converted, 'mime' => 'audio/mpeg', 'extension' => 'mp3', 'converted' => true];
         } catch (\Throwable $e) {
             \Log::warning('Audio convert exception', ['error' => $e->getMessage()]);
             return $unchanged;

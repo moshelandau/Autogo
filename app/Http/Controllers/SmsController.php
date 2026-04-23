@@ -70,10 +70,15 @@ class SmsController extends Controller
                     if ($a['converted']) {
                         $oldKb = (int) round(strlen($bytes) / 1024);
                         $newKb = (int) round(strlen($a['bytes']) / 1024);
-                        $bytes  = $a['bytes'];
-                        $mime   = $a['mime'];
-                        $extOut = $a['extension'];
-                        $resizeNote = " (converted webm→m4a, {$oldKb}KB→{$newKb}KB)";
+                        $bytes    = $a['bytes'];
+                        $mime     = $a['mime'];
+                        $extOut   = $a['extension'];
+                        // Match Telebroad's own naming pattern
+                        // (voice_note_MM_DD_YYYY_HH_MM_SS.mp3) so the
+                        // recipient's phone shows it as a proper voice note
+                        // with waveform + transcript UI, not a generic media file.
+                        $origName = 'voice_note_' . now()->format('m_d_Y_H_i_s') . '.' . $a['extension'];
+                        $resizeNote = " (converted webm→{$a['extension']}, {$oldKb}KB→{$newKb}KB)";
                     }
                 }
 
