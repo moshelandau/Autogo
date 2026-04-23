@@ -28,9 +28,13 @@ return new class extends Migration {
             $table->string('notes')->nullable();
             $table->timestamps();
             $table->index(['customer_id']);
-            // Last-10-digit functional index for fast inbound auto-link
-            $table->index(DB::raw("substring(regexp_replace(phone, '\\D', '', 'g') from '.{1,10}\$')"), 'customer_phones_last10_idx');
+            $table->index('phone');
         });
+
+        // Functional index on the last 10 digits for fast inbound auto-link.
+        // Schema builder mangles raw expressions inside ->index(), so do it
+        // via raw SQL.
+        DB::statement("CREATE INDEX customer_phones_last10_idx ON customer_phones ((substring(regexp_replace(phone, '\\D', '', 'g') from '.{1,10}\$')))");
 
         // Backfill from customers.phone + customers.secondary_phone
         $rows = DB::table('customers')->whereNotNull('phone')->orWhereNotNull('secondary_phone')->get(['id', 'phone', 'secondary_phone']);
