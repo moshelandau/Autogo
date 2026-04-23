@@ -10,6 +10,7 @@ const props = defineProps({
     customer: { type: Object, default: null },
     staff:    { type: Array,  default: () => [] },
     assignedTo: { type: [Number, String], default: null },
+    resolved:   { type: Object, default: null },
 });
 
 const reply = useForm({
@@ -156,6 +157,13 @@ const assign = () => {
 const setStatus = (msgId, status) => {
     router.post(route('sms.mark-status', msgId), { status }, { preserveScroll: true });
 };
+const resolveThread = () => {
+    if (!confirm('Mark this conversation resolved? It will be dimmed in the inbox with a green ✓.')) return;
+    router.post(route('sms.resolve', props.phone), {}, { preserveScroll: true });
+};
+const unresolveThread = () => {
+    router.post(route('sms.unresolve', props.phone), {}, { preserveScroll: true });
+};
 // "Mark unread" applies to the most recent inbound message that is currently read.
 // Useful for flagging a thread for whoever's assigned to come back to it.
 const lastReadInbound = computed(() => {
@@ -187,6 +195,11 @@ const isVideo = (att) => (att?.mime || '').startsWith('video/') || ['mp4','mov',
                 </h2>
                 <span v-if="customer" class="text-sm text-gray-500">{{ phone }}</span>
                 <div class="ml-auto flex items-center gap-2">
+                    <button v-if="!resolved" @click="resolveThread"
+                        class="text-xs px-2 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700">✓ Resolve</button>
+                    <button v-else @click="unresolveThread"
+                        class="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                        :title="`Resolved by ${resolved.by || '?'} at ${new Date(resolved.at).toLocaleString()}`">↩ Reopen</button>
                     <button v-if="lastReadInbound" @click="setStatus(lastReadInbound.id, 'received')"
                         class="text-xs text-orange-600 hover:text-orange-800 underline">Mark unread</button>
                     <label class="text-xs text-gray-500">Assigned to:</label>

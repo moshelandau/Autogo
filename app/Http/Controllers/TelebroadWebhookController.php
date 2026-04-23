@@ -263,6 +263,12 @@ class TelebroadWebhookController extends Controller
 
     private function findCustomerByPhone(string $phone): ?Customer
     {
+        // Match against any phone on the customer (primary, secondary, OR any
+        // customer_phones row) so a customer texting from their non-primary
+        // number still attaches correctly.
+        $found = Customer::findByAnyPhone($phone);
+        if ($found) return $found;
+
         $digits = preg_replace('/\D/', '', $phone);
         if (strlen($digits) >= 10) {
             $last10 = substr($digits, -10);

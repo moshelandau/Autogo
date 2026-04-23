@@ -110,6 +110,27 @@ class Customer extends Model
     public function rentalPayments(): HasMany  { return $this->hasMany(RentalPayment::class)->latest(); }
     public function ezPassAccounts(): HasMany  { return $this->hasMany(EzPassAccount::class); }
     public function cards(): HasMany           { return $this->hasMany(CustomerCard::class); }
+    public function phones(): HasMany          { return $this->hasMany(CustomerPhone::class)->orderByDesc('is_primary')->orderBy('id'); }
+
+    /**
+     * Lookup by the last 10 digits of any phone tied to this customer
+     * (primary `phone`, legacy `secondary_phone`, or any `customer_phones`
+     * row). Used by the SMS webhook to attach inbound to the right person
+     * even when they text from their non-primary number.
+     */
+    public static function findByAnyPhone(string $phone): ?Customer
+    {
+        $d = preg_replace('/\D/', '', $phone);
+        if (strlen($d) < 10) return null;
+        $last10 = substr($d, -10);
+
+        $viaPhones = CustomerPhone::whereRaw("substring(regexp_replace(phone, '\\D', '', 'g') from '.{1,10}\$') = ?", [$last10])
+            ->orderByDesc('is_primary')->first();
+        if ($viaPhones) return $viaPhones->customer;
+
+        return static::where('phone', 'ilike', "%{$last10}")
+            ->orWhere('secondary_phone', 'ilike', "%{$last10}")->first();
+    }
 
     /**
      * Compute the live outstanding balance across all reservations.

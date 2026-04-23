@@ -94,7 +94,7 @@ TXT;
 
         try {
             $resp = app(\App\Services\AiClient::class)->messages([
-                'model'       => (string) (\App\Models\Setting::getValue('ai_router_model') ?: 'claude-3-5-sonnet-latest'),
+                'model'       => (string) (\App\Models\Setting::getValue('ai_router_model') ?: 'claude-sonnet-4-5'),
                 'max_tokens'  => 200,
                 'temperature' => 0,
                 'system'      => 'You are a precise dispatcher. Output JSON only.',

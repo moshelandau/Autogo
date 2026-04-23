@@ -18,7 +18,7 @@ use Anthropic\Client as AnthropicClient;
  *
  * Usage:
  *   $resp = app(AiClient::class)->messages([
- *       'model'       => 'claude-3-5-sonnet-latest',
+ *       'model'       => 'claude-sonnet-4-5',
  *       'max_tokens'  => 200,
  *       'temperature' => 0,
  *       'system'      => 'You are precise.',
@@ -49,7 +49,7 @@ class AiClient
         $sdkArgs = array_filter([
             'maxTokens'   => $opts['max_tokens']  ?? 1024,
             'messages'    => $this->normalizeMessages($opts['messages'] ?? []),
-            'model'       => $opts['model']       ?? 'claude-3-5-haiku-latest',
+            'model'       => $opts['model']       ?? 'claude-haiku-4-5',
             'system'      => $opts['system']      ?? null,
             'temperature' => $opts['temperature'] ?? null,
         ], fn ($v) => $v !== null);
@@ -76,7 +76,7 @@ class AiClient
     {
         try {
             $resp = $this->messages([
-                'model'      => $modelOverride ?: 'claude-3-5-haiku-latest',
+                'model'      => $modelOverride ?: 'claude-haiku-4-5',
                 'max_tokens' => 10,
                 'temperature'=> 0,
                 'messages'   => [['role' => 'user', 'content' => 'Reply with the single word: OK']],

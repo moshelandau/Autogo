@@ -81,7 +81,7 @@ TXT;
 
         try {
             $resp = app(\App\Services\AiClient::class)->messages([
-                'model'       => (string) (\App\Models\Setting::getValue('ai_validator_model') ?: 'claude-3-5-haiku-latest'),
+                'model'       => (string) (\App\Models\Setting::getValue('ai_validator_model') ?: 'claude-haiku-4-5'),
                 'max_tokens'  => 150,
                 'temperature' => 0,
                 'system'      => 'You are a strict form validator. Output JSON only.',

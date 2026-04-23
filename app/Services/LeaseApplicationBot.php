@@ -520,7 +520,7 @@ class LeaseApplicationBot
             if (!empty(config('services.anthropic.api_key'))) {
                 try {
                     $resp = app(\App\Services\AiClient::class)->messages([
-                        'model' => 'claude-3-5-sonnet-latest', 'max_tokens' => 800, 'temperature' => 0,
+                        'model' => 'claude-sonnet-4-5', 'max_tokens' => 800, 'temperature' => 0,
                         'system' => 'OCR US driver licenses. Output VALID JSON only.',
                         'messages' => [[
                             'role' => 'user',

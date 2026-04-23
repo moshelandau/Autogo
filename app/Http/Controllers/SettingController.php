@@ -308,7 +308,7 @@ class SettingController extends Controller
             config(['services.anthropic.api_key' => $typed]);
         }
         try {
-            $model = $this->tval($r, 'router_model', 'ai_router_model', 'services.anthropic.router_model') ?: 'claude-3-5-haiku-latest';
+            $model = $this->tval($r, 'router_model', 'ai_router_model', 'services.anthropic.router_model') ?: 'claude-haiku-4-5';
             $svc = app(\App\Services\AiClient::class);
             if (!$svc->isConfigured()) return ['ok' => false, 'message' => 'No Anthropic API key. Save one above first or add ANTHROPIC_API_KEY to .env.'];
             $r2 = $svc->ping($model);

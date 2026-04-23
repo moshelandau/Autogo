@@ -72,14 +72,14 @@ const fmtTime = (iso) => {
                     <ul v-else class="divide-y">
                         <li v-for="c in conversations" :key="c.phone">
                             <Link :href="route('sms.show', c.phone)"
-                                class="flex items-start gap-3 p-4 hover:bg-gray-50">
+                                :class="[ 'flex items-start gap-3 p-4 hover:bg-gray-50', c.resolved && 'opacity-60' ]">
                                 <div class="flex-shrink-0 w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-semibold">
                                     {{ (c.customer_name || c.phone).charAt(0).toUpperCase() }}
                                 </div>
                                 <div class="flex-1 min-w-0">
-                                    <p class="font-medium text-gray-900 truncate">
+                                    <p class="font-medium truncate" :class="c.resolved ? 'text-gray-500 line-through' : 'text-gray-900'">
                                         {{ c.customer_name || c.phone }}
-                                        <span v-if="c.customer_name" class="text-xs text-gray-400 font-normal ml-1">{{ c.phone }}</span>
+                                        <span v-if="c.customer_name" class="text-xs text-gray-400 font-normal ml-1 no-underline">{{ c.phone }}</span>
                                     </p>
                                     <p class="text-sm text-gray-600 truncate mt-0.5">
                                         <span v-if="c.last_dir === 'outbound'" class="text-gray-400">You: </span>
@@ -89,7 +89,11 @@ const fmtTime = (iso) => {
                                 <div class="flex flex-col items-end gap-1 ml-2 flex-shrink-0">
                                     <div class="flex items-center gap-2">
                                         <span class="text-xs text-gray-500">{{ fmtTime(c.last_at) }}</span>
-                                        <span v-if="c.unread_count > 0"
+                                        <span v-if="c.resolved" title="Resolved"
+                                            class="inline-flex items-center justify-center w-5 h-5 text-white bg-emerald-500 rounded-full">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+                                        </span>
+                                        <span v-else-if="c.unread_count > 0"
                                             class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold text-white bg-green-500 rounded-full">
                                             {{ c.unread_count }}
                                         </span>

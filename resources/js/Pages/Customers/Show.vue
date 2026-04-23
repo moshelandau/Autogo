@@ -67,6 +67,7 @@ const msgScroll = ref(null);
 const smsStaff = ref([]);
 const smsAssignedTo = ref(null);
 const smsPhone = ref(props.customer.phone || '');
+const smsResolved = ref(null);
 const replyForm = useForm({
     to: props.customer.phone || '',
     message: '',
@@ -114,6 +115,7 @@ const loadMessages = async (isPoll = false) => {
         smsAssignedTo.value = data.assignedTo ?? null;
         smsStaff.value = data.staff || [];
         smsPhone.value = data.phone || props.customer.phone;
+        smsResolved.value = data.resolved || null;
         nextTick(() => { if (msgScroll.value) msgScroll.value.scrollTop = msgScroll.value.scrollHeight; });
     } catch (e) { console.error(e); }
     messagesLoading.value = false;
@@ -147,12 +149,72 @@ const sendTextApp = () => {
     });
 };
 
+// ── Reply: attachments / voice / emoji / templates ────────
+const msgAttachments = ref([]);
+const msgFileInput   = ref(null);
+const msgRecording   = ref(false);
+let msgRecorder = null, msgVoiceChunks = [];
+const msgShowEmojis    = ref(false);
+const msgShowTemplates = ref(false);
+const msgTemplates     = ref([]);
+const MSG_EMOJIS = ['👍','👌','🙏','✅','❌','🎉','📞','📱','💬','📅','💵','💳','🚗','🔑','🔧','🚛','🔥','⏰','📍','📄','✨','😀','😊','🤝','👀','💡','⚠️','🆘'];
+
+const onPickMsgFile = (e) => { for (const f of e.target.files) msgAttachments.value.push(f); e.target.value = ''; };
+const removeMsgAttachment = (i) => msgAttachments.value.splice(i, 1);
+const insertMsgEmoji = (e) => { replyForm.message += e; msgShowEmojis.value = false; };
+const loadMsgTemplates = async () => {
+    if (msgTemplates.value.length) return;
+    try { const { data } = await axios.get(route('sms.templates')); msgTemplates.value = data.data || []; } catch {}
+};
+const useMsgTemplate = (tpl) => {
+    const fn = props.customer?.first_name || '';
+    replyForm.message = (tpl.body || '').replace(/\{first_name\}/g, fn).replace(/\{last_name\}/g, props.customer?.last_name || '');
+    msgShowTemplates.value = false;
+};
+const toggleMsgVoice = async () => {
+    if (msgRecording.value) { msgRecorder?.stop(); return; }
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        msgRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        msgVoiceChunks = [];
+        msgRecorder.ondataavailable = (e) => msgVoiceChunks.push(e.data);
+        msgRecorder.onstop = () => {
+            const blob = new Blob(msgVoiceChunks, { type: 'audio/webm' });
+            const file = new File([blob], `voice-${Date.now()}.webm`, { type: 'audio/webm' });
+            msgAttachments.value.push(file);
+            stream.getTracks().forEach(t => t.stop());
+            msgRecording.value = false;
+        };
+        msgRecorder.start();
+        msgRecording.value = true;
+    } catch (e) { alert('Microphone access denied: ' + e.message); }
+};
+
 const sendReply = () => {
-    if (!replyForm.message.trim()) return;
-    replyForm.post(route('sms.send'), {
-        preserveScroll: true,
-        onSuccess: () => { replyForm.reset('message'); loadMessages(); },
-    });
+    if (!replyForm.message.trim() && !msgAttachments.value.length) return;
+    const fd = new FormData();
+    fd.append('to', replyForm.to);
+    fd.append('message', replyForm.message);
+    if (replyForm.customer_id)  fd.append('customer_id',  replyForm.customer_id);
+    if (replyForm.subject_type) fd.append('subject_type', replyForm.subject_type);
+    if (replyForm.subject_id)   fd.append('subject_id',   replyForm.subject_id);
+    msgAttachments.value.forEach(f => fd.append('attachments[]', f));
+    replyForm.processing = true;
+    axios.post(route('sms.send'), fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+        .then(() => { replyForm.reset('message'); msgAttachments.value = []; loadMessages(); })
+        .catch(e => alert('Send failed: ' + (e.response?.data?.message || e.message)))
+        .finally(() => { replyForm.processing = false; });
+};
+
+// Resolve / reopen
+const resolveMsgThread = () => {
+    if (!props.customer.phone) return;
+    if (!confirm('Mark this conversation resolved?')) return;
+    router.post(route('sms.resolve', props.customer.phone), {}, { preserveScroll: true, onSuccess: () => loadMessages(true) });
+};
+const unresolveMsgThread = () => {
+    if (!props.customer.phone) return;
+    router.post(route('sms.unresolve', props.customer.phone), {}, { preserveScroll: true, onSuccess: () => loadMessages(true) });
 };
 // Live updates — poll the thread every 5s while the Messages tab is active
 let msgPollTimer = null;

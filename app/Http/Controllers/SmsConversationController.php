@@ -52,8 +52,11 @@ class SmsConversationController extends Controller
                 });
             })
             ->when($mine, fn ($q) => $q->where('assigned_to', $request->user()->id))
+            // No limit — we have ~1k SMS rows total, the grouping below
+            // produces one entry per conversation. Capping the source rows
+            // (the previous limit(500)) caused older conversations to drop
+            // off the inbox entirely.
             ->orderByDesc('created_at')
-            ->limit(500)
             ->get();
 
         // Group by other_party, keep latest, count unread (inbound + status=received)
@@ -77,6 +80,13 @@ class SmsConversationController extends Controller
             if ($r->direction === 'inbound' && $r->status === 'received') {
                 $grouped[$key]['unread_count']++;
             }
+            // Prefer ANY non-null assignee on the conversation: the first
+            // row we see is the most recent, which may pre-date the
+            // assignment. Walk through all rows and adopt the first
+            // assigned_to we find.
+            if (empty($grouped[$key]['assigned_to']) && !empty($r->assigned_to)) {
+                $grouped[$key]['assigned_to'] = $r->assigned_to;
+            }
         }
 
         // Attach customer names
@@ -99,11 +109,39 @@ class SmsConversationController extends Controller
                 ? $users[$g['assigned_to']]->name : null;
         }
 
+        // Bulk-load resolved state for every conversation in one query
+        $keys = collect($grouped)->keys()->all();
+        $states = \App\Models\SmsConversationState::whereIn('phone_last10', $keys)
+            ->whereNotNull('resolved_at')->get()->keyBy('phone_last10');
+        foreach ($grouped as $key => &$g) {
+            $g['resolved'] = $states->has($key);
+        }
+
         return Inertia::render('Sms/Index', [
             'conversations' => array_values($grouped),
             'filters'       => ['search' => $search, 'mine' => $mine],
             'staff'         => User::where('email', 'like', '%@autogoco.com')->orderBy('name')->get(['id', 'name']),
         ]);
+    }
+
+    /** Mark a conversation resolved (✓ in inbox, dimmed). Auto-cleared on next inbound. */
+    public function resolve(Request $request, string $phone)
+    {
+        $key = \App\Models\SmsConversationState::normalize($phone);
+        \App\Models\SmsConversationState::updateOrCreate(['phone_last10' => $key], [
+            'resolved_at'  => now(),
+            'resolved_by'  => $request->user()->id,
+            'resolve_note' => $request->input('note'),
+        ]);
+        return back()->with('success', 'Conversation marked resolved.');
+    }
+
+    public function unresolve(Request $request, string $phone)
+    {
+        $key = \App\Models\SmsConversationState::normalize($phone);
+        \App\Models\SmsConversationState::where('phone_last10', $key)
+            ->update(['resolved_at' => null, 'resolved_by' => null, 'resolve_note' => null]);
+        return back()->with('success', 'Conversation reopened.');
     }
 
     /** Reassign every message in a conversation (by phone) to a staff member. */
@@ -195,6 +233,8 @@ class SmsConversationController extends Controller
             : null;
 
         $assignedTo = $messages->reverse()->firstWhere('assigned_to', '!=', null)?->assigned_to;
+        $state = \App\Models\SmsConversationState::where('phone_last10', \App\Models\SmsConversationState::normalize($phone))
+            ->whereNotNull('resolved_at')->first();
 
         return Inertia::render('Sms/Show', [
             'phone'      => $phone,
@@ -202,6 +242,11 @@ class SmsConversationController extends Controller
             'customer'   => $customer,
             'staff'      => User::where('email', 'like', '%@autogoco.com')->orderBy('name')->get(['id', 'name']),
             'assignedTo' => $assignedTo,
+            'resolved'   => $state ? [
+                'at'        => $state->resolved_at,
+                'by'        => $state->resolver?->name,
+                'note'      => $state->resolve_note,
+            ] : null,
         ]);
     }
 
@@ -238,11 +283,16 @@ class SmsConversationController extends Controller
         $assignedTo = $messages->reverse()->firstWhere('assigned_to', '!=', null)?->assigned_to;
         $phone = $customer->phone;
 
+        $state = $customer->phone
+            ? \App\Models\SmsConversationState::where('phone_last10', \App\Models\SmsConversationState::normalize($customer->phone))
+                ->whereNotNull('resolved_at')->first()
+            : null;
         return response()->json([
             'messages'   => $messages,
             'assignedTo' => $assignedTo,
             'phone'      => $phone,
             'staff'      => User::where('email', 'like', '%@autogoco.com')->orderBy('name')->get(['id', 'name']),
+            'resolved'   => $state ? ['at' => $state->resolved_at, 'by' => $state->resolver?->name] : null,
         ]);
     }
 

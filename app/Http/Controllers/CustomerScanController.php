@@ -34,7 +34,7 @@ class CustomerScanController extends Controller
 
         try {
             $resp = app(\App\Services\AiClient::class)->messages([
-                'model'       => 'claude-3-5-sonnet-latest',
+                'model'       => 'claude-sonnet-4-5',
                 'max_tokens'  => 800,
                 'temperature' => 0,
                 'system'      => 'OCR cards/IDs. Output VALID JSON only.',
@@ -93,7 +93,7 @@ class CustomerScanController extends Controller
 
         try {
             $resp = app(\App\Services\AiClient::class)->messages([
-                'model'       => 'claude-3-5-sonnet-latest',
+                'model'       => 'claude-sonnet-4-5',
                 'max_tokens'  => 800,
                 'temperature' => 0,
                 'system'      => 'You are an OCR system for US driver licenses and government IDs. Output VALID JSON ONLY, no prose, no code fences.',
@@ -188,7 +188,7 @@ class CustomerScanController extends Controller
     private function classifyWithClaude(string $b64, string $mime): array
     {
         $resp = app(\App\Services\AiClient::class)->messages([
-            'model'       => 'claude-3-5-sonnet-latest',
+            'model'       => 'claude-sonnet-4-5',
             'max_tokens'  => 600,
             'temperature' => 0,
             'system' => 'You are an OCR + classifier. Identify the document type and extract key fields. Output VALID JSON ONLY, no prose.',
