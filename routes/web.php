@@ -41,6 +41,12 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     Route::post('customers/{customer}/scan', [\App\Http\Controllers\CustomerScanController::class, 'ingest'])->name('customers.scan.ingest');
     Route::post('customers/{customer}/text-application', [\App\Http\Controllers\CustomerController::class, 'textApplication'])->name('customers.text-application');
 
+    // Multi-phone management
+    Route::get   ('customers/{customer}/phones',           [\App\Http\Controllers\CustomerPhoneController::class, 'index'])->name('customers.phones.index');
+    Route::post  ('customers/{customer}/phones',           [\App\Http\Controllers\CustomerPhoneController::class, 'store'])->name('customers.phones.store');
+    Route::put   ('customers/{customer}/phones/{phone}',   [\App\Http\Controllers\CustomerPhoneController::class, 'update'])->name('customers.phones.update');
+    Route::delete('customers/{customer}/phones/{phone}',   [\App\Http\Controllers\CustomerPhoneController::class, 'destroy'])->name('customers.phones.destroy');
+
     // SMS bot intake sessions (lease/rental) — including incomplete
     Route::get('bot-sessions',     [\App\Http\Controllers\BotSessionController::class, 'index'])->name('bot-sessions.index');
     Route::get('bot-sessions/{session}', [\App\Http\Controllers\BotSessionController::class, 'show'])->name('bot-sessions.show');

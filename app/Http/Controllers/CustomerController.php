@@ -95,6 +95,7 @@ class CustomerController extends Controller
             'rentalClaims',
             'rentalPayments',
             'creditPulls',
+            'phones',
         ]);
 
         // Build a unified, color-coded business-history timeline

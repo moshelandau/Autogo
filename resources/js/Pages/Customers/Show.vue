@@ -139,6 +139,21 @@ const markLastUnread = () => {
         // Redirects to /sms inbox by design — user is flagging for someone else
     });
 };
+// ── Multi-phone management ────────────────────────────
+const phoneAddOpen = ref(false);
+const newPhone = ref({ phone: '', label: 'Mobile', is_sms_capable: true, is_primary: false });
+const addPhone = () => {
+    router.post(route('customers.phones.store', props.customer.id), { ...newPhone.value }, {
+        preserveScroll: true,
+        onSuccess: () => { phoneAddOpen.value = false; newPhone.value = { phone: '', label: 'Mobile', is_sms_capable: true, is_primary: false }; },
+    });
+};
+const setPrimaryPhone = (p) => router.put(route('customers.phones.update', [props.customer.id, p.id]), { is_primary: true }, { preserveScroll: true });
+const removePhone = (p) => {
+    if (!confirm(`Remove ${p.phone}?`)) return;
+    router.delete(route('customers.phones.destroy', [props.customer.id, p.id]), { preserveScroll: true });
+};
+
 // ── Text Application (bot trigger) ─────────────────────
 const textAppOpen = ref(false);
 const textAppForm = useForm({ phone: props.customer.phone || '', flow: '' });
@@ -324,11 +339,32 @@ const kinds = [
                     <div>
                         <h3 class="text-sm font-semibold text-gray-700 mb-3">Contact</h3>
                         <dl class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                            <div>
-                                <dt class="text-gray-500">Phone</dt>
-                                <dd class="font-medium flex items-center gap-2">
-                                    <span>{{ customer.phone || '-' }}</span>
-                                    <SmsButton v-if="customer.phone" :to="customer.phone" :customer-id="customer.id" subject-type="App\\Models\\Customer" :subject-id="customer.id" label="SMS" />
+                            <div class="md:col-span-2">
+                                <dt class="text-gray-500 flex items-center justify-between">
+                                    <span>Phone numbers</span>
+                                    <button type="button" @click="phoneAddOpen = !phoneAddOpen" class="text-xs text-indigo-600 hover:text-indigo-800">+ Add phone</button>
+                                </dt>
+                                <dd class="mt-1 space-y-1.5">
+                                    <div v-if="!customer.phones || customer.phones.length === 0" class="text-gray-400 italic text-xs">No phones on file</div>
+                                    <div v-for="p in (customer.phones || [])" :key="p.id" class="flex items-center gap-2 flex-wrap">
+                                        <span class="font-mono">{{ p.phone }}</span>
+                                        <span v-if="p.label" class="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">{{ p.label }}</span>
+                                        <span v-if="p.is_primary" class="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded font-semibold">Primary</span>
+                                        <span :class="p.is_sms_capable ? 'text-emerald-600' : 'text-gray-400'" class="text-[10px]">{{ p.is_sms_capable ? '📱 SMS' : '☎ voice only' }}</span>
+                                        <SmsButton v-if="p.is_sms_capable" :to="p.phone" :customer-id="customer.id" subject-type="App\\Models\\Customer" :subject-id="customer.id" label="SMS" />
+                                        <button v-if="!p.is_primary" @click="setPrimaryPhone(p)" class="text-[10px] text-indigo-600 hover:text-indigo-800 underline">make primary</button>
+                                        <button @click="removePhone(p)" class="text-[10px] text-red-600 hover:text-red-800 underline">remove</button>
+                                    </div>
+                                    <form v-if="phoneAddOpen" @submit.prevent="addPhone" class="mt-2 flex flex-wrap items-end gap-2 p-2 bg-indigo-50 rounded">
+                                        <input v-model="newPhone.phone" placeholder="Phone *" required class="border-gray-300 rounded text-xs px-2 py-1 w-32" />
+                                        <select v-model="newPhone.label" class="border-gray-300 rounded text-xs px-2 py-1">
+                                            <option value="">Label</option><option>Mobile</option><option>Home</option><option>Work</option><option>Other</option>
+                                        </select>
+                                        <label class="text-xs flex items-center gap-1"><input type="checkbox" v-model="newPhone.is_sms_capable" /> Can receive SMS</label>
+                                        <label class="text-xs flex items-center gap-1"><input type="checkbox" v-model="newPhone.is_primary" /> Primary</label>
+                                        <button type="submit" class="text-xs bg-indigo-600 text-white px-2 py-1 rounded">Add</button>
+                                        <button type="button" @click="phoneAddOpen = false" class="text-xs text-gray-500">Cancel</button>
+                                    </form>
                                 </dd>
                             </div>
                             <div><dt class="text-gray-500">Email</dt><dd class="font-medium">{{ customer.email || '-' }}</dd></div>
