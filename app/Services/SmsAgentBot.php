@@ -44,9 +44,11 @@ class SmsAgentBot
             'address', 'has_insurance', 'pickup_date', 'pickup_location',
             'return_date', 'vehicle_preference',
         ],
+        // Towing is urgent — only ask the bare minimum the dispatcher
+        // can't get any other way. Vehicle condition / wheels-turning /
+        // exact "what happened" are best collected by phone.
         'towing' => [
-            'first_name', 'last_name', 'pickup_location', 'dropoff_location',
-            'vehicle', 'situation', 'wheels_turn', 'urgency',
+            'pickup_location', 'dropoff_location', 'vehicle',
         ],
         'bodyshop' => [
             'first_name', 'last_name', 'vehicle', 'damage_area',
@@ -145,8 +147,14 @@ Output ONE JSON action, no prose, no code fences. Choose:
   -- only when EVERY required field is filled. We'll create the deal/reservation/task.
 
 {"action":"handoff","reply":"<short message — a team member will follow up>"}
-  -- if the customer is hostile, asking something the bot can't handle (pricing
-     specifics, complaints, legal questions), or wants a human.
+  -- if ANY of these:
+       * customer is hostile or annoyed ("just do it", "why so many questions", "are you coming?", "stop asking")
+       * customer asks something the bot can't handle (pricing specifics, ETA, complaints, legal questions, billing disputes)
+       * customer signals an emergency tone or repeats an unanswered question
+       * customer wants a human
+       * for TOWING flow specifically: customer pushes back at all — handoff, towing is time-sensitive
+     The reply MUST commit to a callback: e.g. "Got it — a dispatcher is calling you now." for towing,
+     or "I'll have someone reach out right away." for everything else.
 
 Rules:
 - Never make pricing or availability promises.
@@ -154,6 +162,7 @@ Rules:
 - Don't say "I'm an AI". Be a friendly intake assistant.
 - Keep replies short — usually one or two sentences.
 - For boolean fields (has_coapplicant, has_insurance, etc.), parse "yes"/"no" from natural language.
+- If the customer's last 2 inbound messages got no useful answer from us, lean toward HANDOFF — silence kills trust.
 TXT;
     }
 

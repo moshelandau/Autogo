@@ -181,16 +181,26 @@ class LeaseApplicationBot
             // replies, and non-priority field updates naturally. Falls
             // through to the rule-based advanceSession() if the agent
             // bails (no API key, image step, unclear decision).
+            $agentHandled = false;
             if ((string) \App\Models\Setting::getValue('ai_agent_disabled') !== '1') {
                 try {
-                    if (app(\App\Services\SmsAgentBot::class)->handle($session, $body, $mediaUrls)) {
-                        return true;
-                    }
+                    $agentHandled = app(\App\Services\SmsAgentBot::class)->handle($session, $body, $mediaUrls);
                 } catch (\Throwable $e) {
                     Log::warning('SmsAgentBot failed, falling back', ['error' => $e->getMessage()]);
                 }
             }
-            return $this->advanceSession($session, $body, $mediaUrls);
+            if ($agentHandled) return true;
+            // Try the legacy rule-based handler
+            try {
+                return $this->advanceSession($session, $body, $mediaUrls);
+            } catch (\Throwable $e) {
+                Log::warning('advanceSession failed, sending generic handoff', ['error' => $e->getMessage()]);
+                // NEVER stay silent on a real customer message — send a
+                // generic ack and abort the session so staff sees it.
+                $session->update(['aborted_at' => now()]);
+                $this->reply($session->phone, "Got your message — a team member will reach out shortly.");
+                return true;
+            }
         }
         if ($session && $isTopLevelTrigger) {
             $session->update(['aborted_at' => now()]);
