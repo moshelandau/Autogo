@@ -1,6 +1,6 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Link } from '@inertiajs/vue3';
+import { Link, router } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
 const props = defineProps({
@@ -22,6 +22,15 @@ const status = computed(() => {
     return { label: 'In progress',  color: 'bg-blue-100 text-blue-800 border-blue-300' };
 });
 
+const finalizeNow = () => {
+    if (!confirm('Force-finalize this intake now? Creates the Deal/Reservation/Task with whatever data we have.')) return;
+    router.post(route('bot-sessions.finalize', props.session.id), {}, { preserveScroll: true });
+};
+const abortNow = () => {
+    if (!confirm('Mark this intake as aborted? It will move out of the in-progress list.')) return;
+    router.post(route('bot-sessions.abort', props.session.id), {}, { preserveScroll: true });
+};
+
 const flowTitle = computed(() => ({
     lease: 'Leasing Application',
     finance: 'Finance Application',
@@ -39,10 +48,18 @@ const flowTitle = computed(() => ({
                 <h2 class="font-semibold text-xl text-gray-800">{{ flowTitle }} #{{ session.id }}</h2>
                 <span class="px-2 py-0.5 text-xs font-semibold rounded-full border" :class="status.color">{{ status.label }}</span>
                 <div class="ml-auto flex items-center gap-2">
+                    <button v-if="!session.completed_at && !session.aborted_at" @click="finalizeNow"
+                            class="text-sm bg-emerald-600 text-white px-3 py-1.5 rounded-md hover:bg-emerald-700">
+                        ✓ Finalize now
+                    </button>
+                    <button v-if="!session.completed_at && !session.aborted_at" @click="abortNow"
+                            class="text-sm bg-gray-200 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-300">
+                        ✗ Abort
+                    </button>
                     <Link v-if="session.deal_id" :href="route('leasing.deals.show', session.deal_id)"
                           class="text-sm text-indigo-600 hover:text-indigo-800">Deal →</Link>
                     <Link v-if="session.deal_id" :href="route('leasing.deals.application.show', session.deal_id)"
-                          class="text-sm bg-emerald-600 text-white px-3 py-1.5 rounded-md hover:bg-emerald-700">📄 Open Application Form</Link>
+                          class="text-sm bg-emerald-600 text-white px-3 py-1.5 rounded-md hover:bg-emerald-700">📄 Application Form</Link>
                     <Link :href="route('sms.show', session.phone)"
                           class="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded-md hover:bg-indigo-700">SMS Thread</Link>
                 </div>

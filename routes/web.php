@@ -50,6 +50,8 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     // SMS bot intake sessions (lease/rental) — including incomplete
     Route::get('bot-sessions',     [\App\Http\Controllers\BotSessionController::class, 'index'])->name('bot-sessions.index');
     Route::get('bot-sessions/{session}', [\App\Http\Controllers\BotSessionController::class, 'show'])->name('bot-sessions.show');
+    Route::post('bot-sessions/{session}/finalize', [\App\Http\Controllers\BotSessionController::class, 'finalize'])->name('bot-sessions.finalize');
+    Route::post('bot-sessions/{session}/abort',    [\App\Http\Controllers\BotSessionController::class, 'abort'])->name('bot-sessions.abort');
     Route::post('scan/license-extract',      [\App\Http\Controllers\CustomerScanController::class, 'extractLicense'])->name('scan.license-extract');
     Route::post('scan/any-extract',          [\App\Http\Controllers\CustomerScanController::class, 'extractAny'])->name('scan.any-extract');
 
@@ -125,6 +127,12 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     Route::post('sms/message/{id}/status', [SmsConversationController::class, 'markStatus'])->name('sms.mark-status');
     Route::post('sms/send',      [SmsController::class, 'send'])->name('sms.send');
     Route::get ('sms/templates', [SmsController::class, 'templates'])->name('sms.templates');
+
+    // SMS template management UI
+    Route::get   ('settings/sms-templates',            [\App\Http\Controllers\SmsTemplateController::class, 'index'])->name('settings.sms-templates.index');
+    Route::post  ('settings/sms-templates',            [\App\Http\Controllers\SmsTemplateController::class, 'store'])->name('settings.sms-templates.store');
+    Route::put   ('settings/sms-templates/{template}', [\App\Http\Controllers\SmsTemplateController::class, 'update'])->name('settings.sms-templates.update');
+    Route::delete('settings/sms-templates/{template}', [\App\Http\Controllers\SmsTemplateController::class, 'destroy'])->name('settings.sms-templates.destroy');
 
     // ── Car Leasing / Financing Module ─────────────────
     Route::prefix('leasing')->name('leasing.')->group(function () {

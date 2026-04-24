@@ -63,6 +63,37 @@ class BotSessionController extends Controller
     }
 
     /**
+     * Force-finalize a session — staff fills in the gaps and we go straight
+     * to creating the Deal / Reservation / OfficeTask. Useful when a customer
+     * abandoned the bot mid-flow but staff has the rest by phone.
+     */
+    public function finalize(LeaseApplicationSession $session)
+    {
+        if ($session->completed_at) {
+            return back()->with('error', 'Already completed.');
+        }
+        try {
+            // Use reflection to call the private finalize() on LeaseApplicationBot
+            $bot = app(\App\Services\LeaseApplicationBot::class);
+            $ref = new \ReflectionMethod($bot, 'finalize');
+            $ref->setAccessible(true);
+            $ref->invoke($bot, $session);
+            return back()->with('success', 'Intake finalized.');
+        } catch (\Throwable $e) {
+            return back()->with('error', 'Finalize failed: ' . $e->getMessage());
+        }
+    }
+
+    public function abort(LeaseApplicationSession $session)
+    {
+        if ($session->completed_at || $session->aborted_at) {
+            return back()->with('error', 'Session already closed.');
+        }
+        $session->update(['aborted_at' => now()]);
+        return back()->with('success', 'Intake marked as aborted.');
+    }
+
+    /**
      * "Needs attention" = the customer finished telling the bot everything,
      * but no staff member has picked up the resulting Deal/Reservation/Task yet.
      */

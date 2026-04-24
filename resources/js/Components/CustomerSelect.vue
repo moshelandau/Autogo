@@ -203,10 +203,21 @@ const submitCreate = async () => {
             <div v-if="showCreate" @click.self="showCreate = false"
                  class="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4">
                 <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-                    <header class="p-5 border-b flex items-center justify-between">
+                    <header class="p-5 border-b flex items-center justify-between gap-2">
                         <h3 class="font-bold text-lg">➕ Create Customer</h3>
-                        <button @click="showCreate = false" class="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
+                        <div class="flex items-center gap-2">
+                            <button type="button" @click="triggerScan" :disabled="scanning"
+                                    class="text-xs px-3 py-1.5 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50">
+                                {{ scanning ? 'Reading…' : '📷 Scan License' }}
+                            </button>
+                            <input ref="scanFileInput" type="file" accept="image/*" capture="environment" class="hidden" @change="onScanFile" />
+                            <button @click="showCreate = false" class="text-gray-400 hover:text-gray-700 text-2xl leading-none">×</button>
+                        </div>
                     </header>
+                    <p v-if="scanError" class="mx-5 mt-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">{{ scanError }}</p>
+                    <p v-if="scanFilled.length" class="mx-5 mt-3 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-2">
+                        ✓ Pre-filled from license: {{ scanFilled.join(', ') }}. Please verify.
+                    </p>
                     <form @submit.prevent="submitCreate" class="p-5 space-y-3 text-sm">
                         <div class="grid grid-cols-2 gap-3">
                             <div><label class="block text-xs font-semibold">First name *</label><input v-model="newCustomer.first_name" required class="mt-1 w-full border-gray-300 rounded-lg text-sm" /></div>

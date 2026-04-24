@@ -214,7 +214,8 @@ const isVideo = (att) => (att?.mime || '').startsWith('video/') || ['mp4','mov',
             </div>
         </template>
 
-        <div class="flex-1 flex flex-col min-h-0" style="height: calc(100vh - 64px)">
+        <div class="flex-1 flex min-h-0" style="height: calc(100vh - 64px)">
+            <!-- Thread (main) -->
             <div class="flex-1 max-w-3xl w-full mx-auto sm:px-6 lg:px-8 py-4 flex flex-col min-h-0">
                 <div class="bg-white shadow-sm rounded-lg flex flex-col flex-1 min-h-0">
                     <!-- Messages — bottom-anchored like iMessage -->
@@ -309,6 +310,44 @@ const isVideo = (att) => (att?.mime || '').startsWith('video/') || ['mp4','mov',
                     </form>
                 </div>
             </div>
+
+            <!-- Right pane: customer detail -->
+            <aside v-if="customer" class="hidden lg:flex flex-col w-80 border-l bg-white overflow-y-auto">
+                <div class="p-5 border-b">
+                    <div class="w-16 h-16 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xl mb-3">
+                        {{ (customer.first_name || customer.last_name || '?').charAt(0).toUpperCase() }}
+                    </div>
+                    <h3 class="font-bold text-lg">{{ customer.first_name }} {{ customer.last_name }}</h3>
+                    <p class="text-xs text-gray-500 mt-0.5">Customer #{{ customer.id }}</p>
+                    <Link :href="route('customers.show', customer.id)" class="block mt-2 text-xs text-indigo-600 hover:text-indigo-800">Open full profile →</Link>
+                </div>
+                <dl class="p-5 space-y-3 text-sm">
+                    <div>
+                        <dt class="text-[10px] uppercase tracking-wider text-gray-400">Phone</dt>
+                        <dd class="font-mono">{{ customer.phone || '—' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-[10px] uppercase tracking-wider text-gray-400">Email</dt>
+                        <dd class="break-all">{{ customer.email || '—' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-[10px] uppercase tracking-wider text-gray-400">Address</dt>
+                        <dd>{{ customer.address || '—' }}<br>{{ customer.city }} {{ customer.state }} {{ customer.zip }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-[10px] uppercase tracking-wider text-gray-400">DL #</dt>
+                        <dd class="font-mono">{{ customer.drivers_license_number || '—' }}<span v-if="customer.dl_state" class="text-gray-400 ml-1">({{ customer.dl_state }})</span></dd>
+                    </div>
+                    <div v-if="customer.cached_outstanding_balance">
+                        <dt class="text-[10px] uppercase tracking-wider text-gray-400">Outstanding balance</dt>
+                        <dd class="font-bold text-red-600">${{ customer.cached_outstanding_balance }}</dd>
+                    </div>
+                    <div v-if="customer.notes" class="pt-3 border-t">
+                        <dt class="text-[10px] uppercase tracking-wider text-gray-400">Notes</dt>
+                        <dd class="text-xs whitespace-pre-wrap">{{ customer.notes }}</dd>
+                    </div>
+                </dl>
+            </aside>
         </div>
     </AppLayout>
 </template>

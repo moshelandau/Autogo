@@ -176,6 +176,26 @@ class LeaseApplicationBot
             'bodyshop', 'body', 'collision', 'finance', 'financing',
         ], true);
 
+        // SECURE keyword on an SSN step — escalate to staff, do NOT collect
+        // sensitive identifiers over plain SMS. Until iFields-style hosted
+        // entry is built, a person collects it directly.
+        if ($session && in_array($strict, ['secure', 'webform', 'link'], true)
+            && in_array($session->current_step, ['ssn', 'co_ssn'], true)) {
+            $session->update(['aborted_at' => now()]);
+            $this->reply($session->phone,
+                "Got it — we'll skip SSN over text. A finance team member will reach out so you can give it directly. Your application is paused on our end until then."
+            );
+            try {
+                $users = \App\Models\User::where('email', 'like', '%@autogoco.com')->get();
+                \Notification::send($users, new \App\Notifications\OperationalReminder(
+                    "🔒 Customer wants secure SSN entry",
+                    "Phone {$fromPhone} — application paused at SSN. Call them to collect it.",
+                    route('sms.show', $fromPhone)
+                ));
+            } catch (\Throwable) {}
+            return true;
+        }
+
         if ($session && !$isTopLevelTrigger) {
             // Try the AI agent first — it handles sidetracks, free-form
             // replies, and non-priority field updates naturally. Falls
