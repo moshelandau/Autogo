@@ -19,8 +19,9 @@ const stageLabels = { lead: 'Lead', quote: 'Quote', application: 'Application', 
 const allStages = ['lead', 'quote', 'application', 'submission', 'pending', 'finalize', 'outstanding', 'complete'];
 
 // Tasks sorted in workflow order (stage progression), then by sort_order
-// within stage. Default to current-stage view; user can flip to all.
-const showAllStageTasks = ref(false);
+// within stage. Default to all-stages view so the whole workflow is
+// visible at a glance; user can collapse to current stage if it gets noisy.
+const showAllStageTasks = ref(true);
 const sortedTasks = computed(() => {
     const list = [...(d.tasks || [])];
     list.sort((a, b) => {
