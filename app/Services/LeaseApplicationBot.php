@@ -169,11 +169,15 @@ class LeaseApplicationBot
 
         // Even mid-session, an exact trigger word should restart fresh — lets
         // a customer escape a stuck flow by texting "help" / "car" / "rental" / etc.
+        // NOTE: bare "rent" and "body" are deliberately NOT triggers — they
+        // collide with legitimate mid-session answers (own_or_rent housing
+        // tenure, damage_area body part). Customers who want to start a flow
+        // can text the unambiguous "rental" / "bodyshop".
         $strict = preg_replace('/[^a-z]/', '', $text);
         $isTopLevelTrigger = in_array($strict, [
             'help', 'new', 'car', 'menu', 'options', 'start',
-            'lease', 'rental', 'rent', 'tow', 'towing',
-            'bodyshop', 'body', 'collision', 'finance', 'financing',
+            'lease', 'rental', 'tow', 'towing',
+            'bodyshop', 'collision', 'finance', 'financing',
         ], true);
 
         // SECURE keyword on an SSN step — escalate to staff, do NOT collect
@@ -239,9 +243,9 @@ class LeaseApplicationBot
         $strict = preg_replace('/[^a-z]/', '', $text);  // letters only, lowercase
         $flow = match ($strict) {
             'lease'                                 => 'lease',
-            'rental', 'rent'                        => 'rental',
+            'rental'                                => 'rental',
             'tow', 'towing'                         => 'towing',
-            'bodyshop', 'body', 'collision'         => 'bodyshop',
+            'bodyshop', 'collision'                 => 'bodyshop',
             'finance', 'financing'                  => 'finance',
             default                                 => null,
         };
