@@ -107,6 +107,30 @@ const unresolveMsgThread = () => {
     router.post(route('sms.unresolve', props.customer.phone), {}, { preserveScroll: true, onSuccess: () => loadMessages(true) });
 };
 
+// Trigger the bot-driven application flow (sends intro + first question
+// via SMS so the customer can fill out the application piece by piece).
+const FLOW_OPTIONS = [
+    { value: 'lease',    label: 'Lease application' },
+    { value: 'finance',  label: 'Finance application' },
+    { value: 'rental',   label: 'Rental booking' },
+    { value: 'towing',   label: 'Towing intake' },
+    { value: 'bodyshop', label: 'Bodyshop intake' },
+];
+const appPickerOpen = ref(false);
+const appBusyFlow = ref(null);
+const startApplication = (flow) => {
+    if (!props.customer?.phone) return;
+    if (!confirm(`Send the ${flow} application intro to ${props.customer.phone}?`)) return;
+    appBusyFlow.value = flow;
+    router.post(route('customers.text-application', props.customer.id), {
+        flow,
+        phone: props.customer.phone,
+    }, {
+        preserveScroll: true,
+        onFinish: () => { appBusyFlow.value = null; appPickerOpen.value = false; loadMessages(true); },
+    });
+};
+
 // Reply: attachments / voice / emoji / templates
 const msgAttachments = ref([]);
 const msgFileInput   = ref(null);
@@ -193,6 +217,23 @@ onBeforeUnmount(() => { if (msgPollTimer) clearInterval(msgPollTimer); });
                     class="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300">↩ Reopen</button>
                 <button v-if="lastReadInboundMsg" @click="markLastUnread"
                     class="text-xs text-orange-600 hover:text-orange-800 underline">Mark unread</button>
+                <div class="relative">
+                    <button type="button" @click="appPickerOpen = !appPickerOpen"
+                        class="text-xs px-2 py-1 bg-purple-600 text-white rounded hover:bg-purple-700">
+                        📱 Start application ▾
+                    </button>
+                    <div v-if="appPickerOpen" class="absolute right-0 top-full mt-1 bg-white border rounded-lg shadow-lg w-56 z-20">
+                        <div class="px-3 py-2 text-[11px] text-gray-500 border-b">
+                            Sends the bot intro to {{ customer.phone }}. Customer answers piece by piece.
+                        </div>
+                        <button v-for="f in FLOW_OPTIONS" :key="f.value" type="button"
+                            @click="startApplication(f.value)"
+                            :disabled="appBusyFlow !== null"
+                            class="block w-full text-left px-3 py-2 text-sm hover:bg-purple-50 disabled:opacity-50 border-b last:border-b-0">
+                            {{ appBusyFlow === f.value ? 'Sending…' : f.label }}
+                        </button>
+                    </div>
+                </div>
                 <Link :href="route('sms.show', customer.phone)" class="text-xs text-indigo-600 hover:text-indigo-800">Open full view →</Link>
             </div>
         </div>
