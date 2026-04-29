@@ -17,9 +17,13 @@ const STAGES = [
     { value: 'complete', label: 'Complete' },
 ];
 
+const STYLE_OPTIONS = ['Sedan', 'SUV', 'Coupe', 'Truck', 'Van', 'Convertible', 'Hatchback', 'Wagon', 'Crossover'];
+const MILES_OPTIONS = [7500, 10000, 12000, 15000, 18000, 20000];
+
 const form = useForm({
     customer_id: props.prefill.customer_id || '', payment_type: 'lease', priority: 'low',
     stage: 'lead',
+    preferences: { style: '', budget: '', miles_per_year: '', passengers: '', color: '', brand: '' },
     vehicle_vin: '', vehicle_year: '', vehicle_make: '', vehicle_model: '', vehicle_trim: '',
     msrp: '', sell_price: '', credit_score: '', customer_zip: '', notes: '',
 });
@@ -85,6 +89,44 @@ const submit = () => form.post(route('leasing.deals.store'));
                         </select>
                         <p class="mt-1 text-[11px] text-gray-500">Defaults to Lead. Pick a later stage if you're entering an in-progress deal — initial tasks for that stage get auto-generated.</p>
                         <p v-if="form.errors.stage" class="mt-1 text-sm text-red-600">{{ form.errors.stage }}</p>
+                    </div>
+
+                    <!-- Lead-stage preferences: what kind of car the customer is shopping for. -->
+                    <div>
+                        <h3 class="text-lg font-medium mb-3">Customer Preferences</h3>
+                        <p class="text-xs text-gray-500 mb-3">Captured at the lead stage so we know what to match. All fields optional — fill what you know.</p>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700">Style</label>
+                                <select v-model="form.preferences.style" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
+                                    <option value="">—</option>
+                                    <option v-for="s in STYLE_OPTIONS" :key="s">{{ s }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700">Brand</label>
+                                <input v-model="form.preferences.brand" type="text" placeholder="Kia, Honda, …" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700">Color</label>
+                                <input v-model="form.preferences.color" type="text" placeholder="White, Black, …" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700">Budget ($/mo)</label>
+                                <input v-model="form.preferences.budget" type="number" step="0.01" min="0" placeholder="e.g. 450" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700">Miles / year</label>
+                                <select v-model.number="form.preferences.miles_per_year" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm">
+                                    <option value="">—</option>
+                                    <option v-for="m in MILES_OPTIONS" :key="m" :value="m">{{ m.toLocaleString() }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700">Passengers</label>
+                                <input v-model.number="form.preferences.passengers" type="number" min="1" max="12" placeholder="e.g. 5" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" />
+                            </div>
+                        </div>
                     </div>
 
                     <!-- VIN Decode -->

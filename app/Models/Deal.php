@@ -26,6 +26,12 @@ class Deal extends Model
         'lender_id', 'lender_status', 'lender_notes',
         'notes', 'deal_start_date', 'deal_expiration_date',
         'won_at', 'lost_at', 'lost_reason',
+        // Workflow structured fields (see migration ..._add_preferences_to_deals_table)
+        'preferences', 'co_signer_customer_id',
+        'insurance_status', 'plate_transfer',
+        'delivery_scheduled_at',
+        'down_collected_at_delivery', 'paperwork_tracking_number',
+        'bd_payment_received_at', 'bd_payment_amount',
     ];
 
     protected function casts(): array
@@ -37,8 +43,16 @@ class Deal extends Model
             'trade_payoff' => 'decimal:2', 'trade_is_leased' => 'boolean',
             'deal_start_date' => 'datetime', 'deal_expiration_date' => 'datetime',
             'won_at' => 'datetime', 'lost_at' => 'datetime',
+            'preferences' => 'array',
+            'plate_transfer' => 'boolean',
+            'delivery_scheduled_at' => 'datetime',
+            'down_collected_at_delivery' => 'decimal:2',
+            'bd_payment_received_at' => 'date',
+            'bd_payment_amount' => 'decimal:2',
         ];
     }
+
+    public function coSigner(): BelongsTo { return $this->belongsTo(Customer::class, 'co_signer_customer_id'); }
 
     public const STAGES = ['lead', 'quote', 'application', 'submission', 'pending', 'finalize', 'outstanding', 'complete', 'lost'];
 

@@ -4,6 +4,7 @@ import { Link, useForm, router } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import SmsButton from '@/Components/SmsButton.vue';
 import CustomerMessages from '@/Components/CustomerMessages.vue';
+import CustomerSelect from '@/Components/CustomerSelect.vue';
 
 const props = defineProps({
     deal: Object,
@@ -17,6 +18,40 @@ const activeTab = ref('summary');
 
 const stageLabels = { lead: 'Lead', quote: 'Quote', application: 'Application', submission: 'Submission', pending: 'Pending', finalize: 'Finalize', outstanding: 'Outstanding', complete: 'Complete', lost: 'Lost' };
 const allStages = ['lead', 'quote', 'application', 'submission', 'pending', 'finalize', 'outstanding', 'complete'];
+
+// Workflow tab — one inline-editable card per stage in workflow order.
+const STYLE_OPTIONS = ['Sedan', 'SUV', 'Coupe', 'Truck', 'Van', 'Convertible', 'Hatchback', 'Wagon', 'Crossover'];
+const MILES_OPTIONS = [7500, 10000, 12000, 15000, 18000, 20000];
+const INSURANCE_STATUSES = [
+    { value: 'pending',       label: 'Pending' },
+    { value: 'verified',      label: 'Verified' },
+    { value: 'needs_update',  label: 'Needs update' },
+    { value: 'n/a',           label: 'N/A' },
+];
+
+const workflow = useForm({
+    preferences: {
+        style:          d.preferences?.style          ?? '',
+        budget:         d.preferences?.budget         ?? '',
+        miles_per_year: d.preferences?.miles_per_year ?? '',
+        passengers:     d.preferences?.passengers     ?? '',
+        color:          d.preferences?.color          ?? '',
+        brand:          d.preferences?.brand          ?? '',
+    },
+    co_signer_customer_id:        d.co_signer_customer_id || '',
+    insurance_status:             d.insurance_status || '',
+    plate_transfer:               !!d.plate_transfer,
+    delivery_scheduled_at:        d.delivery_scheduled_at ? d.delivery_scheduled_at.slice(0, 16) : '',
+    down_collected_at_delivery:   d.down_collected_at_delivery ?? '',
+    paperwork_tracking_number:    d.paperwork_tracking_number  ?? '',
+    bd_payment_received_at:       d.bd_payment_received_at     ?? '',
+    bd_payment_amount:            d.bd_payment_amount          ?? '',
+});
+
+const saveWorkflow = (label) => workflow.put(route('leasing.deals.update', d.id), {
+    preserveScroll: true,
+    onSuccess: () => { /* server flashes 'Deal updated.' */ },
+});
 
 // Tasks sorted in workflow order (stage progression), then by sort_order
 // within stage. Default to all-stages view so the whole workflow is
@@ -199,7 +234,7 @@ const saveCalcAsQuote = () => {
                 <!-- Tabs -->
                 <div class="bg-white shadow-sm rounded-lg">
                     <div class="border-b flex gap-0 overflow-x-auto">
-                        <button v-for="tab in ['summary', 'tasks', 'calculator', 'quotes', 'credit', 'notes', 'documents', 'messages']" :key="tab"
+                        <button v-for="tab in ['summary', 'tasks', 'workflow', 'calculator', 'quotes', 'credit', 'notes', 'documents', 'messages']" :key="tab"
                                 @click="activeTab = tab"
                                 class="px-6 py-3 text-sm font-medium capitalize whitespace-nowrap"
                                 :class="activeTab === tab ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500 hover:text-gray-700'">
@@ -434,6 +469,138 @@ const saveCalcAsQuote = () => {
                             <div><span class="text-gray-500">Drive Off:</span> {{ fmt(d.drive_off) }}</div>
                             <div><span class="text-gray-500">Mileage/Year:</span> {{ d.mileage_per_year?.toLocaleString() || '-' }}</div>
                             <div class="col-span-2"><span class="text-gray-500">Notes:</span> {{ d.notes || '-' }}</div>
+                        </div>
+
+                        <!-- Workflow Tab — one card per stage in workflow order.
+                             Each card holds the structured fields for that stage and
+                             can be saved independently via the shared workflow form. -->
+                        <div v-if="activeTab === 'workflow'" class="space-y-4">
+
+                            <!-- 1. Lead — Customer Preferences -->
+                            <section class="border rounded-xl p-4">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h3 class="text-sm font-semibold text-gray-700">1. Lead — Customer Preferences</h3>
+                                    <span class="text-[10px] text-gray-400">What kind of car they want</span>
+                                </div>
+                                <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                                    <div>
+                                        <label class="block text-xs text-gray-500">Style</label>
+                                        <select v-model="workflow.preferences.style" class="mt-1 block w-full border-gray-300 rounded-md text-sm">
+                                            <option value="">—</option>
+                                            <option v-for="s in STYLE_OPTIONS" :key="s">{{ s }}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-gray-500">Brand</label>
+                                        <input v-model="workflow.preferences.brand" type="text" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-gray-500">Color</label>
+                                        <input v-model="workflow.preferences.color" type="text" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-gray-500">Budget ($/mo)</label>
+                                        <input v-model="workflow.preferences.budget" type="number" step="0.01" min="0" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-gray-500">Miles / year</label>
+                                        <select v-model.number="workflow.preferences.miles_per_year" class="mt-1 block w-full border-gray-300 rounded-md text-sm">
+                                            <option value="">—</option>
+                                            <option v-for="m in MILES_OPTIONS" :key="m" :value="m">{{ m.toLocaleString() }}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-gray-500">Passengers</label>
+                                        <input v-model.number="workflow.preferences.passengers" type="number" min="1" max="12" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                    </div>
+                                </div>
+                            </section>
+
+                            <!-- 2. Application — Co-signer (license docs collected via the co-signer's customer page) -->
+                            <section class="border rounded-xl p-4">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h3 class="text-sm font-semibold text-gray-700">2. Application — Co-signer</h3>
+                                    <span class="text-[10px] text-gray-400">License docs collected on the co-signer's customer page</span>
+                                </div>
+                                <div class="text-sm">
+                                    <CustomerSelect v-model="workflow.co_signer_customer_id" />
+                                    <p v-if="d.co_signer" class="mt-2 text-xs text-gray-600">
+                                        Linked: <strong>{{ d.co_signer.first_name }} {{ d.co_signer.last_name }}</strong> —
+                                        <Link :href="route('customers.show', d.co_signer.id)" class="text-indigo-600 hover:text-indigo-800 underline">open profile to upload license front + back</Link>
+                                    </p>
+                                </div>
+                            </section>
+
+                            <!-- 3. Pending — Insurance & plate transfer -->
+                            <section class="border rounded-xl p-4">
+                                <h3 class="text-sm font-semibold text-gray-700 mb-3">3. Pending — Insurance & registration</h3>
+                                <div class="grid grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                        <label class="block text-xs text-gray-500">Insurance status</label>
+                                        <select v-model="workflow.insurance_status" class="mt-1 block w-full border-gray-300 rounded-md text-sm">
+                                            <option value="">—</option>
+                                            <option v-for="s in INSURANCE_STATUSES" :key="s.value" :value="s.value">{{ s.label }}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="flex items-center gap-2 mt-5 text-sm text-gray-700">
+                                            <input v-model="workflow.plate_transfer" type="checkbox" class="rounded text-indigo-600 focus:ring-indigo-500" />
+                                            Plate transfer
+                                        </label>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <!-- 4. Finalize — Schedule delivery -->
+                            <section class="border rounded-xl p-4">
+                                <h3 class="text-sm font-semibold text-gray-700 mb-3">4. Finalize — Delivery</h3>
+                                <div class="text-sm">
+                                    <label class="block text-xs text-gray-500">Delivery scheduled at</label>
+                                    <input v-model="workflow.delivery_scheduled_at" type="datetime-local"
+                                           class="mt-1 block w-full md:w-72 border-gray-300 rounded-md text-sm" />
+                                </div>
+                            </section>
+
+                            <!-- 5. Outstanding — Down at delivery + paperwork tracking -->
+                            <section class="border rounded-xl p-4">
+                                <h3 class="text-sm font-semibold text-gray-700 mb-3">5. Outstanding — Down + paperwork</h3>
+                                <div class="grid grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                        <label class="block text-xs text-gray-500">Down collected at delivery ($)</label>
+                                        <input v-model="workflow.down_collected_at_delivery" type="number" step="0.01" min="0"
+                                               class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-gray-500">Paperwork tracking #</label>
+                                        <input v-model="workflow.paperwork_tracking_number" type="text" placeholder="USPS / FedEx / UPS tracking"
+                                               class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                    </div>
+                                </div>
+                            </section>
+
+                            <!-- 6. Complete — Bird Dog payment from dealer -->
+                            <section class="border rounded-xl p-4">
+                                <h3 class="text-sm font-semibold text-gray-700 mb-3">6. Complete — Bird Dog (dealer payment, ~1mo later)</h3>
+                                <div class="grid grid-cols-2 gap-3 text-sm">
+                                    <div>
+                                        <label class="block text-xs text-gray-500">BD received on</label>
+                                        <input v-model="workflow.bd_payment_received_at" type="date"
+                                               class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs text-gray-500">BD amount ($)</label>
+                                        <input v-model="workflow.bd_payment_amount" type="number" step="0.01" min="0"
+                                               class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                    </div>
+                                </div>
+                            </section>
+
+                            <div class="flex justify-end pt-2">
+                                <button @click="saveWorkflow()" :disabled="workflow.processing"
+                                        class="px-5 py-2 bg-indigo-600 text-white rounded-md text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+                                    {{ workflow.processing ? 'Saving…' : 'Save workflow fields' }}
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Messages Tab — full SMS thread with this deal's customer.
