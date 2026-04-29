@@ -45,6 +45,13 @@ class DealController extends Controller
             'payment_type' => 'required|in:lease,finance,one_pay,balloon,cash',
             'priority' => 'nullable|in:low,medium,high',
             'stage' => 'nullable|in:' . implode(',', array_diff(\App\Models\Deal::STAGES, ['lost'])),
+            'preferences' => 'nullable|array',
+            'preferences.style' => 'nullable|string|max:60',
+            'preferences.budget' => 'nullable|numeric|min:0',
+            'preferences.miles_per_year' => 'nullable|integer|min:0',
+            'preferences.passengers' => 'nullable|integer|min:1|max:12',
+            'preferences.color' => 'nullable|string|max:40',
+            'preferences.brand' => 'nullable|string|max:60',
             'vehicle_vin' => 'nullable|string|max:17',
             'vehicle_year' => 'nullable|integer',
             'vehicle_make' => 'nullable|string|max:100',
@@ -81,7 +88,7 @@ class DealController extends Controller
     public function show(Deal $deal)
     {
         $this->syncCurrentStageTasks($deal);
-        $deal->load(['customer', 'salesperson', 'lender', 'quotes.lender', 'tasks', 'documents', 'dealNotes.user']);
+        $deal->load(['customer', 'coSigner', 'salesperson', 'lender', 'quotes.lender', 'tasks', 'documents', 'dealNotes.user']);
 
         // Credit-pull history for this deal's customer (most-recent first)
         $creditPulls = $deal->customer
@@ -163,6 +170,22 @@ class DealController extends Controller
             'trade_acv' => 'nullable|numeric',
             'trade_payoff' => 'nullable|numeric',
             'notes' => 'nullable|string',
+            // Workflow structured fields
+            'preferences' => 'nullable|array',
+            'preferences.style' => 'nullable|string|max:60',
+            'preferences.budget' => 'nullable|numeric|min:0',
+            'preferences.miles_per_year' => 'nullable|integer|min:0',
+            'preferences.passengers' => 'nullable|integer|min:1|max:12',
+            'preferences.color' => 'nullable|string|max:40',
+            'preferences.brand' => 'nullable|string|max:60',
+            'co_signer_customer_id' => 'nullable|exists:customers,id',
+            'insurance_status' => 'nullable|string|in:pending,verified,needs_update,n/a',
+            'plate_transfer' => 'boolean',
+            'delivery_scheduled_at' => 'nullable|date',
+            'down_collected_at_delivery' => 'nullable|numeric|min:0',
+            'paperwork_tracking_number' => 'nullable|string|max:60',
+            'bd_payment_received_at' => 'nullable|date',
+            'bd_payment_amount' => 'nullable|numeric|min:0',
         ]);
 
         $this->leasing->updateDeal($deal, $validated);
