@@ -143,6 +143,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::get('deals/{deal}', [DealController::class, 'show'])->name('deals.show');
         Route::put('deals/{deal}', [DealController::class, 'update'])->name('deals.update');
         Route::post('deals/{deal}/transition', [DealController::class, 'transition'])->name('deals.transition');
+        Route::post('deals/{deal}/reorder', [DealController::class, 'reorder'])->name('deals.reorder');
         Route::post('deals/{deal}/lost', [DealController::class, 'markLost'])->name('deals.lost');
 
         // Deal sub-actions
