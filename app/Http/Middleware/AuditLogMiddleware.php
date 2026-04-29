@@ -7,6 +7,7 @@ namespace App\Http\Middleware;
 use App\Models\AuditLog;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 
 class AuditLogMiddleware
@@ -29,20 +30,25 @@ class AuditLogMiddleware
         $isLoginFlow = in_array($request->path(), ['login','logout','two-factor-challenge']);
         if (!$isStateChange && !$isLoginFlow) return $response;
 
+        // Wrap the insert in a nested transaction so a failure (e.g. FK
+        // violation when the request just deleted the acting user) issues a
+        // ROLLBACK TO SAVEPOINT instead of poisoning the outer transaction.
         try {
-            AuditLog::create([
-                'user_id'     => $request->user()?->id,
-                'user_name'   => $request->user()?->name,
-                'method'      => $method,
-                'path'        => '/' . ltrim($request->path(), '/'),
-                'action'      => $this->actionFromPath($request->path(), $method),
-                'params'      => $this->scrub($request->all()),
-                'ip_address'  => $request->ip(),
-                'user_agent'  => substr((string) $request->userAgent(), 0, 255),
-                'source'      => $request->header('X-Client-Source', str_contains($request->path(), 'api/') ? 'api' : 'web'),
-                'status_code' => $response->getStatusCode(),
-                'duration_ms' => (int) ((microtime(true) - $start) * 1000),
-            ]);
+            DB::transaction(function () use ($request, $response, $method, $start) {
+                AuditLog::create([
+                    'user_id'     => $request->user()?->id,
+                    'user_name'   => $request->user()?->name,
+                    'method'      => $method,
+                    'path'        => '/' . ltrim($request->path(), '/'),
+                    'action'      => $this->actionFromPath($request->path(), $method),
+                    'params'      => $this->scrub($request->all()),
+                    'ip_address'  => $request->ip(),
+                    'user_agent'  => substr((string) $request->userAgent(), 0, 255),
+                    'source'      => $request->header('X-Client-Source', str_contains($request->path(), 'api/') ? 'api' : 'web'),
+                    'status_code' => $response->getStatusCode(),
+                    'duration_ms' => (int) ((microtime(true) - $start) * 1000),
+                ]);
+            });
         } catch (\Throwable) { /* never block a request on audit failure */ }
 
         return $response;
