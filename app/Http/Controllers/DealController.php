@@ -63,8 +63,21 @@ class DealController extends Controller
             ->with('success', "Deal #{$deal->deal_number} created.");
     }
 
+    /**
+     * Ensures the new STAGE_TASKS template is reflected on legacy deals
+     * — firstOrCreate is idempotent so existing tasks (incl. completion
+     * state) are untouched, missing template tasks are added.
+     */
+    private function syncCurrentStageTasks(Deal $deal): void
+    {
+        if ($deal->stage && $deal->stage !== 'lost') {
+            $deal->generateTasksForStage($deal->stage);
+        }
+    }
+
     public function show(Deal $deal)
     {
+        $this->syncCurrentStageTasks($deal);
         $deal->load(['customer', 'salesperson', 'lender', 'quotes.lender', 'tasks', 'documents', 'dealNotes.user']);
 
         // Credit-pull history for this deal's customer (most-recent first)
