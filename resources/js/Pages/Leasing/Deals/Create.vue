@@ -6,8 +6,20 @@ import CustomerSelect from '@/Components/CustomerSelect.vue';
 
 const props = defineProps({ customers: Array, lenders: Array, salespeople: Array, prefill: { type: Object, default: () => ({}) } });
 
+const STAGES = [
+    { value: 'lead', label: 'Lead' },
+    { value: 'quote', label: 'Quote' },
+    { value: 'application', label: 'Application' },
+    { value: 'submission', label: 'Submission' },
+    { value: 'pending', label: 'Pending' },
+    { value: 'finalize', label: 'Finalize' },
+    { value: 'outstanding', label: 'Outstanding' },
+    { value: 'complete', label: 'Complete' },
+];
+
 const form = useForm({
     customer_id: props.prefill.customer_id || '', payment_type: 'lease', priority: 'low',
+    stage: 'lead',
     vehicle_vin: '', vehicle_year: '', vehicle_make: '', vehicle_model: '', vehicle_trim: '',
     msrp: '', sell_price: '', credit_score: '', customer_zip: '', notes: '',
 });
@@ -63,6 +75,16 @@ const submit = () => form.post(route('leasing.deals.store'));
                                 <option value="one_pay">One-Pay</option><option value="balloon">Balloon</option><option value="cash">Cash</option>
                             </select>
                         </div>
+                    </div>
+
+                    <!-- Initial stage (which Kanban column the new deal lands in) -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Starting stage *</label>
+                        <select v-model="form.stage" class="mt-1 block w-full md:w-64 border-gray-300 rounded-md shadow-sm text-sm">
+                            <option v-for="s in STAGES" :key="s.value" :value="s.value">{{ s.label }}</option>
+                        </select>
+                        <p class="mt-1 text-[11px] text-gray-500">Defaults to Lead. Pick a later stage if you're entering an in-progress deal — initial tasks for that stage get auto-generated.</p>
+                        <p v-if="form.errors.stage" class="mt-1 text-sm text-red-600">{{ form.errors.stage }}</p>
                     </div>
 
                     <!-- VIN Decode -->
