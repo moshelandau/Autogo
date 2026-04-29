@@ -166,5 +166,21 @@ jobs:
           sed -i '/<env name="DB_URL"/d' phpunit.xml
       - name: Verify Postgres is reachable
         run: PGPASSWORD=autogo psql -h 127.0.0.1 -U autogo -d autogo_test -c 'select version()'
+      - name: Show effective config (debug)
+        run: |
+          echo '=== .env DB lines ==='
+          grep -E '^(DB_|APP_ENV|APP_KEY)' .env || true
+          echo '=== phpunit.xml env tags ==='
+          grep '<env ' phpunit.xml || true
       - name: Run tests
-        run: php artisan test
+        run: |
+          set -o pipefail
+          php artisan test --testdox 2>&1 | tee /tmp/test_out.log
+        continue-on-error: false
+      - name: On failure — surface logs
+        if: failure()
+        run: |
+          echo '=== last 200 lines of test output ==='
+          tail -n 200 /tmp/test_out.log || true
+          echo '=== laravel log (if any) ==='
+          tail -n 100 storage/logs/laravel.log || true
