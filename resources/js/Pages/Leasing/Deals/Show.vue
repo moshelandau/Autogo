@@ -18,6 +18,23 @@ const activeTab = ref('summary');
 const stageLabels = { lead: 'Lead', quote: 'Quote', application: 'Application', submission: 'Submission', pending: 'Pending', finalize: 'Finalize', outstanding: 'Outstanding', complete: 'Complete', lost: 'Lost' };
 const allStages = ['lead', 'quote', 'application', 'submission', 'pending', 'finalize', 'outstanding', 'complete'];
 
+// Tasks sorted in workflow order (stage progression), then by sort_order
+// within stage. Default to current-stage view; user can flip to all.
+const showAllStageTasks = ref(false);
+const sortedTasks = computed(() => {
+    const list = [...(d.tasks || [])];
+    list.sort((a, b) => {
+        const sa = allStages.indexOf(a.stage);
+        const sb = allStages.indexOf(b.stage);
+        if (sa !== sb) return (sa === -1 ? 999 : sa) - (sb === -1 ? 999 : sb);
+        return (a.sort_order || 0) - (b.sort_order || 0);
+    });
+    return list;
+});
+const visibleTasks = computed(() =>
+    showAllStageTasks.value ? sortedTasks.value : sortedTasks.value.filter(t => t.stage === d.stage),
+);
+
 const noteForm = useForm({ body: '' });
 const addNote = () => { noteForm.post(route('leasing.deals.note', d.id), { onSuccess: () => noteForm.reset() }); };
 
@@ -194,7 +211,19 @@ const saveCalcAsQuote = () => {
                     <div class="p-6">
                         <!-- Tasks Tab -->
                         <div v-if="activeTab === 'tasks'" class="space-y-2">
-                            <div v-for="task in d.tasks" :key="task.id"
+                            <div class="flex items-center justify-between mb-2 text-xs">
+                                <span class="text-gray-500">
+                                    Showing tasks for
+                                    <span v-if="showAllStageTasks" class="font-semibold">all stages</span>
+                                    <span v-else class="font-semibold capitalize">{{ stageLabels[d.stage] }} stage</span>
+                                    ({{ visibleTasks.length }})
+                                </span>
+                                <button type="button" @click="showAllStageTasks = !showAllStageTasks"
+                                        class="text-indigo-600 hover:text-indigo-800 underline">
+                                    {{ showAllStageTasks ? 'Show only current stage' : 'Show all stages' }}
+                                </button>
+                            </div>
+                            <div v-for="task in visibleTasks" :key="task.id"
                                  class="flex items-center gap-3 py-2 border-b last:border-0">
                                 <button @click="!task.is_completed && completeTask(task.id)"
                                         class="w-5 h-5 rounded border-2 flex items-center justify-center transition-colors"
@@ -203,14 +232,14 @@ const saveCalcAsQuote = () => {
                                 </button>
                                 <div class="flex-1">
                                     <span class="text-sm" :class="task.is_completed ? 'line-through text-gray-400' : ''">{{ task.name }}</span>
-                                    <span v-if="task.stage" class="ml-2 text-xs text-gray-400 capitalize">({{ task.stage }})</span>
+                                    <span v-if="task.stage && showAllStageTasks" class="ml-2 text-xs text-gray-400 capitalize">({{ task.stage }})</span>
                                 </div>
                                 <span v-if="task.due_date && !task.is_completed" class="text-xs"
                                       :class="new Date(task.due_date) < new Date() ? 'text-red-600 font-bold' : 'text-gray-400'">
                                     {{ task.due_date }}
                                 </span>
                             </div>
-                            <p v-if="!d.tasks?.length" class="text-gray-500 text-sm">No tasks yet.</p>
+                            <p v-if="!visibleTasks.length" class="text-gray-500 text-sm">No tasks for this stage.</p>
                         </div>
 
                         <!-- Quotes Tab -->
