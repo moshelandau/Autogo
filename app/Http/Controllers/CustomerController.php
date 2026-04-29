@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class CustomerController extends Controller
@@ -34,9 +35,11 @@ class CustomerController extends Controller
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:20',
-            'secondary_phone' => 'nullable|string|max:20',
-            'can_receive_sms' => 'boolean',
+            'phones' => 'nullable|array',
+            'phones.*.phone' => 'required|string|max:20',
+            'phones.*.label' => 'nullable|string|max:30',
+            'phones.*.is_primary' => 'boolean',
+            'phones.*.is_sms_capable' => 'boolean',
             'address' => 'nullable|string|max:255',
             'address_2' => 'nullable|string|max:255',
             'city' => 'nullable|string|max:100',
@@ -52,10 +55,54 @@ class CustomerController extends Controller
             'notes' => 'nullable|string',
         ]);
 
-        $customer = Customer::create($validated);
+        $phones = $validated['phones'] ?? [];
+        unset($validated['phones']);
+
+        $customer = DB::transaction(function () use ($validated, $phones) {
+            $legacy = $this->legacyPhoneFields($phones);
+            $customer = Customer::create(array_merge($validated, $legacy));
+            $this->syncPhones($customer, $phones);
+            return $customer;
+        });
 
         return redirect()->route('customers.show', $customer)
             ->with('success', 'Customer created successfully.');
+    }
+
+    /**
+     * Map a phones[] array onto the legacy customers.phone /
+     * customers.secondary_phone / customers.can_receive_sms columns so
+     * existing code that reads them keeps working.
+     */
+    private function legacyPhoneFields(array $phones): array
+    {
+        $primary = collect($phones)->firstWhere('is_primary', true) ?? ($phones[0] ?? null);
+        $secondary = collect($phones)->first(fn ($p) => $p !== $primary);
+
+        return [
+            'phone'           => $primary['phone'] ?? null,
+            'secondary_phone' => $secondary['phone'] ?? null,
+            'can_receive_sms' => collect($phones)->contains(fn ($p) => ($p['is_sms_capable'] ?? true)),
+        ];
+    }
+
+    /**
+     * Replace the customer's customer_phones rows with the submitted set.
+     * Granular per-phone CRUD lives at /customers/{id}/phones for the
+     * Show page; this is the bulk write used by Create + Edit.
+     */
+    private function syncPhones(Customer $customer, array $phones): void
+    {
+        $customer->phones()->delete();
+        $hasPrimary = collect($phones)->contains(fn ($p) => ($p['is_primary'] ?? false));
+        foreach ($phones as $i => $p) {
+            $customer->phones()->create([
+                'phone'          => $p['phone'],
+                'label'          => $p['label'] ?? null,
+                'is_primary'     => $hasPrimary ? (bool) ($p['is_primary'] ?? false) : ($i === 0),
+                'is_sms_capable' => (bool) ($p['is_sms_capable'] ?? true),
+            ]);
+        }
     }
 
     /**
@@ -247,6 +294,7 @@ class CustomerController extends Controller
 
     public function edit(Customer $customer)
     {
+        $customer->load('phones');
         return Inertia::render('Customers/Edit', [
             'customer' => $customer,
         ]);
@@ -258,9 +306,11 @@ class CustomerController extends Controller
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
             'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:20',
-            'secondary_phone' => 'nullable|string|max:20',
-            'can_receive_sms' => 'boolean',
+            'phones' => 'nullable|array',
+            'phones.*.phone' => 'required|string|max:20',
+            'phones.*.label' => 'nullable|string|max:30',
+            'phones.*.is_primary' => 'boolean',
+            'phones.*.is_sms_capable' => 'boolean',
             'address' => 'nullable|string|max:255',
             'address_2' => 'nullable|string|max:255',
             'city' => 'nullable|string|max:100',
@@ -277,7 +327,20 @@ class CustomerController extends Controller
             'is_active' => 'boolean',
         ]);
 
-        $customer->update($validated);
+        $phones = $validated['phones'] ?? null;
+        unset($validated['phones']);
+
+        DB::transaction(function () use ($customer, $validated, $phones) {
+            // Only touch phones if the form actually submitted them — keeps
+            // backwards compat with any non-form caller of this endpoint.
+            if ($phones !== null) {
+                $validated = array_merge($validated, $this->legacyPhoneFields($phones));
+            }
+            $customer->update($validated);
+            if ($phones !== null) {
+                $this->syncPhones($customer, $phones);
+            }
+        });
 
         return redirect()->route('customers.show', $customer)
             ->with('success', 'Customer updated successfully.');
