@@ -31,6 +31,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, bcmath, zip
+          tools: composer:v2
+          coverage: none
+      - name: Cache composer
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-build-${{ runner.os }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-build-${{ runner.os }}-
+      # Vite imports from vendor/tightenco/ziggy in resources/js/app.js — so
+      # the npm build needs vendor/ present. Mirror the prod install flow.
+      - name: composer install (no-dev)
+        run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-progress
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -41,12 +57,22 @@ jobs:
   prod-bootstrap:
     name: Production bootstrap (composer + artisan caches)
     runs-on: ubuntu-latest
+    # Force in-memory drivers so artisan cache compilation doesn't try to
+    # reach Redis or Postgres in CI. Production has those services; CI does
+    # not. We're validating that the config/routes/views compile, not that
+    # external services are reachable.
+    env:
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ':memory:'
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: mbstring, pdo_pgsql, redis, gd, intl, bcmath, zip
+          extensions: mbstring, pdo_pgsql, redis, gd, intl, bcmath, zip, sqlite3, pdo_sqlite
           tools: composer:v2
           coverage: none
       - name: Cache composer
@@ -55,13 +81,18 @@ jobs:
           path: vendor
           key: composer-prod-${{ runner.os }}-${{ hashFiles('composer.lock') }}
           restore-keys: composer-prod-${{ runner.os }}-
-      # Mirror what deploy.yml installs in prod — catches issues the dev-only
-      # flag would hide.
       - name: composer install (no-dev)
         run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-progress
-      - name: Prepare .env
+      - name: Prepare .env (force CI-safe drivers)
         run: |
           cp .env.example .env
+          # Override .env with the same drivers as the env: block above so
+          # artisan picks them up regardless of which path it reads from.
+          sed -i 's|^CACHE_STORE=.*|CACHE_STORE=array|' .env
+          sed -i 's|^SESSION_DRIVER=.*|SESSION_DRIVER=array|' .env
+          sed -i 's|^QUEUE_CONNECTION=.*|QUEUE_CONNECTION=sync|' .env
+          sed -i 's|^DB_CONNECTION=.*|DB_CONNECTION=sqlite|' .env
+          grep -q '^DB_DATABASE=' .env && sed -i 's|^DB_DATABASE=.*|DB_DATABASE=:memory:|' .env || echo 'DB_DATABASE=:memory:' >> .env
           php artisan key:generate
       # Same artisan cache calls deploy.yml runs on the production server.
       # If any binding/config/route/view fails to compile here, it would have
@@ -80,12 +111,38 @@ jobs:
   test:
     name: PHPUnit tests
     runs-on: ubuntu-latest
+    # Production uses PostgreSQL with pg-only features (e.g. ilike, function
+    # indexes with regexp_replace + substring(... from ...)). Run tests
+    # against a real Postgres so migrations exercise the same engine.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: autogo
+          POSTGRES_PASSWORD: autogo
+          POSTGRES_DB: autogo_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U autogo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    # Override phpunit.xml's hardcoded sqlite settings. PHPUnit's <env> tags
+    # default to force=false, so shell env vars take precedence.
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: autogo_test
+      DB_USERNAME: autogo
+      DB_PASSWORD: autogo
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: mbstring, pdo_pgsql, redis, gd, intl, bcmath, zip, sqlite3, pdo_sqlite
+          extensions: mbstring, pdo_pgsql, redis, gd, intl, bcmath, zip
           tools: composer:v2
           coverage: none
       - name: Cache composer
