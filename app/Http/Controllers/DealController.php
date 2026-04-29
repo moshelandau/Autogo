@@ -44,6 +44,7 @@ class DealController extends Controller
             'customer_id' => 'required|exists:customers,id',
             'payment_type' => 'required|in:lease,finance,one_pay,balloon,cash',
             'priority' => 'nullable|in:low,medium,high',
+            'stage' => 'nullable|in:' . implode(',', array_diff(\App\Models\Deal::STAGES, ['lost'])),
             'vehicle_vin' => 'nullable|string|max:17',
             'vehicle_year' => 'nullable|integer',
             'vehicle_make' => 'nullable|string|max:100',
