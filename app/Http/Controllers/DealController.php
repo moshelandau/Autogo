@@ -65,13 +65,16 @@ class DealController extends Controller
 
     /**
      * Ensures the new STAGE_TASKS template is reflected on legacy deals
-     * — firstOrCreate is idempotent so existing tasks (incl. completion
-     * state) are untouched, missing template tasks are added.
+     * across every active stage — firstOrCreate is idempotent so existing
+     * tasks (incl. completion state) are untouched, missing template
+     * tasks are added. The Tasks tab defaults to showing the whole
+     * workflow, so we need every stage's tasks present.
      */
     private function syncCurrentStageTasks(Deal $deal): void
     {
-        if ($deal->stage && $deal->stage !== 'lost') {
-            $deal->generateTasksForStage($deal->stage);
+        foreach (Deal::STAGES as $stage) {
+            if ($stage === 'lost') continue;
+            $deal->generateTasksForStage($stage);
         }
     }
 
