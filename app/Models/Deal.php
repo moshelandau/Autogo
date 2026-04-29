@@ -42,15 +42,55 @@ class Deal extends Model
 
     public const STAGES = ['lead', 'quote', 'application', 'submission', 'pending', 'finalize', 'outstanding', 'complete', 'lost'];
 
+    /**
+     * Tasks auto-created when a deal enters each stage. Names prefixed
+     * "Optional:" are visible but skippable — staff can mark them
+     * complete or leave them open without blocking stage advancement.
+     *
+     * Lead-stage capture fields (style/budget/miles/passengers/color/brand)
+     * live on the deal form, not as tasks — tracked here as a single
+     * "Capture preferences" task that staff check off after filling them in.
+     */
     public const STAGE_TASKS = [
-        'lead' => ['Desk Deal', 'Send Quote'],
-        'quote' => ['Follow Up For Acceptance'],
-        'application' => ['Send Application', 'Receive Application', 'Receive Driver\'s License'],
-        'submission' => ['Submit Application'],
-        'pending' => ['Get Approval'],
-        'finalize' => ['Collect Insurance', 'Transfer Registration', 'Loyalty/Conquest', 'Rebate Documentation'],
-        'outstanding' => ['Schedule Delivery', 'Collect COD', 'Collect Bird Dog'],
-        'complete' => ['Collect Lease Agreement'],
+        'lead' => [
+            'Capture preferences (style / budget / miles / passengers / color / brand)',
+            'Find vehicle match',
+        ],
+        'quote' => [
+            'Send quote',
+            'Follow up for acceptance',
+        ],
+        'application' => [
+            'Receive full application',
+            'Receive driver\'s license — front',
+            'Receive driver\'s license — back',
+            'Co-signer license front + back (if applicable)',
+            'Optional: Run soft credit pull',
+        ],
+        'submission' => [
+            'Send application to dealer',
+        ],
+        'pending' => [
+            'Work on insurance',
+            'Optional: Collect conquest documentation',
+            'Optional: Collect rebate documentation',
+            'Follow up with dealer — insurance / rebates / registration / plate transfer',
+            'Receive approval',
+        ],
+        'finalize' => [
+            'Schedule delivery',
+            'Confirm car is ready for pickup',
+        ],
+        'outstanding' => [
+            'Send pickup details to customer',
+            'Collect down payment at delivery',
+            'Get paperwork signed same day',
+            'Express signed paperwork to dealer',
+            'Enter tracking number and send to dealer',
+        ],
+        'complete' => [
+            'Collect Bird Dog payment from dealer (~1 month after delivery)',
+        ],
     ];
 
     public static function generateDealNumber(): int
