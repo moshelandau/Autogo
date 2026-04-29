@@ -36,8 +36,11 @@ class LeasingService
         $stages = [];
         foreach (Deal::STAGES as $stage) {
             if ($stage === 'lost') continue;
+            // sort_order NULL ⇒ -1 ⇒ floats to top (new, not yet hand-sorted).
+            // Tiebreak by updated_at so freshly-created NULLs cluster newest-first.
             $stages[$stage] = Deal::with(['customer', 'salesperson', 'lender', 'incompleteTasks'])
                 ->where('stage', $stage)
+                ->orderByRaw('COALESCE(sort_order, -1) ASC')
                 ->orderByDesc('updated_at')
                 ->get();
         }
@@ -97,6 +100,44 @@ class LeasingService
         }
 
         return $deal->fresh(['customer', 'tasks']);
+    }
+
+    /**
+     * Move a deal into a stage at a specific position.
+     *
+     * $beforeId is the id of the card the dragged deal should be inserted
+     * IMMEDIATELY ABOVE within the target column. Pass null to append to
+     * the bottom. Stage transitions go through transitionDeal() so any
+     * stage-change side effects (task generation, commission accounting)
+     * still fire.
+     */
+    public function reorderDeal(Deal $deal, string $stage, ?int $beforeId): Deal
+    {
+        return DB::transaction(function () use ($deal, $stage, $beforeId) {
+            if ($deal->stage !== $stage) {
+                $this->transitionDeal($deal, $stage);
+                $deal = $deal->fresh();
+            }
+
+            $ids = Deal::where('stage', $stage)
+                ->where('id', '!=', $deal->id)
+                ->orderByRaw('COALESCE(sort_order, -1) ASC')
+                ->orderByDesc('updated_at')
+                ->pluck('id')
+                ->toArray();
+
+            if ($beforeId === null || ($insertAt = array_search($beforeId, $ids)) === false) {
+                $ids[] = $deal->id;
+            } else {
+                array_splice($ids, $insertAt, 0, [$deal->id]);
+            }
+
+            foreach ($ids as $i => $id) {
+                Deal::where('id', $id)->update(['sort_order' => $i]);
+            }
+
+            return $deal->fresh(['customer', 'tasks']);
+        });
     }
 
     public function markDealLost(Deal $deal, ?string $reason = null): Deal

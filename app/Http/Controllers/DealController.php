@@ -164,6 +164,18 @@ class DealController extends Controller
         return back()->with('success', "Deal moved to {$validated['stage']}.");
     }
 
+    public function reorder(Request $request, Deal $deal)
+    {
+        $validated = $request->validate([
+            'stage'     => 'required|in:' . implode(',', Deal::STAGES),
+            'before_id' => 'nullable|integer|exists:deals,id',
+        ]);
+
+        $this->leasing->reorderDeal($deal, $validated['stage'], $validated['before_id'] ?? null);
+
+        return back();
+    }
+
     public function markLost(Request $request, Deal $deal)
     {
         $this->leasing->markDealLost($deal, $request->reason);

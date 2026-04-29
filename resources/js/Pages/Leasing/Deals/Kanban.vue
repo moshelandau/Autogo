@@ -1,7 +1,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 const props = defineProps({ stages: Object, stats: Object });
 
@@ -18,24 +18,71 @@ const stageColors = {
 
 const priorityColors = { low: 'bg-green-100 text-green-800', medium: 'bg-yellow-100 text-yellow-800', high: 'bg-red-100 text-red-800' };
 
-const dragging = ref(null);
-const dragOver = ref(null);
+const search = ref('');
+
+const filteredStages = computed(() => {
+    const q = search.value.trim().toLowerCase();
+    if (!q) return props.stages;
+    const out = {};
+    for (const [stage, deals] of Object.entries(props.stages || {})) {
+        out[stage] = (deals || []).filter((d) => {
+            const fn = (d.customer?.first_name || '').toLowerCase();
+            const ln = (d.customer?.last_name || '').toLowerCase();
+            return fn.includes(q) || ln.includes(q) || `${fn} ${ln}`.includes(q);
+        });
+    }
+    return out;
+});
+
+const dragging = ref(null);     // { dealId, fromStage }
+const dragOverStage = ref(null);
+const dragOverCard = ref(null); // id of card we'd insert BEFORE
 
 const onDragStart = (deal, fromStage, e) => {
     dragging.value = { dealId: deal.id, fromStage };
     e.dataTransfer.effectAllowed = 'move';
+    // Force the card itself as the drag ghost so the user sees a card,
+    // not a link/text snippet that some browsers default to.
+    if (e.currentTarget && e.dataTransfer.setDragImage) {
+        const r = e.currentTarget.getBoundingClientRect();
+        e.dataTransfer.setDragImage(e.currentTarget, e.clientX - r.left, e.clientY - r.top);
+    }
 };
-const onDragOver = (stage, e) => {
+
+const onColumnDragOver = (stage, e) => {
     e.preventDefault();
-    dragOver.value = stage;
+    dragOverStage.value = stage;
+    if (e.target === e.currentTarget) dragOverCard.value = null;
 };
-const onDragLeave = () => { dragOver.value = null; };
-const onDrop = (toStage) => {
+const onColumnDragLeave = () => { dragOverStage.value = null; };
+
+const onCardDragOver = (deal, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragOverStage.value = deal.stage;
+    dragOverCard.value = deal.id;
+};
+
+const reset = () => { dragging.value = null; dragOverStage.value = null; dragOverCard.value = null; };
+
+const onColumnDrop = (toStage) => {
     const drag = dragging.value;
-    dragOver.value = null;
-    dragging.value = null;
-    if (!drag || drag.fromStage === toStage) return;
-    router.post(route('leasing.deals.transition', drag.dealId), { stage: toStage }, {
+    if (!drag) return reset();
+    submit(drag.dealId, toStage, null);
+    reset();
+};
+
+const onCardDrop = (overDeal, e) => {
+    e.stopPropagation();
+    const drag = dragging.value;
+    if (!drag) return reset();
+    if (drag.dealId === overDeal.id) return reset();
+    submit(drag.dealId, overDeal.stage, overDeal.id);
+    reset();
+};
+
+const submit = (dealId, stage, beforeId) => {
+    router.post(route('leasing.deals.reorder', dealId), { stage, before_id: beforeId }, {
         preserveScroll: true,
         preserveState: false,
     });
@@ -48,20 +95,18 @@ const onDrop = (toStage) => {
             <div class="flex justify-between items-center">
                 <div>
                     <h2 class="font-semibold text-xl text-gray-800 leading-tight">Deals Pipeline</h2>
-                    <p class="text-xs text-gray-500">Drag cards across columns to change stage</p>
+                    <p class="text-xs text-gray-500">Drag cards between or within columns to change stage / reorder</p>
                 </div>
-                <div class="flex gap-3">
+                <div class="flex gap-3 items-center">
+                    <input v-model="search" type="search" placeholder="Filter by customer name…"
+                           class="px-3 py-2 text-sm border-gray-300 rounded-md focus:border-indigo-500 focus:ring-indigo-500 w-64" />
                     <Link :href="route('leasing.deals.index', { view: 'list' })" class="px-3 py-2 text-sm text-gray-600 bg-white border rounded-md hover:bg-gray-50">List View</Link>
                     <Link :href="route('leasing.deals.create')" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm hover:bg-indigo-700">+ New Deal</Link>
                 </div>
             </div>
         </template>
 
-        <!-- Stats + Board fill the remaining viewport so the horizontal
-             scrollbar lives at the bottom of the page (same pattern as
-             Claims/Board.vue and Towing/Board.vue). -->
         <div class="flex flex-col" style="height: calc(100vh - 65px);">
-            <!-- Stats Bar -->
             <div class="flex gap-4 px-4 pt-4 pb-3 overflow-x-auto flex-shrink-0">
                 <div class="bg-white rounded-lg shadow-sm px-4 py-2 text-center min-w-fit">
                     <div class="text-lg font-bold text-gray-900">{{ stats.active_deals }}</div>
@@ -81,30 +126,34 @@ const onDrop = (toStage) => {
                 </div>
             </div>
 
-            <!-- Kanban Board -->
             <div class="px-4 pb-1 board-scroller overflow-x-auto flex-1 min-h-0">
                 <div class="flex gap-3 min-w-max h-full">
-                    <div v-for="(deals, stage) in stages" :key="stage"
-                         @dragover="onDragOver(stage, $event)"
-                         @dragleave="onDragLeave"
-                         @drop="onDrop(stage)"
+                    <div v-for="(deals, stage) in filteredStages" :key="stage"
+                         @dragover="onColumnDragOver(stage, $event)"
+                         @dragleave="onColumnDragLeave"
+                         @drop="onColumnDrop(stage)"
                          class="flex-shrink-0 w-72 bg-gray-50 rounded-lg border-t-4 flex flex-col h-full transition"
                          :class="[
                             stageColors[stage],
-                            dragOver === stage ? 'ring-4 ring-indigo-300' : ''
+                            dragOverStage === stage ? 'ring-4 ring-indigo-300' : ''
                          ]">
                         <div class="p-3 border-b bg-white rounded-t-lg flex-shrink-0">
                             <div class="flex justify-between items-center">
                                 <h3 class="font-semibold text-sm text-gray-700">{{ stageLabels[stage] }}</h3>
-                                <span class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">{{ deals?.length || 0 }}</span>
+                                <span class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                                    {{ deals?.length || 0 }}<template v-if="search && (props.stages?.[stage]?.length || 0) !== (deals?.length || 0)">/{{ props.stages?.[stage]?.length || 0 }}</template>
+                                </span>
                             </div>
                         </div>
                         <div class="p-2 space-y-2 col-scroller overflow-y-auto flex-1 min-h-0">
                             <div v-for="deal in deals" :key="deal.id"
                                  draggable="true"
                                  @dragstart="onDragStart(deal, stage, $event)"
-                                 class="cursor-grab active:cursor-grabbing">
-                                <Link :href="route('leasing.deals.show', deal.id)"
+                                 @dragover="onCardDragOver(deal, $event)"
+                                 @drop="onCardDrop(deal, $event)"
+                                 class="cursor-grab active:cursor-grabbing transition"
+                                 :class="dragOverCard === deal.id ? 'pt-3 border-t-2 border-indigo-500' : ''">
+                                <Link :href="route('leasing.deals.show', deal.id)" :draggable="false"
                                       class="block bg-white rounded-lg shadow-sm p-3 hover:shadow-md transition-shadow border border-gray-100">
                                     <div class="flex justify-between items-start mb-2">
                                         <span class="text-xs font-mono text-gray-400">#{{ deal.deal_number }}</span>
@@ -121,7 +170,9 @@ const onDrop = (toStage) => {
                                     <div class="text-xs text-gray-400 mt-1">{{ deal.salesperson?.name || 'Unassigned' }}</div>
                                 </Link>
                             </div>
-                            <div v-if="!deals?.length" class="text-center py-6 text-xs text-gray-400">No deals</div>
+                            <div v-if="!deals?.length" class="text-center py-6 text-xs text-gray-400">
+                                {{ search ? 'No matches' : 'No deals' }}
+                            </div>
                         </div>
                     </div>
                 </div>
