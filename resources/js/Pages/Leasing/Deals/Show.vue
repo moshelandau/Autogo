@@ -3,6 +3,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, useForm, router } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import SmsButton from '@/Components/SmsButton.vue';
+import CustomerMessages from '@/Components/CustomerMessages.vue';
 
 const props = defineProps({
     deal: Object,
@@ -180,7 +181,7 @@ const saveCalcAsQuote = () => {
                 <!-- Tabs -->
                 <div class="bg-white shadow-sm rounded-lg">
                     <div class="border-b flex gap-0 overflow-x-auto">
-                        <button v-for="tab in ['summary', 'tasks', 'calculator', 'quotes', 'credit', 'notes', 'documents']" :key="tab"
+                        <button v-for="tab in ['summary', 'tasks', 'calculator', 'quotes', 'credit', 'notes', 'documents', 'messages']" :key="tab"
                                 @click="activeTab = tab"
                                 class="px-6 py-3 text-sm font-medium capitalize whitespace-nowrap"
                                 :class="activeTab === tab ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500 hover:text-gray-700'">
@@ -403,6 +404,17 @@ const saveCalcAsQuote = () => {
                             <div><span class="text-gray-500">Drive Off:</span> {{ fmt(d.drive_off) }}</div>
                             <div><span class="text-gray-500">Mileage/Year:</span> {{ d.mileage_per_year?.toLocaleString() || '-' }}</div>
                             <div class="col-span-2"><span class="text-gray-500">Notes:</span> {{ d.notes || '-' }}</div>
+                        </div>
+
+                        <!-- Messages Tab — full SMS thread with this deal's customer.
+                             Replies sent from here are subject-tagged to the Deal so they
+                             show up in this deal's audit trail. -->
+                        <div v-if="activeTab === 'messages'">
+                            <CustomerMessages v-if="d.customer"
+                                              :customer="d.customer"
+                                              subject-type="App\\Models\\Deal"
+                                              :subject-id="d.id" />
+                            <div v-else class="text-center text-gray-400 py-8">No customer linked to this deal.</div>
                         </div>
                     </div>
                 </div>
