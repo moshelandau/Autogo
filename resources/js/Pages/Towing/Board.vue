@@ -95,12 +95,4 @@ const priorityDot = { low: 'bg-gray-300', normal: 'bg-blue-400', high: 'bg-amber
     </AppLayout>
 </template>
 
-<style>
-.board-scroller { scrollbar-width: auto; scrollbar-color: #4f46e5 #e2e8f0; padding-bottom: 12px; }
-.board-scroller::-webkit-scrollbar { height: 14px !important; background: #e2e8f0; -webkit-appearance: none; }
-.board-scroller::-webkit-scrollbar-track { background: #e2e8f0; }
-.board-scroller::-webkit-scrollbar-thumb { background: #6366f1; border-radius: 7px; border: 2px solid #e2e8f0; }
-.col-scroller { scrollbar-width: thin; }
-.col-scroller::-webkit-scrollbar { width: 8px !important; }
-.col-scroller::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
-</style>
+<!-- .board-scroller / .col-scroller styles live in resources/css/app.css -->

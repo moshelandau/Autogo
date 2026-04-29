@@ -30,39 +30,42 @@ const priorityColors = { low: 'bg-green-100 text-green-800', medium: 'bg-yellow-
             </div>
         </template>
 
-        <div class="py-4">
-            <div class="max-w-full mx-auto px-4">
-                <!-- Stats Bar -->
-                <div class="flex gap-4 mb-4 overflow-x-auto">
-                    <div class="bg-white rounded-lg shadow-sm px-4 py-2 text-center min-w-fit">
-                        <div class="text-lg font-bold text-gray-900">{{ stats.active_deals }}</div>
-                        <div class="text-xs text-gray-500">Active</div>
-                    </div>
-                    <div class="bg-white rounded-lg shadow-sm px-4 py-2 text-center min-w-fit">
-                        <div class="text-lg font-bold text-red-600">{{ stats.overdue_tasks }}</div>
-                        <div class="text-xs text-gray-500">Overdue Tasks</div>
-                    </div>
-                    <div class="bg-white rounded-lg shadow-sm px-4 py-2 text-center min-w-fit">
-                        <div class="text-lg font-bold text-orange-600">{{ stats.stale_deals }}</div>
-                        <div class="text-xs text-gray-500">Stale</div>
-                    </div>
-                    <div class="bg-white rounded-lg shadow-sm px-4 py-2 text-center min-w-fit">
-                        <div class="text-lg font-bold text-green-600">{{ stats.won_today }}</div>
-                        <div class="text-xs text-gray-500">Won Today</div>
-                    </div>
+        <!-- Stats + Board fill the remaining viewport so the horizontal
+             scrollbar lives at the bottom of the page (same pattern as
+             Claims/Board.vue and Towing/Board.vue). -->
+        <div class="flex flex-col" style="height: calc(100vh - 65px);">
+            <!-- Stats Bar -->
+            <div class="flex gap-4 px-4 pt-4 pb-3 overflow-x-auto flex-shrink-0">
+                <div class="bg-white rounded-lg shadow-sm px-4 py-2 text-center min-w-fit">
+                    <div class="text-lg font-bold text-gray-900">{{ stats.active_deals }}</div>
+                    <div class="text-xs text-gray-500">Active</div>
                 </div>
+                <div class="bg-white rounded-lg shadow-sm px-4 py-2 text-center min-w-fit">
+                    <div class="text-lg font-bold text-red-600">{{ stats.overdue_tasks }}</div>
+                    <div class="text-xs text-gray-500">Overdue Tasks</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm px-4 py-2 text-center min-w-fit">
+                    <div class="text-lg font-bold text-orange-600">{{ stats.stale_deals }}</div>
+                    <div class="text-xs text-gray-500">Stale</div>
+                </div>
+                <div class="bg-white rounded-lg shadow-sm px-4 py-2 text-center min-w-fit">
+                    <div class="text-lg font-bold text-green-600">{{ stats.won_today }}</div>
+                    <div class="text-xs text-gray-500">Won Today</div>
+                </div>
+            </div>
 
-                <!-- Kanban Board -->
-                <div class="flex gap-3 overflow-x-auto pb-4" style="min-height: 70vh;">
+            <!-- Kanban Board -->
+            <div class="px-4 pb-1 board-scroller overflow-x-auto flex-1 min-h-0">
+                <div class="flex gap-3 min-w-max h-full">
                     <div v-for="(deals, stage) in stages" :key="stage"
-                         class="flex-shrink-0 w-72 bg-gray-50 rounded-lg border-t-4" :class="stageColors[stage]">
-                        <div class="p-3 border-b bg-white rounded-t-lg">
+                         class="flex-shrink-0 w-72 bg-gray-50 rounded-lg border-t-4 flex flex-col h-full" :class="stageColors[stage]">
+                        <div class="p-3 border-b bg-white rounded-t-lg flex-shrink-0">
                             <div class="flex justify-between items-center">
                                 <h3 class="font-semibold text-sm text-gray-700">{{ stageLabels[stage] }}</h3>
                                 <span class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">{{ deals?.length || 0 }}</span>
                             </div>
                         </div>
-                        <div class="p-2 space-y-2 overflow-y-auto" style="max-height: 65vh;">
+                        <div class="p-2 space-y-2 col-scroller overflow-y-auto flex-1 min-h-0">
                             <Link v-for="deal in deals" :key="deal.id"
                                   :href="route('leasing.deals.show', deal.id)"
                                   class="block bg-white rounded-lg shadow-sm p-3 hover:shadow-md transition-shadow border border-gray-100">

@@ -147,41 +147,4 @@ const onDrop = (toColId) => {
     </AppLayout>
 </template>
 
-<style>
-/* Always-visible horizontal scrollbar on the board */
-.board-scroller {
-    scrollbar-gutter: stable;
-    scrollbar-width: auto;
-    scrollbar-color: #4f46e5 #e2e8f0;
-    padding-bottom: 12px;
-}
-.board-scroller::-webkit-scrollbar {
-    height: 14px !important;
-    width: 14px !important;
-    background: #e2e8f0;
-    -webkit-appearance: none;
-    display: block !important;
-}
-.board-scroller::-webkit-scrollbar-track {
-    background: #e2e8f0;
-    border-top: 1px solid #cbd5e1;
-}
-.board-scroller::-webkit-scrollbar-thumb {
-    background-color: #6366f1;
-    border-radius: 7px;
-    border: 2px solid #e2e8f0;
-    min-width: 60px;
-}
-.board-scroller::-webkit-scrollbar-thumb:hover {
-    background-color: #4f46e5;
-}
-
-/* Per-column vertical scrollbar */
-.col-scroller {
-    scrollbar-width: thin;
-    scrollbar-color: #94a3b8 transparent;
-}
-.col-scroller::-webkit-scrollbar { width: 8px !important; -webkit-appearance: none; }
-.col-scroller::-webkit-scrollbar-thumb { background-color: #94a3b8; border-radius: 4px; }
-.col-scroller::-webkit-scrollbar-thumb:hover { background-color: #64748b; }
-</style>
+<!-- .board-scroller / .col-scroller styles live in resources/css/app.css -->
