@@ -1,11 +1,19 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, provide } from 'vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import Banner from '@/Components/Banner.vue';
 import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
 
 defineProps({ title: String });
+
+// Top-bar search box. Pages that want to filter their content based on
+// it call inject('globalSearch') and react to its value. Resets on every
+// navigation since each page mounts a fresh AppLayout instance.
+const globalSearch = ref('');
+const globalSearchPlaceholder = ref('Search...');
+provide('globalSearch', globalSearch);
+provide('globalSearchPlaceholder', globalSearchPlaceholder);
 
 const page = usePage();
 const sidebarOpen = ref(true);
@@ -293,7 +301,7 @@ const icons = {
                             <!-- Quick Search -->
                             <div class="hidden md:block relative">
                                 <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                                <input type="text" placeholder="Search..." class="w-64 pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition-all" />
+                                <input v-model="globalSearch" type="search" :placeholder="globalSearchPlaceholder" class="w-64 pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition-all" />
                             </div>
 
                             <!-- Notifications bell -->

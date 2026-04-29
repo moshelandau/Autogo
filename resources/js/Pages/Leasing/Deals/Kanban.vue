@@ -1,9 +1,17 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, ref, inject, onMounted } from 'vue';
 
 const props = defineProps({ stages: Object, stats: Object });
+
+// Drive the kanban filter from the top-bar search (AppLayout provides
+// it). Falls back to a local ref if this page ever gets used outside
+// AppLayout. Setting the placeholder makes the top-bar input self-
+// describing while on /leasing.
+const search = inject('globalSearch', ref(''));
+const searchPlaceholder = inject('globalSearchPlaceholder', ref('Search...'));
+onMounted(() => { searchPlaceholder.value = 'Filter deals by customer name…'; });
 
 const stageLabels = {
     lead: 'Lead', quote: 'Quote', application: 'Application', submission: 'Submission',
@@ -17,8 +25,6 @@ const stageColors = {
 };
 
 const priorityColors = { low: 'bg-green-100 text-green-800', medium: 'bg-yellow-100 text-yellow-800', high: 'bg-red-100 text-red-800' };
-
-const search = ref('');
 
 const filteredStages = computed(() => {
     const q = search.value.trim().toLowerCase();
@@ -98,8 +104,6 @@ const submit = (dealId, stage, beforeId) => {
                     <p class="text-xs text-gray-500">Drag cards between or within columns to change stage / reorder</p>
                 </div>
                 <div class="flex gap-3 items-center">
-                    <input v-model="search" type="search" placeholder="Filter by customer name…"
-                           class="px-3 py-2 text-sm border-gray-300 rounded-md focus:border-indigo-500 focus:ring-indigo-500 w-64" />
                     <Link :href="route('leasing.deals.index', { view: 'list' })" class="px-3 py-2 text-sm text-gray-600 bg-white border rounded-md hover:bg-gray-50">List View</Link>
                     <Link :href="route('leasing.deals.create')" class="bg-indigo-600 text-white px-4 py-2 rounded-md text-sm hover:bg-indigo-700">+ New Deal</Link>
                 </div>

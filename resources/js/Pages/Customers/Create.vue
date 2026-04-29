@@ -60,7 +60,7 @@ const submit = () => form.post(route('customers.store'));
                                         class="text-xs text-indigo-600 hover:text-indigo-800">+ Add another</button>
                             </div>
                             <div class="space-y-2">
-                                <div v-for="(p, i) in form.phones" :key="i" class="flex flex-wrap items-center gap-2 p-2 bg-gray-50 rounded-md border">
+                                <div v-for="(p, i) in form.phones" :key="i" class="flex flex-wrap items-center gap-2">
                                     <input v-model="p.phone" type="text" placeholder="Phone *"
                                            class="border-gray-300 rounded-md text-sm w-40 focus:border-indigo-500 focus:ring-indigo-500" />
                                     <select v-model="p.label" class="border-gray-300 rounded-md text-sm focus:border-indigo-500 focus:ring-indigo-500">
