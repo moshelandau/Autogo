@@ -5,6 +5,7 @@ import { ref, computed, reactive, watch } from 'vue';
 import SmsButton from '@/Components/SmsButton.vue';
 import CustomerMessages from '@/Components/CustomerMessages.vue';
 import CustomerSelect from '@/Components/CustomerSelect.vue';
+import NotesPanel from '@/Components/Notes/NotesPanel.vue';
 
 const props = defineProps({
     deal: Object,
@@ -726,20 +727,9 @@ const saveCalcAsQuote = () => {
                             </div>
                         </div>
 
-                        <!-- Notes Tab -->
+                        <!-- Notes Tab — full mention/assign/reminder/thread system -->
                         <div v-if="activeTab === 'notes'" class="space-y-4">
-                            <form @submit.prevent="addNote" class="flex gap-3">
-                                <input v-model="noteForm.body" type="text" placeholder="Add a note..." class="flex-1 border-gray-300 rounded-md shadow-sm text-sm" />
-                                <button type="submit" :disabled="noteForm.processing || !noteForm.body" class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700 disabled:opacity-50">Add</button>
-                            </form>
-                            <div v-for="note in d.deal_notes" :key="note.id" class="border-b py-3 last:border-0">
-                                <div class="flex justify-between text-xs text-gray-400 mb-1">
-                                    <span>{{ note.user?.name || 'System' }}</span>
-                                    <span>{{ new Date(note.created_at).toLocaleString() }}</span>
-                                </div>
-                                <p class="text-sm text-gray-800">{{ note.body }}</p>
-                            </div>
-                            <p v-if="!d.deal_notes?.length" class="text-gray-500 text-sm">No notes yet.</p>
+                            <NotesPanel :notes="d.notes || []" notable-type="deal" :notable-id="d.id" />
                         </div>
 
                         <!-- Documents Tab — required-docs checklist sourced from

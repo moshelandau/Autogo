@@ -4,6 +4,7 @@ import { Link, router, useForm } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import SmsButton from '@/Components/SmsButton.vue';
 import CustomerMessages from '@/Components/CustomerMessages.vue';
+import NotesPanel from '@/Components/Notes/NotesPanel.vue';
 
 const props = defineProps({
     customer: Object,
@@ -163,6 +164,7 @@ const kinds = [
                 <nav class="flex border-b">
                     <button v-for="t in [
                         {id:'overview', label:'Overview'},
+                        {id:'notes', label:`Notes (${customer.notes?.length || 0})`},
                         {id:'documents', label:`Documents / IDs (${customer.documents?.length || 0})`},
                         {id:'messages', label:'Messages'},
                         {id:'history', label:`History (${timeline.length})`},
@@ -284,6 +286,11 @@ const kinds = [
                         </div>
                     </div>
                     <p v-else class="text-sm text-gray-400 text-center py-8">No documents on file. Upload a driver's license, insurance card, etc. above.</p>
+                </div>
+
+                <!-- NOTES — mentions, assignments, replies, reminders -->
+                <div v-if="tab === 'notes'" class="p-6">
+                    <NotesPanel :notes="customer.notes || []" notable-type="customer" :notable-id="customer.id" />
                 </div>
 
                 <!-- MESSAGES (SMS thread) -->
