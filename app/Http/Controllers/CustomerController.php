@@ -143,8 +143,8 @@ class CustomerController extends Controller
             'rentalPayments',
             'creditPulls',
             'phones',
-            'notes.user',
-            'notes.assignedUsers',
+            'noteThread.user',
+            'noteThread.assignedUsers',
         ]);
 
         // Build a unified, color-coded business-history timeline

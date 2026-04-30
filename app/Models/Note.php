@@ -21,13 +21,14 @@ class Note extends Model
     protected $fillable = [
         'notable_type', 'notable_id',
         'subject', 'body',
-        'reminder_date', 'is_resolved',
+        'reminder_date', 'is_resolved', 'resolved_at',
         'user_id', 'assigned_to',
     ];
 
     protected $casts = [
         'reminder_date' => 'date',
         'is_resolved'   => 'boolean',
+        'resolved_at'   => 'datetime',
     ];
 
     public function notable(): MorphTo { return $this->morphTo(); }

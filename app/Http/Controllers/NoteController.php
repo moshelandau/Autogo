@@ -84,9 +84,12 @@ class NoteController extends Controller
             }
 
             // Notify mentioned users (database channel feeds the bell).
+            // Self-mentions are allowed — they're useful as a private TODO
+            // and they're how the author can sanity-check that the bell
+            // is wired correctly without coordinating with a coworker.
             if (!empty($mentionedIds)) {
                 $mentionedBy = $request->user();
-                $users = User::whereIn('id', $mentionedIds)->where('id', '!=', $mentionedBy->id)->get();
+                $users = User::whereIn('id', $mentionedIds)->get();
                 foreach ($users as $u) {
                     $u->notify(new MentionedInNoteNotification($note, $mentionedBy));
                 }
@@ -141,7 +144,7 @@ class NoteController extends Controller
 
     public function resolve(Request $request, Note $note)
     {
-        $note->update(['is_resolved' => true]);
+        $note->update(['is_resolved' => true, 'resolved_at' => now()]);
         NoteActivity::create([
             'note_id' => $note->id,
             'user_id' => $request->user()->id,
@@ -153,7 +156,9 @@ class NoteController extends Controller
 
     public function reopen(Request $request, Note $note)
     {
-        $note->update(['is_resolved' => false]);
+        // Reopen also clears the completed timestamp — if it isn't done,
+        // there's no "done date" to keep around.
+        $note->update(['is_resolved' => false, 'resolved_at' => null]);
         NoteActivity::create([
             'note_id' => $note->id,
             'user_id' => $request->user()->id,
@@ -165,17 +170,20 @@ class NoteController extends Controller
 
     public function updateReminderDate(Request $request, Note $note)
     {
-        $validated = $request->validate(['reminder_date' => ['required', 'date']]);
-        $note->update(['reminder_date' => $validated['reminder_date']]);
+        // `reminder_date` is nullable — passing empty string clears the
+        // due date entirely (so a TODO becomes a plain note again).
+        $validated = $request->validate(['reminder_date' => ['nullable', 'date']]);
+        $newDate = $validated['reminder_date'] ?? null;
+        $note->update(['reminder_date' => $newDate]);
         // Reset email_sent so users get re-notified for the new date.
         $note->assignedUsers()->newPivotQuery()->update(['email_sent' => false]);
         NoteActivity::create([
             'note_id' => $note->id,
             'user_id' => $request->user()->id,
             'action'  => 'updated',
-            'detail'  => 'Snoozed to ' . $validated['reminder_date'],
+            'detail'  => $newDate ? "Snoozed to {$newDate}" : 'Cleared due date',
         ]);
-        return back()->with('success', 'Reminder date updated.');
+        return back()->with('success', $newDate ? 'Due date updated.' : 'Due date cleared.');
     }
 
     public function addComment(Request $request, Note $note): JsonResponse
@@ -194,9 +202,10 @@ class NoteController extends Controller
         ]);
 
         // Mentions in replies notify too — mirrors note-body parsing.
+        // Self-mentions allowed (consistent with the create path).
         $mentionedIds = $this->extractMentionedUserIds($comment->body);
         if (!empty($mentionedIds)) {
-            $users = User::whereIn('id', $mentionedIds)->where('id', '!=', $request->user()->id)->get();
+            $users = User::whereIn('id', $mentionedIds)->get();
             foreach ($users as $u) {
                 $u->notify(new MentionedInNoteNotification($note, $request->user()));
             }
@@ -258,21 +267,32 @@ class NoteController extends Controller
         ])->all()]);
     }
 
+    /**
+     * Find which users are @-mentioned in the body. Free-text regex
+     * parsing is unreliable when names contain spaces (the regex either
+     * stops too early at the first space or eats far past the name).
+     * Since the typeahead already gives us a closed set of users, we
+     * iterate that set and look for the literal `@<name>` followed by a
+     * boundary (end-of-string, whitespace, or punctuation).
+     */
     private function extractMentionedUserIds(string $body): array
     {
-        if (!preg_match_all('/@([\w][\w\s\-\.\']{1,60}?)(?=\s@|\s*$|[,;!?\n]|\.\s)/u', $body, $m)) {
-            return [];
-        }
-        $names = array_unique(array_map('trim', $m[1] ?? []));
-        if (empty($names)) return [];
-        // Match by exact lowercase name. Pull all users once and filter
-        // in-memory rather than 1-query-per-name.
-        $all = User::pluck('id', 'name');
-        $lower = $all->mapWithKeys(fn ($id, $n) => [strtolower((string) $n) => $id]);
+        if (!str_contains($body, '@')) return [];
         $ids = [];
-        foreach ($names as $n) {
-            $key = strtolower($n);
-            if (isset($lower[$key])) $ids[] = $lower[$key];
+        $bodyLower = mb_strtolower($body);
+        foreach (User::all(['id', 'name']) as $u) {
+            $needle = '@' . mb_strtolower((string) $u->name);
+            $pos = 0;
+            while (($pos = mb_strpos($bodyLower, $needle, $pos)) !== false) {
+                $end = $pos + mb_strlen($needle);
+                $next = mb_substr($bodyLower, $end, 1);
+                // Boundary: end-of-string, whitespace, or punctuation.
+                if ($next === '' || preg_match('/[\s,.;:!?\n\)\]\}]/u', $next)) {
+                    $ids[] = $u->id;
+                    break;
+                }
+                $pos = $end;
+            }
         }
         return array_values(array_unique($ids));
     }

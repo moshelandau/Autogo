@@ -119,7 +119,13 @@ class Deal extends Model
     public function quotes(): HasMany { return $this->hasMany(DealQuote::class); }
     public function tasks(): HasMany { return $this->hasMany(DealTask::class)->orderBy('sort_order'); }
     public function documents(): HasMany { return $this->hasMany(DealDocument::class); }
-    public function notes(): MorphMany
+    /**
+     * Polymorphic note thread (mentions/assignees/replies/reminders).
+     * Named `noteThread` rather than `notes` to avoid colliding with the
+     * existing `deals.notes` text column — both would serialize to the
+     * same JSON key and the relation would silently overwrite the column.
+     */
+    public function noteThread(): MorphMany
     {
         return $this->morphMany(Note::class, 'notable')->orderByDesc('created_at');
     }

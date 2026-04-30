@@ -112,7 +112,11 @@ class Customer extends Model
     public function ezPassAccounts(): HasMany  { return $this->hasMany(EzPassAccount::class); }
     public function cards(): HasMany           { return $this->hasMany(CustomerCard::class); }
     public function phones(): HasMany          { return $this->hasMany(CustomerPhone::class)->orderByDesc('is_primary')->orderBy('id'); }
-    public function notes(): MorphMany         { return $this->morphMany(Note::class, 'notable')->orderByDesc('created_at'); }
+    /**
+     * Polymorphic note thread. Named `noteThread` to avoid colliding with
+     * the existing `customers.notes` text column on serialize.
+     */
+    public function noteThread(): MorphMany    { return $this->morphMany(Note::class, 'notable')->orderByDesc('created_at'); }
 
     /**
      * Lookup by the last 10 digits of any phone tied to this customer

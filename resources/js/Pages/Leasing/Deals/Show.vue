@@ -729,7 +729,7 @@ const saveCalcAsQuote = () => {
 
                         <!-- Notes Tab — full mention/assign/reminder/thread system -->
                         <div v-if="activeTab === 'notes'" class="space-y-4">
-                            <NotesPanel :notes="d.notes || []" notable-type="deal" :notable-id="d.id" />
+                            <NotesPanel :notes="d.note_thread || []" notable-type="deal" :notable-id="d.id" />
                         </div>
 
                         <!-- Documents Tab — required-docs checklist sourced from

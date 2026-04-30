@@ -88,7 +88,7 @@ class DealController extends Controller
     public function show(Deal $deal)
     {
         $this->syncCurrentStageTasks($deal);
-        $deal->load(['customer.documents.uploadedBy', 'coSigner.documents', 'salesperson', 'lender', 'quotes.lender', 'tasks', 'documents', 'notes.user', 'notes.assignedUsers', 'notes.comments.user', 'notes.activities.user']);
+        $deal->load(['customer.documents.uploadedBy', 'coSigner.documents', 'salesperson', 'lender', 'quotes.lender', 'tasks', 'documents', 'noteThread.user', 'noteThread.assignedUsers', 'noteThread.comments.user', 'noteThread.activities.user']);
 
         // Credit-pull history for this deal's customer (most-recent first)
         $creditPulls = $deal->customer
@@ -232,7 +232,7 @@ class DealController extends Controller
     public function addNote(Request $request, Deal $deal)
     {
         $validated = $request->validate(['body' => 'required|string']);
-        $deal->notes()->create(['body' => $validated['body'], 'user_id' => auth()->id()]);
+        $deal->noteThread()->create(['body' => $validated['body'], 'user_id' => auth()->id()]);
         return back()->with('success', 'Note added.');
     }
 
