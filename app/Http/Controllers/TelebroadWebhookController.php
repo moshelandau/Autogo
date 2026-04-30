@@ -137,6 +137,24 @@ class TelebroadWebhookController extends Controller
 
         // AI router (layer 0) → rule-based safeguards (layer 1-3) → bot.
         if ($isInbound) {
+            // BYPASS — if the customer has an active lease application session
+            // whose current step expects an image AND the inbound has media,
+            // route straight to the bot. The AI router classifies empty-body
+            // MMS as "silent / nothing to respond to" — but for an image step
+            // the photo IS the response, so we mustn't drop it. (This was the
+            // silent-failure bug where a license photo got no bot reply.)
+            $expectingImage = $this->isInboundForImageStep((string) $from, $mediaUrls ?? []);
+            if ($expectingImage) {
+                Log::warning('SmsAiRouter bypass: image step active', ['from' => $from]);
+                try {
+                    $bot = app(\App\Services\LeaseApplicationBot::class);
+                    $bot->handleInbound((string) $from, (string) $body, $customer, collect($mediaUrls ?? [])->all());
+                } catch (\Throwable $e) {
+                    Log::error('Bot handleInbound failed (image bypass)', ['error' => $e->getMessage()]);
+                }
+                return response()->json(['ok' => true, 'id' => $log->id, 'image_bypass' => true]);
+            }
+
             $decision = app(\App\Services\SmsAiRouter::class)->decide((string) $from, (string) $body, $customer);
             Log::info('SmsAiRouter decision', ['from' => $from, ...$decision]);
 
@@ -210,6 +228,24 @@ class TelebroadWebhookController extends Controller
      *      ping-ponging with a corporate auto-reply system)
      *   3. Auto-responder fingerprint in the body (common patterns)
      */
+    /**
+     * True if the customer has an active lease application session whose
+     * current step expects an image AND the inbound has at least one media
+     * URL. Used to bypass the AI router for blank-body MMS that's actually
+     * a legitimate response to an image-step prompt.
+     */
+    private function isInboundForImageStep(string $from, array $mediaUrls): bool
+    {
+        if (empty($mediaUrls)) return false;
+        $session = \App\Models\LeaseApplicationSession::where('phone', $from)
+            ->whereNull('completed_at')
+            ->whereNull('aborted_at')
+            ->orderByDesc('id')
+            ->first();
+        if (!$session || !$session->current_step) return false;
+        return str_contains($session->current_step, 'image');
+    }
+
     private function shouldRunBot(string $from, string $body): bool
     {
         // 1. Global kill switch
