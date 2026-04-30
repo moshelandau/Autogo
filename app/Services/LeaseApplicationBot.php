@@ -595,14 +595,16 @@ class LeaseApplicationBot
         if (($step['expects'] ?? null) === 'image') {
             $reply = strtoupper(trim($body));
 
-            // SECURE on image step → single-step upload page, plus keep the
-            // SMS path active. Customer uploads via web OR texts the photo.
+            // SECURE on image step → combined front+back upload page (NOT
+            // single-step), so they can do both sides in one go without
+            // navigating twice. SMS path stays active in case they prefer
+            // to text the photos instead.
             if (in_array($reply, ['SECURE', 'WEB', 'LINK', 'FORM'], true)) {
-                $stepUrl = rtrim(config('app.url', 'https://app.autogoco.com'), '/')
-                    . '/apply/' . $session->web_token . '/step/' . $step['key'];
+                $licenseUrl = rtrim(config('app.url', 'https://app.autogoco.com'), '/')
+                    . '/apply/' . $session->web_token . '/license';
                 $this->reply($session->phone,
-                    "Upload here instead of MMS:\n{$stepUrl}\n\n" .
-                    "Or just text the photo — whichever's easier."
+                    "Upload both sides here instead of MMS:\n{$licenseUrl}\n\n" .
+                    "Or just text the photos — whichever's easier."
                 );
                 $this->reply($session->phone, $this->renderPrompt($step, $session));
                 $session->update(['last_inbound_at' => now()]);
