@@ -66,10 +66,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 
     // Mention typeahead — used by the AddNote modal.
     Route::get('users-search', [\App\Http\Controllers\NoteController::class, 'searchUsers'])->name('users.search');
-
-    // Bell read-state (mentions only — reminders are dismissed by resolve).
-    Route::post('notifications/{id}/read',     [\App\Http\Controllers\NoteController::class, 'markNotificationRead'])->name('notifications.read-one');
-    Route::post('notifications/mark-all-read', [\App\Http\Controllers\NoteController::class, 'markAllNotificationsRead'])->name('notifications.read-all');
+    // Bell read-state already wired via NotificationController (see below).
     Route::post('customers-quick', [CustomerController::class, 'quickStore'])->name('customers.quick-store');
     Route::get('customers/{customer}/scan',  [\App\Http\Controllers\CustomerScanController::class, 'index'])->name('customers.scan');
     Route::post('customers/{customer}/scan', [\App\Http\Controllers\CustomerScanController::class, 'ingest'])->name('customers.scan.ingest');

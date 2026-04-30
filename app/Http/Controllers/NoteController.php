@@ -258,22 +258,6 @@ class NoteController extends Controller
         ])->all()]);
     }
 
-    /**
-     * Mark a single bell notification (mention) as read. Reminders are
-     * dismissed by resolving the note, not by marking-read.
-     */
-    public function markNotificationRead(Request $request, string $id)
-    {
-        $request->user()->unreadNotifications()->where('id', $id)->each->markAsRead();
-        return back();
-    }
-
-    public function markAllNotificationsRead(Request $request)
-    {
-        $request->user()->unreadNotifications->markAsRead();
-        return back();
-    }
-
     private function extractMentionedUserIds(string $body): array
     {
         if (!preg_match_all('/@([\w][\w\s\-\.\']{1,60}?)(?=\s@|\s*$|[,;!?\n]|\.\s)/u', $body, $m)) {
