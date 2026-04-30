@@ -35,7 +35,7 @@ class LeaseApplicationBot
         ['key' => 'first_name',        'prompt' => "Great — what's your FIRST name? (we'll confirm what we read)"],
         ['key' => 'last_name',         'prompt' => "Thanks {first_name}. And your LAST name?"],
         ['key' => 'date_of_birth',     'prompt' => "Date of birth? (MM/DD/YYYY)"],
-        ['key' => 'ssn',               'prompt' => "Your full SSN? (XXX-XX-XXXX). Used only to run the credit application — we mask it on display and never share it. If you'd rather enter it on a secure web form, reply SECURE."],
+        ['key' => 'ssn',               'prompt' => "What's your full SSN? (XXX-XX-XXXX) — used only for the credit application; we mask it and never share it."],
         ['key' => 'address',           'prompt' => "Current home street address?"],
         ['key' => 'city',              'prompt' => "City?"],
         ['key' => 'state',             'prompt' => "State? (2-letter, e.g. NY)"],
@@ -58,7 +58,7 @@ class LeaseApplicationBot
         ['key' => 'co_first_name',       'prompt' => "Co-applicant FIRST name?",        'requires' => 'has_coapplicant'],
         ['key' => 'co_last_name',        'prompt' => "Co-applicant LAST name?",         'requires' => 'has_coapplicant'],
         ['key' => 'co_date_of_birth',    'prompt' => "Co-applicant date of birth? (MM/DD/YYYY)", 'requires' => 'has_coapplicant'],
-        ['key' => 'co_ssn',              'prompt' => "Co-applicant SSN? (XXX-XX-XXXX). Reply SECURE for a web form instead.", 'requires' => 'has_coapplicant'],
+        ['key' => 'co_ssn',              'prompt' => "Co-applicant's full SSN? (XXX-XX-XXXX) — used only for the credit application; we mask it and never share it.", 'requires' => 'has_coapplicant'],
         ['key' => 'co_phone',            'prompt' => "Co-applicant phone?",             'requires' => 'has_coapplicant'],
         ['key' => 'co_address',          'prompt' => "Co-applicant street address?",    'requires' => 'has_coapplicant'],
         ['key' => 'co_city',             'prompt' => "Co-applicant city?",              'requires' => 'has_coapplicant'],
@@ -893,13 +893,13 @@ class LeaseApplicationBot
             return (string) ($session->collected[$m[1]] ?? '');
         }, $step['prompt']);
 
-        // Sensitive steps auto-append the single-step secure form URL —
-        // SSN especially. License doesn't get this; SMS-photos are fine
-        // for most customers and the URL would be noise on that step.
+        // Sensitive steps auto-append the single-step secure form URL.
+        // Frame it as a clear two-option choice — text it OR tap the link
+        // — so the customer doesn't think "reply SECURE" is required.
         if (in_array($step['key'], ['ssn', 'co_ssn'], true) && !empty($session->web_token)) {
             $stepUrl = rtrim(config('app.url', 'https://app.autogoco.com'), '/')
                 . '/apply/' . $session->web_token . '/step/' . $step['key'];
-            $rendered .= "\n\n🔒 Or enter it on this secure form (recommended for SSN): {$stepUrl}";
+            $rendered .= "\n\nYour choice:\n  📱 Reply here with the number, OR\n  🔒 Tap to enter on a secure form: {$stepUrl}";
         }
         return $rendered;
     }
