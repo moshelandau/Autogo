@@ -35,6 +35,15 @@ class DealTask extends Model
         ]);
     }
 
+    public function markIncomplete(): void
+    {
+        $this->update([
+            'is_completed' => false,
+            'completed_at' => null,
+            'completed_by' => null,
+        ]);
+    }
+
     public function scopeOverdue($query) { return $query->where('is_completed', false)->where('due_date', '<', today()); }
     public function scopeIncomplete($query) { return $query->where('is_completed', false); }
 }

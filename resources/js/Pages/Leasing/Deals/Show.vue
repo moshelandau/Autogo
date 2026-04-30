@@ -227,13 +227,14 @@ const addQuote = () => {
 };
 
 const completeTask = (taskId) => {
-    // Optimistic — flip the local task object so the checkbox + line-through
-    // appear instantly. Server confirms; on error we roll back.
+    // Toggle behavior — tap a checked task to un-complete it. Optimistic
+    // flip so the UI feels instant; server confirms via Inertia round-trip,
+    // and we roll back on error.
     const task = (d.tasks || []).find((t) => t.id === taskId);
-    if (!task || task.is_completed) return;
+    if (!task) return;
     const original = { is_completed: task.is_completed, completed_at: task.completed_at };
-    task.is_completed = true;
-    task.completed_at = new Date().toISOString();
+    task.is_completed = !task.is_completed;
+    task.completed_at = task.is_completed ? new Date().toISOString() : null;
     router.post(route('leasing.deals.task', { deal: d.id, task: taskId }), {}, {
         preserveScroll: true,
         onError: () => {
@@ -494,9 +495,10 @@ const saveCalcAsQuote = () => {
                             </div>
                             <div v-for="task in visibleTasks" :key="task.id"
                                  class="flex items-center gap-3 py-2 border-b last:border-0">
-                                <button @click="!task.is_completed && completeTask(task.id)"
+                                <button @click="completeTask(task.id)"
+                                        :title="task.is_completed ? 'Click to undo' : 'Mark complete'"
                                         class="w-5 h-5 rounded border-2 flex items-center justify-center transition-colors"
-                                        :class="task.is_completed ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 hover:border-green-400'">
+                                        :class="task.is_completed ? 'bg-green-500 border-green-500 text-white hover:bg-green-600' : 'border-gray-300 hover:border-green-400'">
                                     <span v-if="task.is_completed" class="text-xs">&#10003;</span>
                                 </button>
                                 <div class="flex-1">

@@ -225,6 +225,12 @@ class DealController extends Controller
     public function completeTask(Request $request, Deal $deal, int $taskId)
     {
         $task = $deal->tasks()->findOrFail($taskId);
+        // Toggle: tap a checked task again to un-complete it. Clears
+        // completed_at + completed_by so the audit trail is honest.
+        if ($task->is_completed) {
+            $task->markIncomplete();
+            return back()->with('success', 'Task reopened.');
+        }
         $this->leasing->completeTask($task);
         return back()->with('success', 'Task completed.');
     }
