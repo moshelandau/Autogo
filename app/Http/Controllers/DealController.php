@@ -305,6 +305,98 @@ class DealController extends Controller
     }
 
     /**
+     * Returns a default SMS or email body for a quote, ready to be
+     * shown in a preview modal so staff can review/edit before sending.
+     * Returned as JSON so the modal can pre-fill the textarea.
+     */
+    public function previewSendQuote(Request $request, Deal $deal, int $quoteId)
+    {
+        $request->validate(['channel' => 'required|in:sms,email']);
+        $quote = $deal->quotes()->with('lender')->findOrFail($quoteId);
+        $deal->loadMissing('customer');
+
+        $vehicle = trim(($deal->vehicle_year ?? '') . ' ' . ($deal->vehicle_make ?? '') . ' ' . ($deal->vehicle_model ?? '')) ?: 'your vehicle';
+        $first   = $deal->customer?->first_name ?: 'there';
+        $monthly = $quote->monthly_payment ? '$' . number_format((float) $quote->monthly_payment, 2) . '/mo' : '$/mo TBD';
+        $term    = $quote->term ? "{$quote->term} mo" : '';
+        $miles   = $quote->mileage_per_year ? number_format($quote->mileage_per_year) . ' mi/yr' : '';
+        $das     = $quote->das ? '$' . number_format((float) $quote->das, 2) . ' due at signing' : '';
+        $lender  = $quote->lender?->name;
+
+        $bullets = array_filter([$monthly, $term, $miles, $das, $lender ? "Lender: {$lender}" : null]);
+        $body = $request->input('channel') === 'sms'
+            ? "Hi {$first}! Quote for {$vehicle}:\n• " . implode("\n• ", $bullets) . "\n\nReply YES to accept or text questions."
+            : "Hi {$first},\n\nHere's your quote for {$vehicle}:\n\n" . implode("\n", array_map(fn ($b) => "  • {$b}", $bullets)) .
+              "\n\nFinal terms subject to credit approval. Reply YES to accept or let us know if you have questions.\n\nThanks,\nAutoGo Leasing";
+
+        $subject = "Your AutoGo quote — {$vehicle}";
+
+        return response()->json([
+            'channel' => $request->input('channel'),
+            'to'      => $request->input('channel') === 'sms' ? $deal->customer?->phone : $deal->customer?->email,
+            'subject' => $subject,
+            'body'    => $body,
+        ]);
+    }
+
+    public function sendQuote(Request $request, Deal $deal, int $quoteId)
+    {
+        $validated = $request->validate([
+            'channel' => 'required|in:sms,email',
+            'to'      => 'required|string|max:255',
+            'subject' => 'nullable|string|max:255',
+            'body'    => 'required|string|max:4000',
+        ]);
+        $quote = $deal->quotes()->findOrFail($quoteId);
+
+        if ($validated['channel'] === 'sms') {
+            try {
+                app(\App\Services\TelebroadService::class)->sendSms($validated['to'], $validated['body']);
+                \App\Models\CommunicationLog::create([
+                    'subject_type' => Deal::class,
+                    'subject_id'   => $deal->id,
+                    'customer_id'  => $deal->customer_id,
+                    'user_id'      => auth()->id(),
+                    'channel'      => 'sms',
+                    'direction'    => 'outbound',
+                    'from'         => null,
+                    'to'           => $validated['to'],
+                    'body'         => $validated['body'],
+                    'status'       => 'sent',
+                    'sent_at'      => now(),
+                ]);
+            } catch (\Throwable $e) {
+                return back()->with('error', 'SMS send failed: ' . $e->getMessage());
+            }
+        } else {
+            try {
+                \Illuminate\Support\Facades\Mail::raw($validated['body'], function ($m) use ($validated) {
+                    $m->to($validated['to'])->subject($validated['subject'] ?: 'Your AutoGo quote');
+                });
+                \App\Models\CommunicationLog::create([
+                    'subject_type' => Deal::class,
+                    'subject_id'   => $deal->id,
+                    'customer_id'  => $deal->customer_id,
+                    'user_id'      => auth()->id(),
+                    'channel'      => 'email',
+                    'direction'    => 'outbound',
+                    'from'         => config('mail.from.address'),
+                    'to'           => $validated['to'],
+                    'subject'      => $validated['subject'],
+                    'body'         => $validated['body'],
+                    'status'       => 'sent',
+                    'sent_at'      => now(),
+                ]);
+            } catch (\Throwable $e) {
+                return back()->with('error', 'Email send failed: ' . $e->getMessage());
+            }
+        }
+
+        $quote->update(['notes' => trim(($quote->notes ?? '') . "\nSent to customer via {$validated['channel']} at " . now()->toIso8601String())]);
+        return back()->with('success', 'Quote sent to customer via ' . strtoupper($validated['channel']) . '.');
+    }
+
+    /**
      * Upload a document for this deal. Routes to CustomerDocument under
      * the deal's customer — the docs (license, insurance, paystub, …) are
      * customer-owned and should be reusable across the customer's deals,

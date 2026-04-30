@@ -275,6 +275,36 @@ const deleteQuote = (quoteId) => {
     router.delete(route('leasing.deals.delete-quote', { deal: d.id, quote: quoteId }), { preserveScroll: true });
 };
 
+// Send quote to client via SMS or email — preview + edit before send
+const sendQuoteOpen   = ref(false);
+const sendQuoteId     = ref(null);
+const sendQuoteForm   = useForm({ channel: 'sms', to: '', subject: '', body: '' });
+const sendQuoteLoading = ref(false);
+
+const openSendQuote = async (q, channel) => {
+    sendQuoteId.value     = q.id;
+    sendQuoteForm.channel = channel;
+    sendQuoteOpen.value   = true;
+    sendQuoteLoading.value = true;
+    try {
+        const r = await axios.post(route('leasing.deals.preview-send-quote', { deal: d.id, quote: q.id }), { channel });
+        sendQuoteForm.to      = r.data.to || '';
+        sendQuoteForm.subject = r.data.subject || '';
+        sendQuoteForm.body    = r.data.body || '';
+    } catch (e) {
+        alert('Could not load preview: ' + (e.response?.data?.message || e.message));
+        sendQuoteOpen.value = false;
+    }
+    sendQuoteLoading.value = false;
+};
+
+const submitSendQuote = () => {
+    sendQuoteForm.post(route('leasing.deals.send-quote', { deal: d.id, quote: sendQuoteId.value }), {
+        preserveScroll: true,
+        onSuccess: () => { sendQuoteOpen.value = false; },
+    });
+};
+
 const priorityColors = { low: 'bg-green-100 text-green-800', medium: 'bg-yellow-100 text-yellow-800', high: 'bg-red-100 text-red-800' };
 
 // Calculator state
@@ -492,6 +522,10 @@ const saveCalcAsQuote = () => {
                                         <span v-if="q.is_selected" class="text-xs bg-green-600 text-white px-2 py-1 rounded">Selected</span>
                                         <button v-else type="button" @click="selectQuote(q.id)"
                                                 class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200">Select</button>
+                                        <button type="button" @click="openSendQuote(q, 'sms')"
+                                                class="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded hover:bg-emerald-200">📱 SMS</button>
+                                        <button type="button" @click="openSendQuote(q, 'email')"
+                                                class="text-xs bg-sky-100 text-sky-700 px-2 py-1 rounded hover:bg-sky-200">✉ Email</button>
                                         <button type="button" @click="beginEditQuote(q)"
                                                 class="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200">Edit</button>
                                         <button type="button" @click="deleteQuote(q.id)"
@@ -1068,5 +1102,55 @@ const saveCalcAsQuote = () => {
                 </div>
             </div>
         </div>
+
+
+        <!-- Send-quote modal: SMS or email preview + edit, then send. -->
+        <Teleport to="body">
+            <div v-if="sendQuoteOpen" @click.self="sendQuoteOpen = false"
+                 class="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4">
+                <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+                    <header class="px-5 py-4 border-b flex items-center justify-between">
+                        <div>
+                            <h3 class="font-bold text-lg">Send quote — {{ sendQuoteForm.channel === 'sms' ? '📱 SMS' : '✉ Email' }}</h3>
+                            <p class="text-xs text-gray-500 mt-0.5">Review and edit before sending. Logged to the customer's communication history.</p>
+                        </div>
+                        <button @click="sendQuoteOpen = false" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+                    </header>
+                    <div class="p-5 space-y-3 overflow-y-auto flex-1 text-sm">
+                        <div v-if="sendQuoteLoading" class="text-center py-8 text-gray-400">Loading preview…</div>
+                        <template v-else>
+                            <label class="block">
+                                <span class="block text-xs font-medium text-gray-700 mb-1">To {{ sendQuoteForm.channel === 'sms' ? '(phone)' : '(email)' }}</span>
+                                <input v-model="sendQuoteForm.to" :type="sendQuoteForm.channel === 'sms' ? 'tel' : 'email'"
+                                       class="w-full border-gray-300 rounded-md text-sm" />
+                                <p v-if="sendQuoteForm.errors.to" class="text-xs text-red-600 mt-0.5">{{ sendQuoteForm.errors.to }}</p>
+                            </label>
+                            <label v-if="sendQuoteForm.channel === 'email'" class="block">
+                                <span class="block text-xs font-medium text-gray-700 mb-1">Subject</span>
+                                <input v-model="sendQuoteForm.subject" type="text" class="w-full border-gray-300 rounded-md text-sm" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-xs font-medium text-gray-700 mb-1">Message</span>
+                                <textarea v-model="sendQuoteForm.body" rows="10"
+                                          class="w-full border-gray-300 rounded-md text-sm font-mono"></textarea>
+                                <p v-if="sendQuoteForm.errors.body" class="text-xs text-red-600 mt-0.5">{{ sendQuoteForm.errors.body }}</p>
+                            </label>
+                            <p class="text-[11px] text-gray-500">
+                                {{ sendQuoteForm.channel === 'sms' ? 'SMS char count: ' + sendQuoteForm.body.length : 'Customer will see this in their inbox.' }}
+                            </p>
+                        </template>
+                    </div>
+                    <footer class="px-5 py-3 border-t flex justify-end gap-2 bg-gray-50">
+                        <button @click="sendQuoteOpen = false"
+                                class="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200">Cancel</button>
+                        <button @click="submitSendQuote" :disabled="sendQuoteForm.processing || sendQuoteLoading || !sendQuoteForm.to || !sendQuoteForm.body"
+                                class="px-4 py-1.5 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50">
+                            {{ sendQuoteForm.processing ? 'Sending…' : 'Send' }}
+                        </button>
+                    </footer>
+                </div>
+            </div>
+        </Teleport>
+
     </AppLayout>
 </template>
