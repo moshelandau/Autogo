@@ -105,6 +105,7 @@ class DealController extends Controller
             'inspectionComparison' => null,
             'creditPulls' => $creditPulls,
             'creditConfigured' => !empty(config('services.credit700.api_key')),
+            'timeline' => app(\App\Services\DealTimelineService::class)->build($deal),
         ]);
     }
 

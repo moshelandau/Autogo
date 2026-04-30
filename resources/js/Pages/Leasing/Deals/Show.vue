@@ -14,7 +14,16 @@ const props = defineProps({
     lenders: Array,
     creditPulls: { type: Array, default: () => [] },
     creditConfigured: { type: Boolean, default: false },
+    timeline: { type: Array, default: () => [] },
 });
+
+const timelineIcon = (k) => ({
+    stage: '🔄', task: '✓', quote: '📊', document: '📄', update: '✏️',
+}[k] || '•');
+const timelineWhen = (iso) => {
+    if (!iso) return '';
+    return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+};
 
 // `const d = props.deal` snapshots the reference at mount; Inertia replaces
 // props.deal with a new object after every action, so the snapshot goes
@@ -34,7 +43,7 @@ const activeTab = ref('summary');
 onMounted(() => {
     const params = new URLSearchParams(window.location.search);
     const wantedTab = params.get('tab');
-    if (wantedTab && ['summary','tasks','workflow','calculator','quotes','credit','notes','documents','messages'].includes(wantedTab)) {
+    if (wantedTab && ['summary','tasks','workflow','calculator','quotes','credit','notes','documents','messages','timeline'].includes(wantedTab)) {
         activeTab.value = wantedTab;
     }
     if (window.location.hash) {
@@ -1217,6 +1226,29 @@ const saveCalcAsQuote = () => {
                                               subject-type="App\\Models\\Deal"
                                               :subject-id="d.id" />
                             <div v-else class="text-center text-gray-400 py-8">No customer linked to this deal.</div>
+                        </div>
+
+                        <!-- Timeline Tab — unified deal activity feed (xDeskPro parity) -->
+                        <div v-if="activeTab === 'timeline'" class="space-y-1">
+                            <div class="flex items-center justify-between mb-3">
+                                <h3 class="text-sm font-semibold text-gray-700">Activity Timeline</h3>
+                                <span class="text-xs text-gray-400">{{ timeline.length }} {{ timeline.length === 1 ? 'event' : 'events' }}</span>
+                            </div>
+                            <div v-if="!timeline.length" class="text-center text-gray-400 py-12 text-sm">
+                                No activity recorded yet for this deal.
+                            </div>
+                            <ul v-else class="divide-y divide-gray-100">
+                                <li v-for="(ev, i) in timeline" :key="i" class="py-2 flex items-start gap-3 text-sm">
+                                    <span class="w-5 text-center text-base leading-tight">{{ timelineIcon(ev.kind) }}</span>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="text-gray-900">{{ ev.label }}<span v-if="ev.meta" class="text-gray-400"> — {{ ev.meta }}</span></div>
+                                        <div class="text-xs text-gray-500">
+                                            {{ timelineWhen(ev.at) }}
+                                            <span v-if="ev.actor"> · by {{ ev.actor }}</span>
+                                        </div>
+                                    </div>
+                                </li>
+                            </ul>
                         </div>
                     </div>
                 </div>
