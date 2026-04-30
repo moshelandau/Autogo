@@ -864,8 +864,12 @@ class LeaseApplicationBot
     {
         try {
             $resp = app(\App\Services\AiClient::class)->messages([
-                'model' => 'claude-opus-4-7', 'max_tokens' => 800, 'temperature' => 0,
-                'system' => 'OCR US driver licenses. Output VALID JSON only. Read each visible digit carefully (1 vs 7, 0 vs 8, 3 vs 8). Use empty string ONLY if a field is truly unreadable or absent — do not skip a whole field over a single uncertain digit, just give your best read.',
+                // NOTE: 'temperature' is deprecated for Opus 4.7 — passing it
+                // causes a 400 invalid_request_error. Omitting it means the
+                // model uses its default. (Sonnet 4.5/4.6 accept temperature
+                // but Opus 4.7 doesn't.)
+                'model' => 'claude-opus-4-7', 'max_tokens' => 800,
+                'system' => 'OCR US driver licenses. Output VALID JSON only. The photo MAY BE ROTATED 90/180/270 degrees — mentally rotate the image so the license reads upright before extracting any fields, then read normally. Read each visible digit carefully (1 vs 7, 0 vs 8, 3 vs 8). Use empty string ONLY if a field is truly unreadable or absent — do not skip a whole field over a single uncertain digit, just give your best read.',
                 'messages' => [[
                     'role' => 'user',
                     'content' => [
