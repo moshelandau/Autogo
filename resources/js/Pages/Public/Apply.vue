@@ -37,28 +37,18 @@ const form = useForm({
     license_back:  null,
 });
 
-const licenseFrontInput = ref(null);
-const licenseBackInput  = ref(null);
 const onPickFront = (e) => { form.license_front = e.target.files[0] || null; };
 const onPickBack  = (e) => { form.license_back  = e.target.files[0] || null; };
 
 const submit = () => {
-    form.post('/apply/' + window.location.pathname.split('/')[2], {
+    form.post(window.location.pathname, {
         forceFormData: true,
     });
 };
 
-// Convenience — prefilled flag so we can hint to the user when fields
-// are pre-populated from the SMS conversation.
 const hasPrefill = Object.values(c).some(v => v !== null && v !== '' && typeof v !== 'object');
 
-// ?focus=<step_key> — bot sends this when customer replies SECURE on a
-// specific question. We scroll to that field and pulse it so the
-// customer's eye lands there immediately on a small phone screen.
 const focused = computed(() => new URLSearchParams(window.location.search).get('focus') || '');
-
-// Maps STEPS_LEASE keys → form field names. Most are 1:1 already; the
-// license_image_* steps target the file inputs.
 const FIELD_FOR_STEP = {
     license_image_front: 'license_front',
     license_image_back:  'license_back',
@@ -76,6 +66,8 @@ onMounted(() => {
         if (el.focus) el.focus({ preventScroll: true });
     });
 });
+
+const inputCls = 'mt-0.5 block w-full border-gray-300 rounded-md text-sm';
 </script>
 
 <template>
@@ -103,116 +95,135 @@ onMounted(() => {
                         Some fields are pre-filled from your texts — please review and correct anything that's off.
                     </p>
 
-                    <!-- Identity -->
                     <section>
                         <h2 class="text-sm font-semibold text-gray-700 mb-3">Identity</h2>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <Field label="First name *">
-                                <input v-model="form.first_name" required class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="Last name *">
-                                <input v-model="form.last_name" required class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="Date of birth *">
-                                <input v-model="form.date_of_birth" type="date" required class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="SSN (XXX-XX-XXXX)">
-                                <input v-model="form.ssn" name="ssn" type="password" placeholder="encrypted" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="Email">
-                                <input v-model="form.email" type="email" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">First name *</span>
+                                <input v-model="form.first_name" name="first_name" required :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">Last name *</span>
+                                <input v-model="form.last_name" name="last_name" required :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">Date of birth *</span>
+                                <input v-model="form.date_of_birth" name="date_of_birth" type="date" required :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">SSN (XXX-XX-XXXX)</span>
+                                <input v-model="form.ssn" name="ssn" type="password" placeholder="encrypted" :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">Email</span>
+                                <input v-model="form.email" name="email" type="email" :class="inputCls" />
+                            </label>
                         </div>
                     </section>
 
-                    <!-- Driver's license uploads -->
                     <section>
-                        <h2 class="text-sm font-semibold text-gray-700 mb-3">Driver's License</h2>
+                        <h2 class="text-sm font-semibold text-gray-700 mb-1">Driver's License</h2>
                         <p class="text-xs text-gray-500 mb-3">Upload clear photos — all four corners visible, no fingers covering anything.</p>
                         <div class="grid grid-cols-2 gap-3">
-                            <Field label="License — front">
-                                <input ref="licenseFrontInput" name="license_front" type="file" accept="image/*" capture="environment" @change="onPickFront" class="w-full text-xs" />
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">License — front</span>
+                                <input name="license_front" type="file" accept="image/*" capture="environment" @change="onPickFront" class="w-full text-xs" />
                                 <span v-if="form.license_front" class="text-[11px] text-emerald-600">{{ form.license_front.name }}</span>
-                            </Field>
-                            <Field label="License — back">
-                                <input ref="licenseBackInput" name="license_back" type="file" accept="image/*" capture="environment" @change="onPickBack" class="w-full text-xs" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">License — back</span>
+                                <input name="license_back" type="file" accept="image/*" capture="environment" @change="onPickBack" class="w-full text-xs" />
                                 <span v-if="form.license_back" class="text-[11px] text-emerald-600">{{ form.license_back.name }}</span>
-                            </Field>
+                            </label>
                         </div>
                     </section>
 
-                    <!-- Address -->
                     <section>
                         <h2 class="text-sm font-semibold text-gray-700 mb-3">Home Address</h2>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <Field label="Street" class="sm:col-span-2">
-                                <input v-model="form.address" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="City">
-                                <input v-model="form.city" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="State">
-                                <input v-model="form.state" maxlength="2" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="ZIP">
-                                <input v-model="form.zip" maxlength="10" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="Own or rent">
-                                <select v-model="form.own_or_rent" class="w-full border-gray-300 rounded-md text-sm">
+                            <label class="block sm:col-span-2">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">Street</span>
+                                <input v-model="form.address" name="address" :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">City</span>
+                                <input v-model="form.city" name="city" :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">State</span>
+                                <input v-model="form.state" name="state" maxlength="2" :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">ZIP</span>
+                                <input v-model="form.zip" name="zip" maxlength="10" :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">Own or rent</span>
+                                <select v-model="form.own_or_rent" name="own_or_rent" :class="inputCls">
                                     <option value="">—</option>
                                     <option value="own">Own</option>
                                     <option value="rent">Rent</option>
                                 </select>
-                            </Field>
-                            <Field label="Monthly housing ($)">
-                                <input v-model="form.monthly_housing" type="number" step="0.01" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="Years at address">
-                                <input v-model="form.years_at_address" type="number" step="0.5" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">Monthly housing ($)</span>
+                                <input v-model="form.monthly_housing" name="monthly_housing" type="number" step="0.01" :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">Years at address</span>
+                                <input v-model="form.years_at_address" name="years_at_address" type="number" step="0.5" :class="inputCls" />
+                            </label>
                         </div>
                     </section>
 
-                    <!-- Employment -->
                     <section>
                         <h2 class="text-sm font-semibold text-gray-700 mb-3">Employment</h2>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <Field label="Employer name">
-                                <input v-model="form.employer" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="Position / job title">
-                                <input v-model="form.position" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="Years employed">
-                                <input v-model="form.years_employed" type="number" step="0.5" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="Annual income ($)">
-                                <input v-model="form.annual_income" type="number" step="0.01" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="Employer phone">
-                                <input v-model="form.employer_phone" type="tel" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="Employer address" class="sm:col-span-2">
-                                <input v-model="form.employer_address" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="City">
-                                <input v-model="form.employer_city" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="State">
-                                <input v-model="form.employer_state" maxlength="2" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
-                            <Field label="ZIP">
-                                <input v-model="form.employer_zip" maxlength="10" class="w-full border-gray-300 rounded-md text-sm" />
-                            </Field>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">Employer name</span>
+                                <input v-model="form.employer" name="employer" :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">Position / job title</span>
+                                <input v-model="form.position" name="position" :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">Years employed</span>
+                                <input v-model="form.years_employed" name="years_employed" type="number" step="0.5" :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">Annual income ($)</span>
+                                <input v-model="form.annual_income" name="annual_income" type="number" step="0.01" :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">Employer phone</span>
+                                <input v-model="form.employer_phone" name="employer_phone" type="tel" :class="inputCls" />
+                            </label>
+                            <label class="block sm:col-span-2">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">Employer address</span>
+                                <input v-model="form.employer_address" name="employer_address" :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">City</span>
+                                <input v-model="form.employer_city" name="employer_city" :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">State</span>
+                                <input v-model="form.employer_state" name="employer_state" maxlength="2" :class="inputCls" />
+                            </label>
+                            <label class="block">
+                                <span class="block text-[11px] font-medium text-gray-700 mb-0.5">ZIP</span>
+                                <input v-model="form.employer_zip" name="employer_zip" maxlength="10" :class="inputCls" />
+                            </label>
                         </div>
                     </section>
 
-                    <!-- Vehicle -->
                     <section>
                         <h2 class="text-sm font-semibold text-gray-700 mb-3">Vehicle Interest</h2>
-                        <Field label="What vehicle are you interested in?">
-                            <input v-model="form.vehicle_interest" placeholder="e.g. 2026 Kia Sportage EX" class="w-full border-gray-300 rounded-md text-sm" />
-                        </Field>
+                        <label class="block">
+                            <span class="block text-[11px] font-medium text-gray-700 mb-0.5">What vehicle are you interested in?</span>
+                            <input v-model="form.vehicle_interest" name="vehicle_interest" placeholder="e.g. 2026 Kia Sportage EX" :class="inputCls" />
+                        </label>
                     </section>
 
                     <p v-if="Object.keys(form.errors).length" class="text-xs text-red-600">
@@ -231,18 +242,3 @@ onMounted(() => {
         </div>
     </div>
 </template>
-
-<script>
-// Lightweight Field wrapper kept in same SFC to avoid a separate component import.
-import { defineComponent, h } from 'vue';
-export default defineComponent({
-    name: 'Field',
-    props: ['label'],
-    setup(props, { slots, attrs }) {
-        return () => h('label', { class: ['block', attrs.class] }, [
-            h('span', { class: 'block text-[11px] font-medium text-gray-700 mb-0.5' }, props.label),
-            slots.default && slots.default(),
-        ]);
-    },
-});
-</script>
