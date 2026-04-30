@@ -336,33 +336,64 @@ class PublicApplicationController extends Controller
             return redirect()->route('public.apply.show.license', ['token' => $token]);
         }
 
+        // Accept either:
+        //   (A) Previewed-file paths from the inline check endpoint —
+        //       front_path / back_path are stored paths on the public disk
+        //       returned by /preview-license. The page binds them after a
+        //       successful inline check.
+        //   (B) Fresh file uploads — fallback for callers not using the
+        //       preview-then-submit flow.
         $request->validate([
             'license_front' => 'nullable|file|max:51200|mimetypes:image/jpeg,image/png,image/heic,image/heif,image/webp,image/gif,image/bmp',
             'license_back'  => 'nullable|file|max:51200|mimetypes:image/jpeg,image/png,image/heic,image/heif,image/webp,image/gif,image/bmp',
+            'front_path'    => 'nullable|string|max:255',
+            'back_path'     => 'nullable|string|max:255',
         ]);
-        if (!$request->hasFile('license_front') && !$request->hasFile('license_back')) {
+
+        $hasAny = $request->hasFile('license_front') || $request->hasFile('license_back')
+            || $request->filled('front_path') || $request->filled('back_path');
+        if (!$hasAny) {
             return back()->withErrors(['license_front' => 'Pick at least one side to upload.']);
         }
 
-        // Process front first (if uploaded), then back. Each side either
-        // flows through the bot pipeline (if session is currently AT or
-        // BEFORE that license step) or just saves the file as a metadata
-        // update (if session is already past it — uploading a fresh
-        // license while at a later step shouldn't drag the bot backward).
         $customer = $session->customer;
         $stageOrder = $this->stageOrder($session);
 
+        // FRONT
         if ($request->hasFile('license_front')) {
             $url = $this->saveAndUrl($request->file('license_front'), $session);
             $this->routeOrSaveLicense($session, $bot, $customer, $url, 'license_image_front', $stageOrder);
             $session = $session->fresh();
+        } elseif ($request->filled('front_path')) {
+            $url = $this->urlForStoredPath($request->input('front_path'));
+            $this->routeOrSaveLicense($session, $bot, $customer, $url, 'license_image_front', $stageOrder);
+            $session = $session->fresh();
         }
+
+        // BACK
         if ($request->hasFile('license_back')) {
             $url = $this->saveAndUrl($request->file('license_back'), $session);
+            $this->routeOrSaveLicense($session, $bot, $customer, $url, 'license_image_back', $stageOrder);
+        } elseif ($request->filled('back_path')) {
+            $url = $this->urlForStoredPath($request->input('back_path'));
             $this->routeOrSaveLicense($session, $bot, $customer, $url, 'license_image_back', $stageOrder);
         }
 
         return redirect()->route('public.apply.done', ['token' => $token]);
+    }
+
+    /**
+     * Build a fetchable public URL from a stored disk path. Mirrors
+     * saveAndUrl() but for files already on disk (e.g. uploaded via the
+     * /preview-license endpoint and just being committed via submit).
+     */
+    private function urlForStoredPath(string $path): string
+    {
+        $url = Storage::disk('public')->url(ltrim($path, '/'));
+        if (!preg_match('#^https?://#i', $url)) {
+            $url = rtrim(config('app.url', 'https://app.autogoco.com'), '/') . '/' . ltrim($url, '/');
+        }
+        return $url;
     }
 
     /**
