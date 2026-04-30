@@ -125,6 +125,7 @@ class Deal extends Model
         return $this->belongsToMany(User::class, 'deal_shares')->withTimestamps();
     }
     public function quotes(): HasMany { return $this->hasMany(DealQuote::class); }
+    public function actionItems(): HasMany { return $this->hasMany(DealActionItem::class)->orderByDesc('id'); }
     public function tasks(): HasMany { return $this->hasMany(DealTask::class)->orderBy('sort_order'); }
     public function documents(): HasMany { return $this->hasMany(DealDocument::class); }
     /**
