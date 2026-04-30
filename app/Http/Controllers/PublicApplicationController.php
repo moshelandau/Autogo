@@ -172,6 +172,25 @@ class PublicApplicationController extends Controller
             }
         }
 
+        // For license uploads in the full form, run the bot's image pipeline
+        // first so we get OCR, side check, obstruction detection, etc. Don't
+        // just blindly save the path. If the bot rejects the photo, the
+        // customer gets a re-ask via SMS and the path stays unset.
+        foreach (['front' => 'license_front', 'back' => 'license_back'] as $side => $field) {
+            if (!$request->hasFile($field)) continue;
+            $url = $this->saveAndUrl($request->file($field), $session);
+            $stepKey = 'license_image_' . $side;
+            $session->update(['current_step' => $stepKey, 'last_inbound_at' => now()]);
+            $bot->handleInbound($session->phone, '', $session->customer, [$url]);
+            $session = $session->fresh();
+        }
+        // Re-merge any text fields the bot didn't touch (full-form has
+        // many fields; bot only handled the license uploads above).
+        $collected = array_merge($session->collected ?? [], array_diff_key(
+            $collected,
+            array_flip(['license_image_front_path','license_image_front_url','license_image_back_path','license_image_back_url'])
+        ));
+
         $session->collected = $collected;
         $session->current_step = '__done__';
         $session->last_inbound_at = now();
@@ -237,26 +256,19 @@ class PublicApplicationController extends Controller
 
         if ($config['type'] === 'file') {
             $request->validate(['file' => 'required|file|image|max:20480']);
-            $path = $request->file('file')->store("lease-bot-uploads/{$session->id}", 'public');
-            $side = str_contains($stepKey, 'back') ? 'back' : 'front';
-            $collected['license_image_' . $side . '_path'] = $path;
-            $collected['license_image_' . $side . '_url']  = Storage::disk('public')->url($path);
+            // Route file uploads through the bot's image pipeline — same
+            // OCR, side-check, obstruction-detection, diff-confirmation,
+            // step-advance, SMS-reply that SMS uploads get. Bot decides
+            // the next message to the customer based on the outcome.
+            $url = $this->saveAndUrl($request->file('file'), $session);
+            $session->update(['current_step' => $stepKey, 'last_inbound_at' => now()]);
+            $bot->handleInbound($session->phone, '', $session->customer, [$url]);
         } else {
             $request->validate(['value' => 'required|string|max:255']);
-            $collected[$stepKey] = trim($request->input('value'));
-        }
-
-        $session->collected = $collected;
-        $session->last_inbound_at = now();
-        $session->save();
-
-        // SMS the customer back so they know we got it; the bot then resumes
-        // the SMS flow at the next step.
-        try {
-            app(\App\Services\TelebroadService::class)->sendSms($session->phone,
-                "Got your " . strtolower($config['label']) . " — thanks. Continuing your application.");
-        } catch (\Throwable $e) {
-            \Log::error('SMS resume failed after step submit', ['error' => $e->getMessage()]);
+            // Text input — route through the bot the same way the SMS
+            // path would. Bot's validators will normalize / accept / reject.
+            $session->update(['current_step' => $stepKey, 'last_inbound_at' => now()]);
+            $bot->handleInbound($session->phone, trim($request->input('value')), $session->customer, []);
         }
 
         return Inertia::location('/apply/' . $token . '/step/' . $stepKey . '/done');
@@ -297,7 +309,18 @@ class PublicApplicationController extends Controller
         ]);
     }
 
-    public function submitLicense(Request $request, string $token)
+    /**
+     * Combined front+back license submit. Routes BOTH files through the
+     * same LeaseApplicationBot::handleInbound pipeline the SMS path uses,
+     * so OCR + auto-rotate + side-check + obstruction-detection +
+     * diff-confirmation + step-advance all run identically. The bot
+     * sends the appropriate SMS reply (success → next step prompt; or
+     * failure → re-ask) so the customer sees the outcome on their phone
+     * even after submitting via the web. Web side just redirects to the
+     * "submitted" page; SMS is the source of truth for what happens
+     * next.
+     */
+    public function submitLicense(Request $request, string $token, LeaseApplicationBot $bot)
     {
         $session = LeaseApplicationSession::where('web_token', $token)->firstOrFail();
         if (!$this->isVerified($session)) {
@@ -312,43 +335,40 @@ class PublicApplicationController extends Controller
             return back()->withErrors(['license_front' => 'Pick at least one side to upload.']);
         }
 
-        $collected = $session->collected ?? [];
-        foreach (['front' => 'license_front', 'back' => 'license_back'] as $side => $field) {
-            if (!$request->hasFile($field)) continue;
-            $path = $request->file($field)->store("lease-bot-uploads/{$session->id}", 'public');
-            $collected['license_image_' . $side . '_path'] = $path;
-            $collected['license_image_' . $side . '_url']  = Storage::disk('public')->url($path);
-
-            // Save as CustomerDocument right away, mirroring the bot's
-            // upload-time persistence so the doc shows up on the deal
-            // Documents tab without waiting for finalize().
-            if ($session->customer) {
-                \App\Models\CustomerDocument::firstOrCreate(
-                    ['customer_id' => $session->customer->id, 'path' => $path],
-                    [
-                        'type'          => 'drivers_license_' . $side,
-                        'label'         => trim(($collected['first_name'] ?? '') . ' ' . ($collected['last_name'] ?? '') . " ({$side})", ' '),
-                        'disk'          => 'public',
-                        'original_name' => $request->file($field)->getClientOriginalName(),
-                        'mime_type'     => $request->file($field)->getMimeType(),
-                        'uploaded_by'   => null,
-                    ]
-                );
-            }
+        // Process front first (if uploaded), then back. Each side flows
+        // through the bot's image-step handler — same OCR, verify, diff,
+        // advance, SMS-reply pipeline as the SMS path. Bot decides what
+        // to text the customer next based on the outcome.
+        $customer = $session->customer;
+        if ($request->hasFile('license_front')) {
+            $url = $this->saveAndUrl($request->file('license_front'), $session);
+            $session->update(['current_step' => 'license_image_front']);
+            $bot->handleInbound($session->phone, '', $customer, [$url]);
+            $session = $session->fresh();
         }
-
-        $session->collected = $collected;
-        $session->last_inbound_at = now();
-        $session->save();
-
-        try {
-            app(\App\Services\TelebroadService::class)->sendSms($session->phone,
-                "Got your license — thanks. Continuing your application.");
-        } catch (\Throwable $e) {
-            \Log::error('SMS resume failed after license submit', ['error' => $e->getMessage()]);
+        if ($request->hasFile('license_back')) {
+            $url = $this->saveAndUrl($request->file('license_back'), $session);
+            // Only force back step if not already past it (e.g., front
+            // succeeded and bot already advanced). Otherwise keep wherever
+            // the bot put us.
+            if ($session->current_step === 'license_image_front') {
+                $session->update(['current_step' => 'license_image_back']);
+            }
+            $bot->handleInbound($session->phone, '', $customer, [$url]);
         }
 
         return redirect()->route('public.apply.done', ['token' => $token]);
+    }
+
+    /**
+     * Save an uploaded file to the lease-bot-uploads/{session_id}/ folder
+     * on the public disk and return its full public URL — what the bot
+     * expects when handling an "MMS" (it fetches the URL).
+     */
+    private function saveAndUrl(\Illuminate\Http\UploadedFile $file, LeaseApplicationSession $session): string
+    {
+        $path = $file->store("lease-bot-uploads/{$session->id}", 'public');
+        return rtrim(config('app.url', 'https://app.autogoco.com'), '/') . Storage::disk('public')->url($path);
     }
 
     private function stepConfig(string $stepKey): array
