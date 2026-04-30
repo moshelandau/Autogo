@@ -7,11 +7,13 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Dealer extends Model
+class Lienholder extends Model
 {
     protected $fillable = [
-        'name', 'contact_name', 'phone', 'email', 'website',
-        'address', 'city', 'state', 'zip', 'makes_carried', 'notes', 'is_active',
+        'name', 'first_name', 'last_name',
+        'phone', 'email',
+        'address', 'city', 'state', 'zip',
+        'elt_number', 'notes', 'is_active',
     ];
 
     protected function casts(): array { return ['is_active' => 'boolean']; }
@@ -27,12 +29,11 @@ class Dealer extends Model
             $like = '%' . trim($term) . '%';
             $q->where(function ($w) use ($like) {
                 $w->where('name', 'ilike', $like)
-                    ->orWhere('contact_name', 'ilike', $like)
-                    ->orWhere('city', 'ilike', $like)
-                    ->orWhere('state', 'ilike', $like)
-                    ->orWhere('phone', 'ilike', $like)
+                    ->orWhere('first_name', 'ilike', $like)
+                    ->orWhere('last_name', 'ilike', $like)
                     ->orWhere('email', 'ilike', $like)
-                    ->orWhere('makes_carried', 'ilike', $like);
+                    ->orWhere('phone', 'ilike', $like)
+                    ->orWhere('elt_number', 'ilike', $like);
             });
         }
         return $q;
