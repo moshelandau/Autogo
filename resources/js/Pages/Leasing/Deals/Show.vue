@@ -89,6 +89,36 @@ const pickInsurer = (ins) => {
     });
 };
 const clearInsurer = () => pickInsurer(null);
+
+// Generic picker factory — Dealer + Lienholder share the typeahead pattern.
+function makePicker(routeName, dealField) {
+    const query = ref('');
+    const results = ref([]);
+    const open = ref(false);
+    const saving = ref(false);
+    let timer = null;
+    const fetch_ = (term) => {
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+            try {
+                const r = await fetch(route(routeName, { q: term }), { headers: { 'Accept': 'application/json' } });
+                results.value = await r.json();
+            } catch { results.value = []; }
+        }, 200);
+    };
+    const onInput = (e) => { query.value = e.target.value; open.value = true; fetch_(query.value); };
+    const pick = (row) => {
+        saving.value = true;
+        router.put(route('leasing.deals.update', d.id), { [dealField]: row?.id || null }, {
+            preserveScroll: true, preserveState: true,
+            onFinish: () => { saving.value = false; open.value = false; query.value = ''; },
+        });
+    };
+    const clear = () => pick(null);
+    return { query, results, open, saving, onInput, pick, clear };
+}
+const dealerPicker = makePicker('leasing.dealers.typeahead', 'dealer_id');
+const lienholderPicker = makePicker('leasing.lienholders.typeahead', 'lienholder_id');
 const allStages = ['lead', 'quote', 'application', 'submission', 'pending', 'finalize', 'outstanding', 'complete'];
 
 // Required document checklist on the Documents tab. Sourced from
@@ -1077,6 +1107,41 @@ const saveCalcAsQuote = () => {
                                 <p v-else class="text-xs text-gray-400 italic">No preferences captured yet — click "+ Add" to fill them in.</p>
                             </div>
 
+                            <!-- Dealership / Insurer / Lienholder (xDeskPro parity — Deal Information row) -->
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+                            <!-- Dealership -->
+                            <div class="border rounded-xl p-4 bg-white">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Dealership</h4>
+                                    <Link :href="route('leasing.dealers.index')" class="text-xs text-indigo-600 hover:underline">Manage</Link>
+                                </div>
+                                <div v-if="d.dealer" class="flex items-center justify-between">
+                                    <div class="text-sm">
+                                        <div class="font-medium">{{ d.dealer.name }}</div>
+                                        <div class="text-xs text-gray-500">
+                                            <span v-if="d.dealer.city || d.dealer.state">{{ [d.dealer.city, d.dealer.state].filter(Boolean).join(', ') }}</span>
+                                            <span v-if="d.dealer.phone"> · {{ d.dealer.phone }}</span>
+                                        </div>
+                                    </div>
+                                    <button type="button" @click="dealerPicker.clear" :disabled="dealerPicker.saving.value" class="text-xs text-red-600 hover:underline">Remove</button>
+                                </div>
+                                <div v-else class="relative">
+                                    <input type="text" :value="dealerPicker.query.value" @input="dealerPicker.onInput" @focus="dealerPicker.open.value = true"
+                                           placeholder="Search dealership…"
+                                           class="block w-full border-gray-300 rounded-md shadow-sm text-sm" />
+                                    <div v-if="dealerPicker.open.value && dealerPicker.results.value.length"
+                                         class="absolute z-10 mt-1 w-full bg-white border rounded-md shadow-lg max-h-64 overflow-y-auto">
+                                        <button v-for="row in dealerPicker.results.value" :key="row.id"
+                                                type="button" @click="dealerPicker.pick(row)"
+                                                class="block w-full text-left px-3 py-2 text-sm hover:bg-indigo-50">
+                                            <div class="font-medium">{{ row.name }}</div>
+                                            <div class="text-xs text-gray-500">{{ [row.city, row.state].filter(Boolean).join(', ') }}<span v-if="row.phone"> · {{ row.phone }}</span></div>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
                             <!-- Insurer (xDeskPro parity — Deal Information → Insurer) -->
                             <div class="border rounded-xl p-4 bg-white">
                                 <div class="flex items-center justify-between mb-2">
@@ -1114,6 +1179,40 @@ const saveCalcAsQuote = () => {
                                     <p class="text-xs text-gray-400 italic mt-1">No insurer assigned. Type to search; <Link :href="route('leasing.insurers.index')" class="text-indigo-600 hover:underline">add a new one</Link> if missing.</p>
                                 </div>
                             </div>
+
+                            <!-- Lienholder -->
+                            <div class="border rounded-xl p-4 bg-white">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Lienholder</h4>
+                                    <Link :href="route('leasing.lienholders.index')" class="text-xs text-indigo-600 hover:underline">Manage</Link>
+                                </div>
+                                <div v-if="d.lienholder" class="flex items-center justify-between">
+                                    <div class="text-sm">
+                                        <div class="font-medium">{{ d.lienholder.name }}</div>
+                                        <div class="text-xs text-gray-500">
+                                            <span v-if="d.lienholder.elt_number">ELT: {{ d.lienholder.elt_number }}</span>
+                                            <span v-if="d.lienholder.phone"> · {{ d.lienholder.phone }}</span>
+                                        </div>
+                                    </div>
+                                    <button type="button" @click="lienholderPicker.clear" :disabled="lienholderPicker.saving.value" class="text-xs text-red-600 hover:underline">Remove</button>
+                                </div>
+                                <div v-else class="relative">
+                                    <input type="text" :value="lienholderPicker.query.value" @input="lienholderPicker.onInput" @focus="lienholderPicker.open.value = true"
+                                           placeholder="Search lienholder…"
+                                           class="block w-full border-gray-300 rounded-md shadow-sm text-sm" />
+                                    <div v-if="lienholderPicker.open.value && lienholderPicker.results.value.length"
+                                         class="absolute z-10 mt-1 w-full bg-white border rounded-md shadow-lg max-h-64 overflow-y-auto">
+                                        <button v-for="row in lienholderPicker.results.value" :key="row.id"
+                                                type="button" @click="lienholderPicker.pick(row)"
+                                                class="block w-full text-left px-3 py-2 text-sm hover:bg-indigo-50">
+                                            <div class="font-medium">{{ row.name }}</div>
+                                            <div class="text-xs text-gray-500"><span v-if="row.elt_number">ELT: {{ row.elt_number }}</span><span v-if="row.phone"> · {{ row.phone }}</span></div>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            </div><!-- /grid Dealer/Insurer/Lienholder -->
 
                             <div class="grid grid-cols-2 gap-4 text-sm">
                                 <div><span class="text-gray-500">Sell Price:</span> {{ fmt(d.sell_price) }}</div>

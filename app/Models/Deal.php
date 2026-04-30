@@ -25,7 +25,7 @@ class Deal extends Model
         'trade_allowance', 'trade_acv', 'trade_payoff', 'trade_is_leased',
         'credit_score', 'customer_zip',
         'lender_id', 'lender_status', 'lender_notes',
-        'insurer_id', 'dealer_id',
+        'insurer_id', 'dealer_id', 'lienholder_id',
         'notes', 'deal_start_date', 'deal_expiration_date',
         'won_at', 'lost_at', 'lost_reason',
         // Workflow structured fields (see migration ..._add_preferences_to_deals_table)
@@ -118,6 +118,8 @@ class Deal extends Model
     public function salesperson(): BelongsTo { return $this->belongsTo(User::class, 'salesperson_id'); }
     public function lender(): BelongsTo { return $this->belongsTo(Lender::class); }
     public function insurer(): BelongsTo { return $this->belongsTo(Insurer::class); }
+    public function dealer(): BelongsTo { return $this->belongsTo(Dealer::class); }
+    public function lienholder(): BelongsTo { return $this->belongsTo(Lienholder::class); }
     public function quotes(): HasMany { return $this->hasMany(DealQuote::class); }
     public function tasks(): HasMany { return $this->hasMany(DealTask::class)->orderBy('sort_order'); }
     public function documents(): HasMany { return $this->hasMany(DealDocument::class); }

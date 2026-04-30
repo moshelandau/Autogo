@@ -8,8 +8,10 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DealController;
 use App\Http\Controllers\InspectionController;
 use App\Http\Controllers\LeaseDocumentController;
+use App\Http\Controllers\DealerController;
 use App\Http\Controllers\InsurerController;
 use App\Http\Controllers\LenderController;
+use App\Http\Controllers\LienholderController;
 use App\Http\Controllers\OfficeTaskController;
 use App\Http\Controllers\RentalDashboardController;
 use App\Http\Controllers\ReservationController;
@@ -219,6 +221,20 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::put   ('insurers/{insurer}',      [InsurerController::class, 'update'])->name('insurers.update');
         Route::delete('insurers/{insurer}',      [InsurerController::class, 'destroy'])->name('insurers.destroy');
         Route::get   ('insurers-typeahead',      [InsurerController::class, 'typeahead'])->name('insurers.typeahead');
+
+        // Dealerships
+        Route::get   ('dealers',                 [DealerController::class, 'index'])->name('dealers.index');
+        Route::post  ('dealers',                 [DealerController::class, 'store'])->name('dealers.store');
+        Route::put   ('dealers/{dealer}',        [DealerController::class, 'update'])->name('dealers.update');
+        Route::delete('dealers/{dealer}',        [DealerController::class, 'destroy'])->name('dealers.destroy');
+        Route::get   ('dealers-typeahead',       [DealerController::class, 'typeahead'])->name('dealers.typeahead');
+
+        // Lienholders (DMV title holders — distinct from lenders)
+        Route::get   ('lienholders',             [LienholderController::class, 'index'])->name('lienholders.index');
+        Route::post  ('lienholders',             [LienholderController::class, 'store'])->name('lienholders.store');
+        Route::put   ('lienholders/{lienholder}',[LienholderController::class, 'update'])->name('lienholders.update');
+        Route::delete('lienholders/{lienholder}',[LienholderController::class, 'destroy'])->name('lienholders.destroy');
+        Route::get   ('lienholders-typeahead',   [LienholderController::class, 'typeahead'])->name('lienholders.typeahead');
     });
 
     // ── Rental Claims Module ───────────────────────────
