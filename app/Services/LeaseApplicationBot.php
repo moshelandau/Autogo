@@ -703,6 +703,32 @@ class LeaseApplicationBot
             $collected[$step['key'] . '_url'] = $mediaUrls[0];      // license_image_front_url, _back_url
             $collected[$step['key'] . '_path'] = $extracted['_stored_path'] ?? null;
 
+            // Save the CustomerDocument NOW (not at finalize) so the license
+            // shows up on the deal's Documents tab immediately. Without this
+            // the file exists on disk but has no DB row, and the Documents
+            // tab — which reads from customer.documents — can't see it.
+            // Idempotent: skips if a document already exists for this exact
+            // path. The finalize() pass runs the same code; firstOrCreate-
+            // style guards keep it from duplicating.
+            if ($session->customer && !empty($extracted['_stored_path'])) {
+                $side = str_contains($step['key'], 'back') ? 'back' : 'front';
+                CustomerDocument::firstOrCreate(
+                    [
+                        'customer_id' => $session->customer->id,
+                        'path'        => $extracted['_stored_path'],
+                    ],
+                    [
+                        'type'          => 'drivers_license_' . $side,
+                        'label'         => trim(($collected['first_name'] ?? '') . ' ' . ($collected['last_name'] ?? '') . ' · ' . ($collected['drivers_license_number'] ?? '') . " ({$side})", ' ·'),
+                        'disk'          => 'public',
+                        'original_name' => basename($extracted['_stored_path']),
+                        'mime_type'     => 'image/jpeg',
+                        'expires_at'    => $this->parseDate($collected['dl_expiration'] ?? null),
+                        'uploaded_by'   => null,
+                    ]
+                );
+            }
+
             // Only the FRONT is OCR'd for identity fields
             if ($step['key'] === 'license_image_front') {
                 $collected['license_extracted'] = $extracted;
