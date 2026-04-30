@@ -562,18 +562,10 @@ class LeaseApplicationBot
         $step = $steps[$stepIdx];
         $collected = $session->collected ?? [];
 
-        // Pending identity-confirmation reply (set when license OCR found
-        // values that differ from on-file). User answers LICENSE / FILE /
-        // <new value>; we apply, clear the flag, then advance to next step.
-        if (!empty($collected['_pending_identity_confirm']) && empty($mediaUrls)) {
-            return $this->handleIdentityConfirmResponse($session, $step, $stepIdx, $collected, $body);
-        }
-
-        // SECURE reply on any text-input step → send a SINGLE-STEP secure
-        // page just for that one field (or the full form for non-mapped
-        // steps). The SMS flow STAYS ACTIVE — we re-send the current step's
-        // prompt right after, so the customer can answer either via web or
-        // by just replying here. Whichever arrives first wins.
+        // SECURE reply on any text-input step — checked FIRST, before the
+        // pending-diff handler, so a customer who texts SECURE while a
+        // diff is pending still gets the secure form link instead of
+        // having SECURE treated as a free-text address correction.
         if (($step['expects'] ?? null) !== 'image' && $step['key'] !== '__done__') {
             $upper = strtoupper(trim($body));
             if (in_array($upper, ['SECURE', 'WEB', 'LINK', 'FORM'], true)) {
@@ -589,6 +581,13 @@ class LeaseApplicationBot
                 $session->update(['last_inbound_at' => now()]);
                 return true;
             }
+        }
+
+        // Pending identity-confirmation reply (set when license OCR found
+        // values that differ from on-file). User answers LICENSE / FILE /
+        // <new value>; we apply, clear the flag, then advance to next step.
+        if (!empty($collected['_pending_identity_confirm']) && empty($mediaUrls)) {
+            return $this->handleIdentityConfirmResponse($session, $step, $stepIdx, $collected, $body);
         }
 
         // Image step (license_image_front / license_image_back) needs MMS
