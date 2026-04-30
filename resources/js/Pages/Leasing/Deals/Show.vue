@@ -15,7 +15,28 @@ const props = defineProps({
     creditPulls: { type: Array, default: () => [] },
     creditConfigured: { type: Boolean, default: false },
     timeline: { type: Array, default: () => [] },
+    orgUsers: { type: Array, default: () => [] },
 });
+
+// ── Sharing form ──
+const sharingForm = useForm({ user_ids: [] });
+const seedSharing = () => {
+    sharingForm.user_ids = (props.deal?.shared_with || []).map(u => u.id);
+};
+seedSharing();
+watch(() => props.deal?.shared_with, seedSharing, { deep: true });
+const toggleShare = (userId) => {
+    const idx = sharingForm.user_ids.indexOf(userId);
+    if (idx >= 0) sharingForm.user_ids.splice(idx, 1);
+    else sharingForm.user_ids.push(userId);
+};
+const saveSharing = () => sharingForm.put(route('leasing.deals.sharing.update', props.deal.id), { preserveScroll: true });
+const isOwner = (userId) => Number(userId) === Number(props.deal?.salesperson_id);
+const selectAllShares = () => {
+    sharingForm.user_ids = props.orgUsers
+        .filter(u => !isOwner(u.id))
+        .map(u => u.id);
+};
 
 const timelineIcon = (k) => ({
     stage: '🔄', task: '✓', quote: '📊', document: '📄', update: '✏️',
@@ -43,7 +64,7 @@ const activeTab = ref('summary');
 onMounted(() => {
     const params = new URLSearchParams(window.location.search);
     const wantedTab = params.get('tab');
-    if (wantedTab && ['summary','tasks','workflow','calculator','quotes','credit','notes','documents','vehicle_return','messages','timeline'].includes(wantedTab)) {
+    if (wantedTab && ['summary','tasks','workflow','calculator','quotes','credit','notes','documents','vehicle_return','sharing','messages','timeline'].includes(wantedTab)) {
         activeTab.value = wantedTab;
     }
     if (window.location.hash) {
@@ -1501,6 +1522,31 @@ const saveCalcAsQuote = () => {
                                     </button>
                                 </div>
                             </form>
+                        </div>
+
+                        <!-- Sharing Tab — internal user access to this deal (xDeskPro parity) -->
+                        <div v-if="activeTab === 'sharing'" class="space-y-4">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-sm font-semibold text-gray-700">Internal Sharing</h3>
+                                <button type="button" @click="selectAllShares" class="text-xs text-indigo-600 hover:underline">Select all</button>
+                            </div>
+                            <p class="text-xs text-gray-500">Users you select can view this deal in their pipeline. The owner ({{ d.salesperson?.name || 'salesperson' }}) is always included automatically.</p>
+                            <div class="border rounded-lg divide-y max-h-96 overflow-y-auto">
+                                <label v-for="u in orgUsers" :key="u.id"
+                                       class="flex items-center gap-3 px-4 py-2 hover:bg-gray-50 cursor-pointer"
+                                       :class="isOwner(u.id) ? 'bg-gray-50' : ''">
+                                    <input type="checkbox"
+                                           :checked="isOwner(u.id) || sharingForm.user_ids.includes(u.id)"
+                                           :disabled="isOwner(u.id)"
+                                           @change="toggleShare(u.id)" />
+                                    <span class="text-sm">{{ u.name }}</span>
+                                    <span v-if="isOwner(u.id)" class="text-xs text-gray-400 italic">(owner — always shared)</span>
+                                </label>
+                            </div>
+                            <div class="flex justify-end">
+                                <button type="button" @click="saveSharing" :disabled="sharingForm.processing"
+                                        class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700 disabled:opacity-50">Save sharing</button>
+                            </div>
                         </div>
 
                         <!-- Timeline Tab — unified deal activity feed (xDeskPro parity) -->

@@ -184,6 +184,9 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::post  ('deals/{deal}/vehicle-return',                 [\App\Http\Controllers\VehicleReturnController::class, 'store'])->name('deals.vehicle-return.store');
         Route::delete('deals/{deal}/vehicle-return/{vehicleReturn}', [\App\Http\Controllers\VehicleReturnController::class, 'destroy'])->name('deals.vehicle-return.destroy');
 
+        // Internal Sharing (xDeskPro Sharing tab)
+        Route::put('deals/{deal}/sharing', [\App\Http\Controllers\DealShareController::class, 'update'])->name('deals.sharing.update');
+
         // Deal sub-actions
         Route::post('deals/{deal}/tasks/{task}', [DealController::class, 'completeTask'])->name('deals.task');
         Route::post('deals/{deal}/tasks/{task}/due-date', [DealController::class, 'updateTaskDueDate'])->name('deals.task.due-date');
