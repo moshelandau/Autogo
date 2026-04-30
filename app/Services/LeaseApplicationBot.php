@@ -607,8 +607,9 @@ class LeaseApplicationBot
                     $collected[$retryKey] = $retries + 1;
                     $session->update(['collected' => $collected, 'last_inbound_at' => now()]);
                     $this->reply($session->phone,
-                        "I couldn't read your license clearly — looks blurry, partially cut off, or the lighting is off. " .
-                        "Please send a sharper photo of the FRONT, with the WHOLE license visible (all four corners) and good lighting."
+                        "I need the FULL photo of your license — looks like part of it is cut off or covered. " .
+                        "Please send a photo where the WHOLE license is visible: no fingers or thumbs covering any part, " .
+                        "all four corners showing, and the entire card filling the frame."
                     );
                     return true; // stay on same step
                 }
