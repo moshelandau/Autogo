@@ -764,12 +764,12 @@ class LeaseApplicationBot
                 try {
                     $resp = app(\App\Services\AiClient::class)->messages([
                         'model' => 'claude-sonnet-4-5', 'max_tokens' => 800, 'temperature' => 0,
-                        'system' => 'OCR US driver licenses. Output VALID JSON only.',
+                        'system' => 'OCR US driver licenses. Output VALID JSON only. Be especially careful with DIGITS in the street number, DL number, ZIP, and dates — re-read each digit (1 vs 7, 0 vs 8/9, 3 vs 8). If any digit is ambiguous, leave the field empty rather than guess.',
                         'messages' => [[
                             'role' => 'user',
                             'content' => [
                                 ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => 'image/jpeg', 'data' => $b64]],
-                                ['type' => 'text', 'text' => 'Extract: { "first_name":"", "last_name":"", "address":"", "city":"", "state":"", "zip":"", "drivers_license_number":"", "dl_state":"", "dl_expiration":"YYYY-MM-DD", "date_of_birth":"YYYY-MM-DD" }. Empty string if missing.'],
+                                ['type' => 'text', 'text' => 'Extract: { "first_name":"", "last_name":"", "address":"", "city":"", "state":"", "zip":"", "drivers_license_number":"", "dl_state":"", "dl_expiration":"YYYY-MM-DD", "date_of_birth":"YYYY-MM-DD" }. Empty string if any digit is unreadable. Address: street + unit only (no city/state/zip).'],
                             ],
                         ]],
                     ]);
