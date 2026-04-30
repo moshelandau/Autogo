@@ -1,7 +1,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router, useForm } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, nextTick } from 'vue';
 import SmsButton from '@/Components/SmsButton.vue';
 import CustomerMessages from '@/Components/CustomerMessages.vue';
 import NotesPanel from '@/Components/Notes/NotesPanel.vue';
@@ -14,6 +14,22 @@ const props = defineProps({
 });
 
 const tab = ref('overview');
+
+// Deep-link from the bell — /customers/X?tab=notes#note-Y opens the Notes
+// tab and scrolls to the specific note.
+onMounted(() => {
+    const params = new URLSearchParams(window.location.search);
+    const wantedTab = params.get('tab');
+    if (wantedTab && ['overview','notes','documents','messages','history'].includes(wantedTab)) {
+        tab.value = wantedTab;
+    }
+    if (window.location.hash) {
+        nextTick(() => {
+            const target = document.querySelector(window.location.hash);
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+    }
+});
 
 // ── Document upload ───────────────────────────────────────
 const upload = useForm({ type: 'drivers_license_front', label: '', expires_at: '', file: null });
