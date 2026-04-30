@@ -11,18 +11,36 @@ class LeaseApplicationSession extends Model
 {
     protected $fillable = [
         'phone', 'flow', 'current_step', 'collected', 'approvals',
-        'customer_id', 'deal_id',
+        'customer_id', 'deal_id', 'web_token',
+        'web_otp_hash', 'web_otp_expires_at', 'web_verified_at', 'web_first_visited_at',
         'last_inbound_at', 'completed_at', 'aborted_at',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $session) {
+            if (empty($session->web_token)) {
+                $session->web_token = \Illuminate\Support\Str::random(40);
+            }
+        });
+    }
+
+    public function getApplyUrlAttribute(): string
+    {
+        return rtrim(config('app.url', 'https://app.autogoco.com'), '/') . '/apply/' . $this->web_token;
+    }
 
     protected function casts(): array
     {
         return [
-            'collected'       => 'array',
-            'approvals'       => 'array',
-            'last_inbound_at' => 'datetime',
-            'completed_at'    => 'datetime',
-            'aborted_at'      => 'datetime',
+            'collected'           => 'array',
+            'approvals'           => 'array',
+            'last_inbound_at'     => 'datetime',
+            'completed_at'        => 'datetime',
+            'aborted_at'          => 'datetime',
+            'web_otp_expires_at'   => 'datetime',
+            'web_verified_at'      => 'datetime',
+            'web_first_visited_at' => 'datetime',
         ];
     }
 
