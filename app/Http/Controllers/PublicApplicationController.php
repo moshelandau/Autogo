@@ -344,29 +344,87 @@ class PublicApplicationController extends Controller
             return back()->withErrors(['license_front' => 'Pick at least one side to upload.']);
         }
 
-        // Process front first (if uploaded), then back. Each side flows
-        // through the bot's image-step handler — same OCR, verify, diff,
-        // advance, SMS-reply pipeline as the SMS path. Bot decides what
-        // to text the customer next based on the outcome.
+        // Process front first (if uploaded), then back. Each side either
+        // flows through the bot pipeline (if session is currently AT or
+        // BEFORE that license step) or just saves the file as a metadata
+        // update (if session is already past it — uploading a fresh
+        // license while at a later step shouldn't drag the bot backward).
         $customer = $session->customer;
+        $stageOrder = $this->stageOrder($session);
+
         if ($request->hasFile('license_front')) {
             $url = $this->saveAndUrl($request->file('license_front'), $session);
-            $session->update(['current_step' => 'license_image_front']);
-            $bot->handleInbound($session->phone, '', $customer, [$url]);
+            $this->routeOrSaveLicense($session, $bot, $customer, $url, 'license_image_front', $stageOrder);
             $session = $session->fresh();
         }
         if ($request->hasFile('license_back')) {
             $url = $this->saveAndUrl($request->file('license_back'), $session);
-            // Only force back step if not already past it (e.g., front
-            // succeeded and bot already advanced). Otherwise keep wherever
-            // the bot put us.
-            if ($session->current_step === 'license_image_front') {
-                $session->update(['current_step' => 'license_image_back']);
-            }
-            $bot->handleInbound($session->phone, '', $customer, [$url]);
+            $this->routeOrSaveLicense($session, $bot, $customer, $url, 'license_image_back', $stageOrder);
         }
 
         return redirect()->route('public.apply.done', ['token' => $token]);
+    }
+
+    /**
+     * If the session's current step is at or before the target license
+     * step, hand off to the bot — same OCR/verify/diff/advance/SMS path
+     * the SMS upload uses. Otherwise (session is already past licenses,
+     * customer is just uploading fresh), save the file + create the
+     * CustomerDocument without rewinding the step.
+     */
+    private function routeOrSaveLicense(LeaseApplicationSession $session, LeaseApplicationBot $bot, ?\App\Models\Customer $customer, string $url, string $targetStep, array $stageOrder): void
+    {
+        $currentIdx = $stageOrder[$session->current_step] ?? PHP_INT_MAX;
+        $targetIdx  = $stageOrder[$targetStep] ?? 0;
+
+        if ($currentIdx <= $targetIdx) {
+            // Session is at or before this license step — let the bot run
+            // the full pipeline (which will also advance the step).
+            $session->update(['current_step' => $targetStep, 'last_inbound_at' => now()]);
+            $bot->handleInbound($session->phone, '', $customer, [$url]);
+            return;
+        }
+
+        // Session is past licenses — just record the file. Don't regress.
+        $side = str_contains($targetStep, 'back') ? 'back' : 'front';
+        $localPath = parse_url($url, PHP_URL_PATH);
+        $localPath = ltrim(str_replace('/storage/', '', (string) $localPath), '/');
+
+        $collected = $session->collected ?? [];
+        $collected['license_image_' . $side . '_path'] = $localPath;
+        $collected['license_image_' . $side . '_url']  = $url;
+        $session->update(['collected' => $collected, 'last_inbound_at' => now()]);
+
+        if ($customer) {
+            \App\Models\CustomerDocument::firstOrCreate(
+                ['customer_id' => $customer->id, 'path' => $localPath],
+                [
+                    'type'          => 'drivers_license_' . $side,
+                    'label'         => trim(($collected['first_name'] ?? '') . ' ' . ($collected['last_name'] ?? '') . " ({$side})", ' '),
+                    'disk'          => 'public',
+                    'original_name' => basename($localPath),
+                    'mime_type'     => 'image/jpeg',
+                    'uploaded_by'   => null,
+                ]
+            );
+        }
+    }
+
+    /**
+     * Build a stage-order map for the session's flow so we can compare
+     * 'is current_step at-or-before target_step' without hardcoding the
+     * order. Key = step name, value = position in the flow.
+     */
+    private function stageOrder(LeaseApplicationSession $session): array
+    {
+        $bot = app(LeaseApplicationBot::class);
+        $ref = new \ReflectionClass($bot);
+        $m = $ref->getMethod('stepsFor');
+        $m->setAccessible(true);
+        $steps = $m->invoke($bot, $session->flow);
+        $order = [];
+        foreach ($steps as $i => $s) $order[$s['key']] = $i;
+        return $order;
     }
 
     /**
