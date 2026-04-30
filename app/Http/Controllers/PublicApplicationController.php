@@ -175,12 +175,15 @@ class PublicApplicationController extends Controller
         // License uploads route through the bot's image pipeline so they
         // get OCR + side check + obstruction detection + diff confirmation
         // (same as SMS path). Bot SMSes the customer about the outcome.
+        // BUT only if the session is at-or-before the license step — if
+        // the customer is already past licenses, just save the file. Don't
+        // regress the bot back to "please send your license."
+        $stageOrder = $this->stageOrder($session);
         foreach (['front' => 'license_front', 'back' => 'license_back'] as $side => $field) {
             if (!$request->hasFile($field)) continue;
             $url = $this->saveAndUrl($request->file($field), $session);
             $stepKey = 'license_image_' . $side;
-            $session->update(['current_step' => $stepKey, 'last_inbound_at' => now()]);
-            $bot->handleInbound($session->phone, '', $session->customer, [$url]);
+            $this->routeOrSaveLicense($session, $bot, $session->customer, $url, $stepKey, $stageOrder);
             $session = $session->fresh();
         }
         // Re-merge text fields. Bot only handled image uploads above; the
@@ -269,9 +272,10 @@ class PublicApplicationController extends Controller
             // OCR, side-check, obstruction-detection, diff-confirmation,
             // step-advance, SMS-reply that SMS uploads get. Bot decides
             // the next message to the customer based on the outcome.
+            // BUT if the session is past this step, just save the file —
+            // don't regress the customer back to it.
             $url = $this->saveAndUrl($request->file('file'), $session);
-            $session->update(['current_step' => $stepKey, 'last_inbound_at' => now()]);
-            $bot->handleInbound($session->phone, '', $session->customer, [$url]);
+            $this->routeOrSaveLicense($session, $bot, $session->customer, $url, $stepKey, $this->stageOrder($session));
         } else {
             $request->validate(['value' => 'required|string|max:255']);
             // Text input — route through the bot the same way the SMS
