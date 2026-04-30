@@ -895,6 +895,50 @@ class LeaseApplicationBot
         }, $step['prompt']);
     }
 
+    /**
+     * After a deal is finalized from a bot intake, generate every stage's
+     * task tree (so staff sees the full pipeline) and pre-mark the ones
+     * whose intent we've clearly satisfied. Doesn't touch tasks that
+     * still need human action — those stay open in the kanban.
+     *
+     * Auto-completes:
+     *   Lead   → "Find vehicle match & send quote" stays open (staff
+     *            still needs to send a real quote to the lender).
+     *            Customer-preferences capture is implicit.
+     *   Application → "Receive full application + DL front + back" if
+     *            license front + back are on file. The other application
+     *            tasks (run soft pull, send to dealer) stay open.
+     */
+    private function autoCompleteTasks(Deal $deal, array $collected): void
+    {
+        // Generate the canonical task list for every active stage so the
+        // tree is fully populated. firstOrCreate keeps it idempotent.
+        foreach (Deal::STAGES as $stage) {
+            if ($stage === 'lost') continue;
+            $deal->generateTasksForStage($stage);
+        }
+        $deal->refresh();
+
+        $hasFrontLicense = !empty($collected['license_image_front_path']);
+        $hasBackLicense  = !empty($collected['license_image_back_path']);
+
+        $autoCompleteByName = [
+            // Application — license docs received, full app submitted via bot
+            "Receive full application + driver's license (front + back)" =>
+                $hasFrontLicense && $hasBackLicense,
+        ];
+
+        foreach ($deal->tasks as $task) {
+            if (!empty($autoCompleteByName[$task->name]) && !$task->is_completed) {
+                $task->update([
+                    'is_completed' => true,
+                    'completed_at' => now(),
+                    'notes'        => 'Auto-completed from bot intake.',
+                ]);
+            }
+        }
+    }
+
     private function normalize(string $key, string $value): string
     {
         $v = trim($value);
@@ -1158,17 +1202,34 @@ class LeaseApplicationBot
         $session->customer_id = $customer->id;
 
         if (in_array($session->flow, ['lease', 'finance'], true)) {
+            // Decide initial stage based on what the customer actually
+            // submitted — a fully-completed application with license front,
+            // back, and core fields jumps straight to 'submission' (ready
+            // to send to dealer); a partial gets 'application'.
+            $hasLicense = !empty($c['license_image_front_path']) && !empty($c['license_image_back_path']);
+            $hasCore    = !empty($c['date_of_birth']) && !empty($c['address']) && !empty($c['employer']);
+            $stage      = ($hasLicense && $hasCore) ? 'submission' : 'application';
+
             $deal = Deal::create([
                 'deal_number'  => Deal::generateDealNumber(),
                 'customer_id'  => $customer->id,
                 'payment_type' => $session->flow === 'finance' ? 'finance' : 'lease',
-                'stage'        => 'application',
+                'stage'        => $stage,
                 'priority'     => 'medium',
                 'notes'        => $this->buildNote($session->flow, $c),
             ]);
             $session->deal_id = $deal->id;
+
+            // Auto-mark tasks the customer completed. Generates the full
+            // task tree for stages we passed, then completes the ones
+            // whose intent the bot has clearly satisfied — license
+            // captured, application received, etc. Staff still sees
+            // every task in the kanban so they know what's left.
+            $this->autoCompleteTasks($deal, $c);
+
             $session->update(['completed_at' => now()]);
-            $this->reply($session->phone, "Got it — your application is in. A team member will reach out shortly.");
+            $stageLabel = ucfirst($stage);
+            $this->reply($session->phone, "Got it — your application is in. We've moved you to the {$stageLabel} stage. A team member will reach out shortly.");
         } elseif (in_array($session->flow, ['towing', 'bodyshop'], true)) {
             // Towing + Bodyshop don't have a strict structured target yet.
             // Save as a tagged note on the customer + complete the session;
