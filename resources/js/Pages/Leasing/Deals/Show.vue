@@ -43,7 +43,7 @@ const activeTab = ref('summary');
 onMounted(() => {
     const params = new URLSearchParams(window.location.search);
     const wantedTab = params.get('tab');
-    if (wantedTab && ['summary','tasks','workflow','calculator','quotes','credit','notes','documents','messages','timeline'].includes(wantedTab)) {
+    if (wantedTab && ['summary','tasks','workflow','calculator','quotes','credit','notes','documents','vehicle_return','messages','timeline'].includes(wantedTab)) {
         activeTab.value = wantedTab;
     }
     if (window.location.hash) {
@@ -119,6 +119,46 @@ function makePicker(routeName, dealField) {
 }
 const dealerPicker = makePicker('leasing.dealers.typeahead', 'dealer_id');
 const lienholderPicker = makePicker('leasing.lienholders.typeahead', 'lienholder_id');
+
+// ── Vehicle Return form (xDeskPro Vehicle Return tab) ──
+const vrForm = useForm({
+    return_type: 'trade_in',
+    vin: '', year: null, make: '', model: '', trim: '', color: '',
+    odometer: null, condition: '',
+    payoff_amount: null, allowance: null, acv: null,
+    payoff_to: '', payoff_good_through: '',
+    current_plate: '', plate_transfer: false, notes: '',
+});
+const seedVrForm = () => {
+    const vr = d.vehicle_return;
+    if (!vr) {
+        vrForm.reset();
+        return;
+    }
+    vrForm.return_type = vr.return_type;
+    vrForm.vin = vr.vin ?? '';
+    vrForm.year = vr.year;
+    vrForm.make = vr.make ?? '';
+    vrForm.model = vr.model ?? '';
+    vrForm.trim = vr.trim ?? '';
+    vrForm.color = vr.color ?? '';
+    vrForm.odometer = vr.odometer;
+    vrForm.condition = vr.condition ?? '';
+    vrForm.payoff_amount = vr.payoff_amount;
+    vrForm.allowance = vr.allowance;
+    vrForm.acv = vr.acv;
+    vrForm.payoff_to = vr.payoff_to ?? '';
+    vrForm.payoff_good_through = vr.payoff_good_through ? String(vr.payoff_good_through).slice(0,10) : '';
+    vrForm.current_plate = vr.current_plate ?? '';
+    vrForm.plate_transfer = !!vr.plate_transfer;
+    vrForm.notes = vr.notes ?? '';
+};
+watch(() => d.vehicle_return, seedVrForm, { immediate: true });
+const saveVehicleReturn = () => vrForm.post(route('leasing.deals.vehicle-return.store', d.id), { preserveScroll: true });
+const removeVehicleReturn = () => {
+    if (!d.vehicle_return || !confirm('Remove this vehicle return?')) return;
+    router.delete(route('leasing.deals.vehicle-return.destroy', [d.id, d.vehicle_return.id]), { preserveScroll: true });
+};
 const allStages = ['lead', 'quote', 'application', 'submission', 'pending', 'finalize', 'outstanding', 'complete'];
 
 // Required document checklist on the Documents tab. Sourced from
@@ -1366,6 +1406,101 @@ const saveCalcAsQuote = () => {
                                               subject-type="App\\Models\\Deal"
                                               :subject-id="d.id" />
                             <div v-else class="text-center text-gray-400 py-8">No customer linked to this deal.</div>
+                        </div>
+
+                        <!-- Vehicle Return Tab — trade-in / lease-return capture -->
+                        <div v-if="activeTab === 'vehicle_return'" class="space-y-4">
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-sm font-semibold text-gray-700">Vehicle Return</h3>
+                                <button v-if="d.vehicle_return" type="button" @click="removeVehicleReturn"
+                                        class="text-xs text-red-600 hover:underline">Remove</button>
+                            </div>
+                            <form @submit.prevent="saveVehicleReturn" class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                                <div>
+                                    <label class="block text-xs text-gray-500">Type</label>
+                                    <select v-model="vrForm.return_type" class="mt-1 block w-full border-gray-300 rounded-md text-sm">
+                                        <option value="trade_in">Trade-in</option>
+                                        <option value="lease_return">Lease return</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">VIN</label>
+                                    <input v-model="vrForm.vin" maxlength="17" class="mt-1 block w-full border-gray-300 rounded-md text-sm uppercase" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">Year</label>
+                                    <input v-model.number="vrForm.year" type="number" min="1900" max="2099" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">Color</label>
+                                    <input v-model="vrForm.color" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">Make</label>
+                                    <input v-model="vrForm.make" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">Model</label>
+                                    <input v-model="vrForm.model" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">Trim</label>
+                                    <input v-model="vrForm.trim" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">Odometer</label>
+                                    <input v-model.number="vrForm.odometer" type="number" min="0" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">Condition</label>
+                                    <select v-model="vrForm.condition" class="mt-1 block w-full border-gray-300 rounded-md text-sm">
+                                        <option value="">—</option>
+                                        <option value="excellent">Excellent</option>
+                                        <option value="good">Good</option>
+                                        <option value="fair">Fair</option>
+                                        <option value="poor">Poor</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">Payoff Amount</label>
+                                    <input v-model.number="vrForm.payoff_amount" type="number" step="0.01" min="0" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">Allowance</label>
+                                    <input v-model.number="vrForm.allowance" type="number" step="0.01" min="0" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">ACV</label>
+                                    <input v-model.number="vrForm.acv" type="number" step="0.01" min="0" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                </div>
+                                <div class="md:col-span-2">
+                                    <label class="block text-xs text-gray-500">Payoff to (bank/leasing co.)</label>
+                                    <input v-model="vrForm.payoff_to" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">Payoff good through</label>
+                                    <input v-model="vrForm.payoff_good_through" type="date" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">Current plate</label>
+                                    <input v-model="vrForm.current_plate" class="mt-1 block w-full border-gray-300 rounded-md text-sm uppercase" />
+                                </div>
+                                <div class="flex items-end">
+                                    <label class="inline-flex items-center gap-2 text-sm">
+                                        <input v-model="vrForm.plate_transfer" type="checkbox" /> Transfer plate to new vehicle
+                                    </label>
+                                </div>
+                                <div class="md:col-span-4">
+                                    <label class="block text-xs text-gray-500">Notes</label>
+                                    <textarea v-model="vrForm.notes" rows="2" class="mt-1 block w-full border-gray-300 rounded-md text-sm"></textarea>
+                                </div>
+                                <div class="md:col-span-4 flex justify-end">
+                                    <button type="submit" :disabled="vrForm.processing"
+                                            class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700 disabled:opacity-50">
+                                        {{ d.vehicle_return ? 'Save changes' : 'Save vehicle return' }}
+                                    </button>
+                                </div>
+                            </form>
                         </div>
 
                         <!-- Timeline Tab — unified deal activity feed (xDeskPro parity) -->
