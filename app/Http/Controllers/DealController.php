@@ -278,6 +278,32 @@ class DealController extends Controller
         return back()->with('success', 'Quote selected.');
     }
 
+    public function updateQuote(Request $request, Deal $deal, int $quoteId)
+    {
+        $quote = $deal->quotes()->findOrFail($quoteId);
+        $validated = $request->validate([
+            'lender_id'        => 'nullable|exists:lenders,id',
+            'payment_type'     => 'required|in:lease,finance,one_pay,balloon,cash',
+            'term'             => 'nullable|integer',
+            'mileage_per_year' => 'nullable|integer',
+            'monthly_payment'  => 'nullable|numeric',
+            'das'              => 'nullable|numeric',
+            'sell_price'       => 'nullable|numeric',
+            'msrp'             => 'nullable|numeric',
+            'rebates'          => 'nullable|numeric',
+            'notes'            => 'nullable|string',
+        ]);
+        $quote->update($validated);
+        return back()->with('success', 'Quote updated.');
+    }
+
+    public function deleteQuote(Deal $deal, int $quoteId)
+    {
+        $quote = $deal->quotes()->findOrFail($quoteId);
+        $quote->delete();
+        return back()->with('success', 'Quote deleted.');
+    }
+
     public function decodeVin(Request $request)
     {
         $request->validate(['vin' => 'required|string|size:17']);

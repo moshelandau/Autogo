@@ -151,6 +151,8 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::post('deals/{deal}/note', [DealController::class, 'addNote'])->name('deals.note');
         Route::post('deals/{deal}/quote', [DealController::class, 'addQuote'])->name('deals.quote');
         Route::post('deals/{deal}/quotes/{quote}/select', [DealController::class, 'selectQuote'])->name('deals.select-quote');
+        Route::put   ('deals/{deal}/quotes/{quote}', [DealController::class, 'updateQuote'])->name('deals.update-quote');
+        Route::delete('deals/{deal}/quotes/{quote}', [DealController::class, 'deleteQuote'])->name('deals.delete-quote');
         Route::post('deals/{deal}/credit-pull', [DealController::class, 'pullCredit'])->name('deals.credit-pull');
 
         // Editable web-form version of the verified PDF application + email to dealer

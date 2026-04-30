@@ -191,6 +191,39 @@ const completeTask = (taskId) => {
 const transitionTo = (stage) => router.post(route('leasing.deals.transition', d.id), { stage });
 const selectQuote = (quoteId) => router.post(route('leasing.deals.select-quote', { deal: d.id, quote: quoteId }));
 
+// Inline edit / delete on each quote card
+const editingQuoteId = ref(null);
+const editQuoteForm = useForm({
+    lender_id: '', payment_type: 'lease', term: '', mileage_per_year: '',
+    monthly_payment: '', das: '', sell_price: '', msrp: '', rebates: '', notes: '',
+});
+const beginEditQuote = (q) => {
+    editingQuoteId.value = q.id;
+    editQuoteForm.lender_id        = q.lender_id ?? '';
+    editQuoteForm.payment_type     = q.payment_type || 'lease';
+    editQuoteForm.term             = q.term ?? '';
+    editQuoteForm.mileage_per_year = q.mileage_per_year ?? '';
+    editQuoteForm.monthly_payment  = q.monthly_payment ?? '';
+    editQuoteForm.das              = q.das ?? '';
+    editQuoteForm.sell_price       = q.sell_price ?? '';
+    editQuoteForm.msrp             = q.msrp ?? '';
+    editQuoteForm.rebates          = q.rebates ?? '';
+    editQuoteForm.notes            = q.notes ?? '';
+    editQuoteForm.clearErrors();
+};
+const cancelEditQuote = () => { editingQuoteId.value = null; editQuoteForm.clearErrors(); };
+const saveEditQuote = () => {
+    if (!editingQuoteId.value) return;
+    editQuoteForm.put(route('leasing.deals.update-quote', { deal: d.id, quote: editingQuoteId.value }), {
+        preserveScroll: true,
+        onSuccess: () => { editingQuoteId.value = null; },
+    });
+};
+const deleteQuote = (quoteId) => {
+    if (!confirm('Delete this quote?')) return;
+    router.delete(route('leasing.deals.delete-quote', { deal: d.id, quote: quoteId }), { preserveScroll: true });
+};
+
 const priorityColors = { low: 'bg-green-100 text-green-800', medium: 'bg-yellow-100 text-yellow-800', high: 'bg-red-100 text-red-800' };
 
 // Calculator state
@@ -392,16 +425,88 @@ const saveCalcAsQuote = () => {
                                         <span class="font-bold text-lg">{{ fmt(q.monthly_payment) }}/mo</span>
                                         <span class="text-sm text-gray-500 ml-2">{{ q.term }}mo / {{ q.mileage_per_year?.toLocaleString() }}mi</span>
                                     </div>
-                                    <div class="flex gap-2">
+                                    <div class="flex gap-2 items-center">
                                         <span v-if="q.is_selected" class="text-xs bg-green-600 text-white px-2 py-1 rounded">Selected</span>
-                                        <button v-else @click="selectQuote(q.id)" class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200">Select</button>
+                                        <button v-else type="button" @click="selectQuote(q.id)"
+                                                class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200">Select</button>
+                                        <button type="button" @click="beginEditQuote(q)"
+                                                class="text-xs bg-gray-100 text-gray-700 px-2 py-1 rounded hover:bg-gray-200">Edit</button>
+                                        <button type="button" @click="deleteQuote(q.id)"
+                                                class="text-xs bg-red-50 text-red-700 px-2 py-1 rounded hover:bg-red-100">Delete</button>
                                     </div>
                                 </div>
-                                <div class="grid grid-cols-4 gap-2 text-xs text-gray-500">
+                                <div v-if="editingQuoteId !== q.id" class="grid grid-cols-4 gap-2 text-xs text-gray-500">
                                     <div>Lender: {{ q.lender?.name || '-' }}</div>
                                     <div>DAS: {{ fmt(q.das) }}</div>
                                     <div>Sell: {{ fmt(q.sell_price) }}</div>
                                     <div>Type: <span class="capitalize">{{ q.payment_type }}</span></div>
+                                </div>
+
+                                <!-- Inline edit form for this quote -->
+                                <div v-else class="mt-3 border-t pt-3 space-y-3">
+                                    <div v-if="Object.keys(editQuoteForm.errors).length"
+                                         class="border border-red-300 bg-red-50 text-red-800 rounded-md p-2 text-xs space-y-0.5">
+                                        <div class="font-semibold">Couldn't update the quote:</div>
+                                        <div v-for="(msg, field) in editQuoteForm.errors" :key="field">• {{ msg }}</div>
+                                    </div>
+                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Type *</label>
+                                            <select v-model="editQuoteForm.payment_type" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs">
+                                                <option value="lease">Lease</option>
+                                                <option value="finance">Finance</option>
+                                                <option value="one_pay">One-Pay</option>
+                                                <option value="balloon">Balloon</option>
+                                                <option value="cash">Cash</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Lender</label>
+                                            <select v-model="editQuoteForm.lender_id" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs">
+                                                <option value="">—</option>
+                                                <option v-for="l in lenders" :key="l.id" :value="l.id">{{ l.name }}</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Monthly $</label>
+                                            <input v-model="editQuoteForm.monthly_payment" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Term (mo)</label>
+                                            <input v-model="editQuoteForm.term" type="number" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Miles / year</label>
+                                            <select v-model.number="editQuoteForm.mileage_per_year" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs">
+                                                <option value="">—</option>
+                                                <option v-for="m in [7500, 10000, 12000, 15000, 18000, 20000]" :key="m" :value="m">{{ m.toLocaleString() }}</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">DAS $</label>
+                                            <input v-model="editQuoteForm.das" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Sell $</label>
+                                            <input v-model="editQuoteForm.sell_price" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">MSRP $</label>
+                                            <input v-model="editQuoteForm.msrp" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Rebates $</label>
+                                            <input v-model="editQuoteForm.rebates" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <button type="button" @click="saveEditQuote" :disabled="editQuoteForm.processing"
+                                                class="px-3 py-1.5 bg-indigo-600 text-white rounded-md text-xs hover:bg-indigo-700 disabled:opacity-50">
+                                            {{ editQuoteForm.processing ? 'Saving…' : 'Save' }}
+                                        </button>
+                                        <button type="button" @click="cancelEditQuote"
+                                                class="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-md text-xs hover:bg-gray-200">Cancel</button>
+                                    </div>
                                 </div>
                             </div>
 
