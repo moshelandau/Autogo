@@ -211,9 +211,11 @@ const renderBody = (body) => {
                 </div>
 
                 <form @submit.prevent="submitReply(n)" class="flex gap-2 pt-1 items-start">
-                    <MentionInput v-model="replyDraft[n.id]" :multiline="true" :rows="2"
-                                  placeholder="Write a reply… type @ to tag a coworker"
-                                  input-class="w-full border-gray-300 rounded-md text-sm" />
+                    <div class="flex-1 min-w-0">
+                        <MentionInput v-model="replyDraft[n.id]" :multiline="true" :rows="2"
+                                      placeholder="Write a reply… type @ to tag a coworker"
+                                      input-class="w-full border-gray-300 rounded-md text-sm" />
+                    </div>
                     <button type="submit" class="px-3 py-1.5 bg-indigo-600 text-white rounded-md text-xs hover:bg-indigo-700 shrink-0 self-start">Reply</button>
                 </form>
             </div>
