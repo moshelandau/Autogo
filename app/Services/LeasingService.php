@@ -33,16 +33,48 @@ class LeasingService
 
     public function getDealsByStage(): array
     {
+        // Pre-compute unread SMS counts grouped by phone (last 10 digits) in a
+        // single aggregate query. Avoids N+1 of querying communication_logs
+        // once per deal. Status='received' = unread (set by webhook on inbound,
+        // cleared when staff opens the thread).
+        $unreadByPhone = \App\Models\CommunicationLog::query()
+            ->where('channel', 'sms')->where('direction', 'inbound')->where('status', 'received')
+            ->selectRaw("substring(regexp_replace(\"from\", '\\D', '', 'g') from '.{1,10}$') AS last10, COUNT(*) AS cnt")
+            ->groupBy('last10')
+            ->pluck('cnt', 'last10')
+            ->toArray();
+
+        $last10 = fn ($phone) => $phone ? substr(preg_replace('/\D/', '', $phone), -10) : null;
+
         $stages = [];
         foreach (Deal::STAGES as $stage) {
             if ($stage === 'lost') continue;
             // sort_order NULL ⇒ -1 ⇒ floats to top (new, not yet hand-sorted).
             // Tiebreak by updated_at so freshly-created NULLs cluster newest-first.
-            $stages[$stage] = Deal::with(['customer', 'salesperson', 'lender', 'incompleteTasks'])
+            $deals = Deal::with(['customer.phones', 'salesperson', 'lender', 'incompleteTasks'])
                 ->where('stage', $stage)
                 ->orderByRaw('COALESCE(sort_order, -1) ASC')
                 ->orderByDesc('updated_at')
                 ->get();
+
+            foreach ($deals as $deal) {
+                $count = 0;
+                $cust = $deal->customer;
+                if ($cust) {
+                    // Customer can have multiple phones. Sum unread across all of them.
+                    $candidates = collect([$cust->phone, $cust->secondary_phone])
+                        ->merge($cust->phones->pluck('phone'))
+                        ->filter()
+                        ->map($last10)
+                        ->filter()
+                        ->unique();
+                    foreach ($candidates as $p) {
+                        $count += (int) ($unreadByPhone[$p] ?? 0);
+                    }
+                }
+                $deal->unread_sms_count = $count;
+            }
+            $stages[$stage] = $deals;
         }
         return $stages;
     }

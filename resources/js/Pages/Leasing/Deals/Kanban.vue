@@ -26,6 +26,17 @@ const stageColors = {
 
 const priorityColors = { low: 'bg-green-100 text-green-800', medium: 'bg-yellow-100 text-yellow-800', high: 'bg-red-100 text-red-800' };
 
+// Total deals with at least one unread SMS — surfaced as a stat tile so
+// staff can see "I have 3 conversations to respond to" at a glance and
+// then scan red-bordered cards to find them.
+const dealsWithUnreadCount = computed(() => {
+    let n = 0;
+    for (const deals of Object.values(props.stages || {})) {
+        for (const d of (deals || [])) if (d.unread_sms_count) n++;
+    }
+    return n;
+});
+
 const filteredStages = computed(() => {
     const q = search.value.trim().toLowerCase();
     if (!q) return props.stages;
@@ -128,6 +139,11 @@ const submit = (dealId, stage, beforeId) => {
                     <div class="text-lg font-bold text-green-600">{{ stats.won_today }}</div>
                     <div class="text-xs text-gray-500">Won Today</div>
                 </div>
+                <div v-if="dealsWithUnreadCount > 0"
+                     class="bg-red-50 border border-red-300 rounded-lg shadow-sm px-4 py-2 text-center min-w-fit">
+                    <div class="text-lg font-bold text-red-600">💬 {{ dealsWithUnreadCount }}</div>
+                    <div class="text-xs text-red-700">Unread SMS</div>
+                </div>
             </div>
 
             <div class="px-4 pb-1 board-scroller overflow-x-auto flex-1 min-h-0">
@@ -158,10 +174,18 @@ const submit = (dealId, stage, beforeId) => {
                                  class="cursor-grab active:cursor-grabbing transition"
                                  :class="dragOverCard === deal.id ? 'pt-3 border-t-2 border-indigo-500' : ''">
                                 <Link :href="route('leasing.deals.show', deal.id)" :draggable="false"
-                                      class="block bg-white rounded-lg shadow-sm p-3 hover:shadow-md transition-shadow border border-gray-100">
+                                      class="block bg-white rounded-lg shadow-sm p-3 hover:shadow-md transition-shadow border"
+                                      :class="deal.unread_sms_count ? 'border-red-400 ring-2 ring-red-200' : 'border-gray-100'">
                                     <div class="flex justify-between items-start mb-2">
                                         <span class="text-xs font-mono text-gray-400">#{{ deal.deal_number }}</span>
-                                        <span class="px-1.5 py-0.5 text-xs rounded capitalize" :class="priorityColors[deal.priority]">{{ deal.priority }}</span>
+                                        <div class="flex items-center gap-1.5">
+                                            <span v-if="deal.unread_sms_count"
+                                                  title="Unread SMS — open the deal to read"
+                                                  class="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-red-600 text-white">
+                                                💬 {{ deal.unread_sms_count }}
+                                            </span>
+                                            <span class="px-1.5 py-0.5 text-xs rounded capitalize" :class="priorityColors[deal.priority]">{{ deal.priority }}</span>
+                                        </div>
                                     </div>
                                     <div class="font-medium text-sm text-gray-900 mb-1">{{ deal.customer?.first_name }} {{ deal.customer?.last_name }}</div>
                                     <div v-if="deal.vehicle_make" class="text-xs text-gray-500 mb-2">
