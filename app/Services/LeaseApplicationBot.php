@@ -1096,6 +1096,36 @@ class LeaseApplicationBot
     }
 
     /**
+     * Does the customer's free-text correction look like a date? Accepts
+     * 12/27/1985, 12-27-1985, 1985-12-27, "Dec 27 1985" etc. Used to
+     * route DOB corrections to the right field instead of silently
+     * saving them as the address.
+     */
+    private function looksLikeDate(string $text): bool
+    {
+        $text = trim($text);
+        if (preg_match('/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}$/', $text)) return true;        // 12/27/1985, 12-27-85
+        if (preg_match('/^\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2}$/', $text)) return true;          // 1985-12-27
+        if (preg_match('/^[A-Za-z]{3,9}\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{2,4}$/', $text)) return true; // Dec 27 1985
+        return false;
+    }
+
+    /**
+     * Normalize a date-shaped string into YYYY-MM-DD. Returns the
+     * original string unchanged if PHP's date parsing can't make sense
+     * of it (better to save the raw response than to drop it silently).
+     */
+    private function normalizeDate(string $text): string
+    {
+        try {
+            $ts = strtotime($text);
+            return $ts ? date('Y-m-d', $ts) : $text;
+        } catch (\Throwable $e) {
+            return $text;
+        }
+    }
+
+    /**
      * Give-up path for an image step that's failed twice. Saves whatever
      * we have (URL only — no OCR data), flags the session for staff
      * follow-up, and advances to the next applicable step. Sends the
@@ -1160,10 +1190,31 @@ class LeaseApplicationBot
             $licDob  = $extracted['date_of_birth'] ?? null;
             $collected['date_of_birth'] = !empty($fileDob) ? $fileDob : ($licDob ?: ($collected['date_of_birth'] ?? null));
         } else {
-            // Free-text correction — apply to address (most common case).
-            // DOB / name corrections need a proper sub-prompt; we just skip
-            // those here and let downstream validation catch issues.
-            $collected['address'] = trim($body);
+            // Free-text correction — detect what shape it is so we route to
+            // the right field instead of always treating it as an address.
+            // Date-shaped → DOB. Everything else → address.
+            $text = trim($body);
+            if ($this->looksLikeDate($text)) {
+                $collected['date_of_birth'] = $this->normalizeDate($text);
+                // Pull on-file address into collected so we don't lose it
+                $cust = $session->customer;
+                if ($cust) {
+                    foreach (['address','city','state','zip'] as $k) {
+                        if (empty($collected[$k]) && !empty($cust->{$k})) $collected[$k] = $cust->{$k};
+                    }
+                }
+            } else {
+                $collected['address'] = $text;
+                // Carry the license DOB through if on-file is empty —
+                // otherwise an address-only correction silently drops the
+                // extracted DOB (the bug the user just flagged).
+                if (empty($collected['date_of_birth'])) {
+                    $licDob = $extracted['date_of_birth'] ?? null;
+                    $fileDob = $session->customer && $session->customer->date_of_birth
+                        ? $session->customer->date_of_birth->format('Y-m-d') : null;
+                    $collected['date_of_birth'] = $fileDob ?: $licDob ?: null;
+                }
+            }
         }
 
         unset($collected['_pending_identity_confirm']);
