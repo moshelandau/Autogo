@@ -67,11 +67,9 @@ class Deal extends Model
      */
     public const STAGE_TASKS = [
         'lead' => [
-            'Capture preferences (style / budget / miles / passengers / color / brand)',
-            'Find vehicle match',
+            'Find vehicle match & send quote',
         ],
         'quote' => [
-            'Send quote',
             'Follow up for acceptance',
         ],
         'application' => [
