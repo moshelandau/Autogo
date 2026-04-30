@@ -428,6 +428,82 @@ class PublicApplicationController extends Controller
     }
 
     /**
+     * Inline AJAX preview — customer picks a file on the upload page,
+     * we run OCR + verifyLicenseSide on it RIGHT THEN, return JSON the
+     * page uses to show ✓ "Looks good" or ✗ "this is the back, please
+     * send the front" without making them submit and wait for an SMS
+     * reply.
+     *
+     * Stores the file (so a successful preview becomes the actual upload
+     * on submit), but does NOT advance the session step. The submit
+     * handler binds the previewed file by path when it sees the same
+     * one in the form.
+     */
+    public function previewLicense(Request $request, string $token, LeaseApplicationBot $bot)
+    {
+        $session = LeaseApplicationSession::where('web_token', $token)->firstOrFail();
+        if (!$this->isVerified($session)) {
+            return response()->json(['valid' => false, 'reason' => 'Session expired — refresh the page.'], 401);
+        }
+        $request->validate([
+            'side' => 'required|in:front,back',
+            'file' => 'required|file|max:51200|mimetypes:image/jpeg,image/png,image/heic,image/heif,image/webp,image/gif,image/bmp',
+        ]);
+
+        $side = $request->input('side');
+        $path = $request->file('file')->store("lease-bot-uploads/{$session->id}", 'public');
+
+        // Run OCR for front (only side that has structured fields). For
+        // back, run verifyLicenseSide (no OCR data to count).
+        $ref = new \ReflectionClass($bot);
+        $verifyMethod  = $ref->getMethod('verifyLicenseSide');
+        $verifyMethod->setAccessible(true);
+        $verify = $verifyMethod->invoke($bot, $path, $side);
+
+        if ($side === 'front') {
+            // For front: OCR is the gate. If 4+ fields extracted, accept
+            // even if verifier disagrees (verifier was over-rejecting).
+            $ocrMethod = $ref->getMethod('ingestLicenseImage');
+            $ocrMethod->setAccessible(true);
+            $extracted = $ocrMethod->invoke($bot, $session, \Storage::disk('public')->url($path));
+            $countMethod = $ref->getMethod('countOcrFields');
+            $countMethod->setAccessible(true);
+            $count = $countMethod->invoke($bot, $extracted);
+
+            if ($count >= 4) {
+                return response()->json([
+                    'valid'  => true,
+                    'reason' => '',
+                    'preview' => trim(($extracted['first_name'] ?? '') . ' ' . ($extracted['last_name'] ?? '')) ?: 'License read OK',
+                    'path'   => $path,
+                ]);
+            }
+            // OCR weak — fall back to verifier reason if it has one
+            return response()->json([
+                'valid'  => false,
+                'reason' => $verify['reason']
+                    ?: 'Could not read enough fields from this photo (got ' . $count . ' of 6). Please re-take with the WHOLE license clearly visible.',
+                'path'   => $path,
+            ]);
+        }
+
+        // BACK side
+        if (!empty($verify['valid'])) {
+            return response()->json([
+                'valid'  => true,
+                'reason' => '',
+                'preview' => 'Back of license OK',
+                'path'   => $path,
+            ]);
+        }
+        return response()->json([
+            'valid'  => false,
+            'reason' => $verify['reason'] ?: 'Back of license could not be verified — please re-take.',
+            'path'   => $path,
+        ]);
+    }
+
+    /**
      * Save an uploaded file to the lease-bot-uploads/{session_id}/ folder
      * on the public disk and return its full public URL — what the bot
      * expects when handling an "MMS" (it fetches the URL via file_get_contents).

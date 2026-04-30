@@ -40,8 +40,52 @@ const form = useForm({
 const hasFrontUploaded = !!c.license_image_front_path;
 const hasBackUploaded  = !!c.license_image_back_path;
 
-const onPickFront = (e) => { form.license_front = e.target.files[0] || null; };
-const onPickBack  = (e) => { form.license_back  = e.target.files[0] || null; };
+// Inline preview state — file is checked as soon as it's picked, NOT
+// just at submit time. Bad photos surface immediately with a reason.
+const frontCheck = ref({ state: 'idle', reason: '', preview: '' }); // idle|checking|ok|bad
+const backCheck  = ref({ state: 'idle', reason: '', preview: '' });
+const session_token = window.location.pathname.split('/')[2];
+
+const previewLicense = async (side, file, target) => {
+    target.value = { state: 'checking', reason: '', preview: '' };
+    const fd = new FormData();
+    fd.append('side', side);
+    fd.append('file', file);
+    try {
+        const r = await axios.post(`/apply/${session_token}/preview-license`, fd);
+        target.value = {
+            state:   r.data.valid ? 'ok' : 'bad',
+            reason:  r.data.reason || '',
+            preview: r.data.preview || '',
+        };
+    } catch (e) {
+        target.value = {
+            state:  'bad',
+            reason: e.response?.data?.reason || 'Could not check this photo.',
+            preview: '',
+        };
+    }
+};
+
+const onPickFront = (e) => {
+    const f = e.target.files[0] || null;
+    form.license_front = f;
+    if (f) previewLicense('front', f, frontCheck);
+};
+const onPickBack = (e) => {
+    const f = e.target.files[0] || null;
+    form.license_back = f;
+    if (f) previewLicense('back', f, backCheck);
+};
+
+const checkBadge = (check) => {
+    if (check.value.state === 'checking') return { label: 'Checking…', cls: 'text-amber-700' };
+    if (check.value.state === 'ok')       return { label: '✓ ' + (check.value.preview || 'Looks good'), cls: 'text-emerald-700' };
+    if (check.value.state === 'bad')      return { label: '✗ ' + check.value.reason + ' — pick a new photo', cls: 'text-red-700' };
+    return null;
+};
+const frontBadge = computed(() => checkBadge(frontCheck));
+const backBadge  = computed(() => checkBadge(backCheck));
 
 const submit = () => {
     form.post(window.location.pathname, { forceFormData: true });
@@ -157,19 +201,19 @@ onMounted(() => {
                             <label class="block">
                                 <span class="block text-[11px] font-medium text-gray-700 mb-0.5">
                                     License — front
-                                    <span v-if="hasFrontUploaded" class="text-emerald-600 text-[10px] ml-1">✓ on file</span>
+                                    <span v-if="hasFrontUploaded && !form.license_front" class="text-emerald-600 text-[10px] ml-1">✓ on file</span>
                                 </span>
                                 <input name="license_front" type="file" accept="image/*" capture="environment" @change="onPickFront" class="w-full text-xs" />
-                                <span v-if="form.license_front" class="text-[11px] text-emerald-600">{{ form.license_front.name }}</span>
+                                <p v-if="frontBadge" :class="['text-[11px] mt-1', frontBadge.cls]">{{ frontBadge.label }}</p>
                                 <p v-if="form.errors.license_front" class="text-[10px] text-red-600 mt-0.5">{{ form.errors.license_front }}</p>
                             </label>
                             <label class="block">
                                 <span class="block text-[11px] font-medium text-gray-700 mb-0.5">
                                     License — back
-                                    <span v-if="hasBackUploaded" class="text-emerald-600 text-[10px] ml-1">✓ on file</span>
+                                    <span v-if="hasBackUploaded && !form.license_back" class="text-emerald-600 text-[10px] ml-1">✓ on file</span>
                                 </span>
                                 <input name="license_back" type="file" accept="image/*" capture="environment" @change="onPickBack" class="w-full text-xs" />
-                                <span v-if="form.license_back" class="text-[11px] text-emerald-600">{{ form.license_back.name }}</span>
+                                <p v-if="backBadge" :class="['text-[11px] mt-1', backBadge.cls]">{{ backBadge.label }}</p>
                                 <p v-if="form.errors.license_back" class="text-[10px] text-red-600 mt-0.5">{{ form.errors.license_back }}</p>
                             </label>
                         </div>
@@ -268,7 +312,15 @@ onMounted(() => {
                         By submitting you authorize a credit application. Final terms subject to lender approval.
                     </p>
 
-                    <button type="submit" :disabled="form.processing"
+                    <p v-if="(form.license_front && frontCheck.state !== 'ok') || (form.license_back && backCheck.state !== 'ok')"
+                       class="text-xs text-amber-700 bg-amber-50 border border-amber-300 rounded p-2">
+                        License photos need a green ✓ before you can submit. Pick a new file if a side shows an issue.
+                    </p>
+
+                    <button type="submit"
+                            :disabled="form.processing
+                                       || (form.license_front && frontCheck.state !== 'ok')
+                                       || (form.license_back && backCheck.state !== 'ok')"
                             class="w-full px-4 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50">
                         {{ form.processing ? 'Submitting…' : 'Submit Application' }}
                     </button>
