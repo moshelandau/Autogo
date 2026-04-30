@@ -88,7 +88,7 @@ class DealController extends Controller
     public function show(Deal $deal)
     {
         $this->syncCurrentStageTasks($deal);
-        $deal->load(['customer.documents.uploadedBy', 'coSigner.documents', 'salesperson', 'lender', 'insurer', 'dealer', 'lienholder', 'vehicleReturn', 'quotes.lender', 'tasks', 'documents', 'noteThread.user', 'noteThread.assignedUsers', 'noteThread.comments.user', 'noteThread.activities.user']);
+        $deal->load(['customer.documents.uploadedBy', 'coSigner.documents', 'salesperson', 'lender', 'insurer', 'dealer', 'lienholder', 'vehicleReturn', 'sharedWith:id,name', 'quotes.lender', 'tasks', 'documents', 'noteThread.user', 'noteThread.assignedUsers', 'noteThread.comments.user', 'noteThread.activities.user']);
 
         // Credit-pull history for this deal's customer (most-recent first)
         $creditPulls = $deal->customer
@@ -106,6 +106,7 @@ class DealController extends Controller
             'creditPulls' => $creditPulls,
             'creditConfigured' => !empty(config('services.credit700.api_key')),
             'timeline' => app(\App\Services\DealTimelineService::class)->build($deal),
+            'orgUsers' => \App\Models\User::orderBy('name')->get(['id', 'name']),
         ]);
     }
 
