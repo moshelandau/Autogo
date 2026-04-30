@@ -193,6 +193,96 @@ class PublicApplicationController extends Controller
         ]);
     }
 
+    /**
+     * Single-step view — just the one field the bot asked. The bot links
+     * customers here when they reply SECURE on a sensitive step (SSN,
+     * license upload, etc.). Same auth/OTP rules as the full form.
+     */
+    public function showStep(string $token, string $stepKey): Response
+    {
+        $session = LeaseApplicationSession::where('web_token', $token)->firstOrFail();
+
+        if (is_null($session->web_first_visited_at)) {
+            $session->update(['web_first_visited_at' => now(), 'web_verified_at' => now()]);
+        }
+        if (!$this->isVerified($session)) {
+            return Inertia::render('Public/ApplyVerify', [
+                'token' => $token,
+                'phone_hint' => $this->maskPhone($session->phone),
+            ]);
+        }
+
+        $config = $this->stepConfig($stepKey);
+
+        return Inertia::render('Public/ApplyStep', [
+            'token'       => $token,
+            'step_key'    => $stepKey,
+            'label'       => $config['label'],
+            'type'        => $config['type'],
+            'accept'      => $config['accept']  ?? '',
+            'capture'     => $config['capture'] ?? '',
+            'placeholder' => $config['placeholder'] ?? '',
+        ]);
+    }
+
+    public function submitStep(Request $request, string $token, string $stepKey, LeaseApplicationBot $bot)
+    {
+        $session = LeaseApplicationSession::where('web_token', $token)->firstOrFail();
+        if (!$this->isVerified($session)) {
+            return redirect()->route('public.apply.show.step', ['token' => $token, 'step' => $stepKey]);
+        }
+
+        $config = $this->stepConfig($stepKey);
+        $collected = $session->collected ?? [];
+
+        if ($config['type'] === 'file') {
+            $request->validate(['file' => 'required|file|image|max:20480']);
+            $path = $request->file('file')->store("lease-bot-uploads/{$session->id}", 'public');
+            $side = str_contains($stepKey, 'back') ? 'back' : 'front';
+            $collected['license_image_' . $side . '_path'] = $path;
+            $collected['license_image_' . $side . '_url']  = Storage::disk('public')->url($path);
+        } else {
+            $request->validate(['value' => 'required|string|max:255']);
+            $collected[$stepKey] = trim($request->input('value'));
+        }
+
+        $session->collected = $collected;
+        $session->last_inbound_at = now();
+        $session->save();
+
+        // SMS the customer back so they know we got it; the bot then resumes
+        // the SMS flow at the next step.
+        try {
+            app(\App\Services\TelebroadService::class)->sendSms($session->phone,
+                "Got your " . strtolower($config['label']) . " — thanks. Continuing your application.");
+        } catch (\Throwable $e) {
+            \Log::error('SMS resume failed after step submit', ['error' => $e->getMessage()]);
+        }
+
+        return Inertia::location('/apply/' . $token . '/step/' . $stepKey . '/done');
+    }
+
+    public function stepDone(string $token, string $stepKey): Response
+    {
+        return Inertia::render('Public/ApplyDone', [
+            'phone' => '',
+        ]);
+    }
+
+    private function stepConfig(string $stepKey): array
+    {
+        $map = [
+            'ssn'                 => ['label' => 'SSN', 'type' => 'password', 'placeholder' => 'XXX-XX-XXXX'],
+            'co_ssn'              => ['label' => 'Co-applicant SSN', 'type' => 'password', 'placeholder' => 'XXX-XX-XXXX'],
+            'date_of_birth'       => ['label' => 'Date of birth', 'type' => 'date'],
+            'license_image_front' => ['label' => "Driver's license — front", 'type' => 'file', 'accept' => 'image/*', 'capture' => 'environment'],
+            'license_image_back'  => ['label' => "Driver's license — back",  'type' => 'file', 'accept' => 'image/*', 'capture' => 'environment'],
+            'annual_income'       => ['label' => 'Annual income ($)', 'type' => 'number'],
+            'employer'            => ['label' => 'Employer name', 'type' => 'text'],
+        ];
+        return $map[$stepKey] ?? ['label' => ucwords(str_replace('_', ' ', $stepKey)), 'type' => 'text'];
+    }
+
     private function isVerified(LeaseApplicationSession $session): bool
     {
         return $session->web_verified_at

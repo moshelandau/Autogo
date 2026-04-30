@@ -26,11 +26,14 @@ use Illuminate\Support\Facades\Route;
 // Public, no-auth: customer-facing lease application form. Authorized
 // by the random web_token in the URL. The customer was sent the link
 // via SMS by the bot.
-Route::get ('apply/{token}',           [\App\Http\Controllers\PublicApplicationController::class, 'show'])->name('public.apply.show');
-Route::post('apply/{token}',           [\App\Http\Controllers\PublicApplicationController::class, 'submit'])->name('public.apply.submit');
-Route::post('apply/{token}/send-otp',  [\App\Http\Controllers\PublicApplicationController::class, 'sendOtp'])->name('public.apply.send-otp');
-Route::post('apply/{token}/verify-otp',[\App\Http\Controllers\PublicApplicationController::class, 'verifyOtp'])->name('public.apply.verify-otp');
-Route::get ('apply/{token}/done',      [\App\Http\Controllers\PublicApplicationController::class, 'done'])->name('public.apply.done');
+Route::get ('apply/{token}',                       [\App\Http\Controllers\PublicApplicationController::class, 'show'])->name('public.apply.show');
+Route::post('apply/{token}',                       [\App\Http\Controllers\PublicApplicationController::class, 'submit'])->name('public.apply.submit');
+Route::post('apply/{token}/send-otp',              [\App\Http\Controllers\PublicApplicationController::class, 'sendOtp'])->name('public.apply.send-otp');
+Route::post('apply/{token}/verify-otp',            [\App\Http\Controllers\PublicApplicationController::class, 'verifyOtp'])->name('public.apply.verify-otp');
+Route::get ('apply/{token}/done',                  [\App\Http\Controllers\PublicApplicationController::class, 'done'])->name('public.apply.done');
+Route::get ('apply/{token}/step/{step}',           [\App\Http\Controllers\PublicApplicationController::class, 'showStep'])->name('public.apply.show.step');
+Route::post('apply/{token}/step/{step}',           [\App\Http\Controllers\PublicApplicationController::class, 'submitStep'])->name('public.apply.submit.step');
+Route::get ('apply/{token}/step/{step}/done',      [\App\Http\Controllers\PublicApplicationController::class, 'stepDone'])->name('public.apply.step.done');
 
 Route::get('/', function () {
     return redirect()->route('dashboard');

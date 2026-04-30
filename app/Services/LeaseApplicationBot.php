@@ -569,18 +569,23 @@ class LeaseApplicationBot
             return $this->handleIdentityConfirmResponse($session, $step, $stepIdx, $collected, $body);
         }
 
-        // SECURE reply on any text-input step → send the customer the full
-        // form URL with a ?focus=<step_key> hint so the page scrolls and
-        // highlights that specific question. Useful for SSN and other
-        // sensitive fields the customer doesn't want to text in plaintext.
+        // SECURE reply on any text-input step → send a SINGLE-STEP secure
+        // page just for that one field (or the full form for non-mapped
+        // steps). The SMS flow STAYS ACTIVE — we re-send the current step's
+        // prompt right after, so the customer can answer either via web or
+        // by just replying here. Whichever arrives first wins.
         if (($step['expects'] ?? null) !== 'image' && $step['key'] !== '__done__') {
             $upper = strtoupper(trim($body));
             if (in_array($upper, ['SECURE', 'WEB', 'LINK', 'FORM'], true)) {
-                $url = $session->apply_url . '?focus=' . urlencode($step['key']);
+                $stepUrl = rtrim(config('app.url', 'https://app.autogoco.com'), '/')
+                    . '/apply/' . $session->web_token . '/step/' . $step['key'];
                 $this->reply($session->phone,
-                    "Use this secure form: {$url}\n\n" .
-                    "It's pre-filled with what you've shared so far. After you submit, no need to keep texting back."
+                    "Secure link for this question only:\n{$stepUrl}\n\n" .
+                    "Or just reply here — whichever's easier."
                 );
+                // Re-send the current prompt so the SMS path is still active.
+                // Customer can answer via web OR text — first one in wins.
+                $this->reply($session->phone, $this->renderPrompt($step, $session));
                 $session->update(['last_inbound_at' => now()]);
                 return true;
             }
@@ -590,14 +595,16 @@ class LeaseApplicationBot
         if (($step['expects'] ?? null) === 'image') {
             $reply = strtoupper(trim($body));
 
-            // SECURE on image step → send the form URL so they can upload
-            // via web file picker instead of MMS.
+            // SECURE on image step → single-step upload page, plus keep the
+            // SMS path active. Customer uploads via web OR texts the photo.
             if (in_array($reply, ['SECURE', 'WEB', 'LINK', 'FORM'], true)) {
-                $url = $session->apply_url . '?focus=' . urlencode($step['key']);
+                $stepUrl = rtrim(config('app.url', 'https://app.autogoco.com'), '/')
+                    . '/apply/' . $session->web_token . '/step/' . $step['key'];
                 $this->reply($session->phone,
-                    "Use this secure form to upload your license: {$url}\n\n" .
-                    "Tap to take or pick a photo, then submit."
+                    "Upload here instead of MMS:\n{$stepUrl}\n\n" .
+                    "Or just text the photo — whichever's easier."
                 );
+                $this->reply($session->phone, $this->renderPrompt($step, $session));
                 $session->update(['last_inbound_at' => now()]);
                 return true;
             }
