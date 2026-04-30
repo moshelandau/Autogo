@@ -229,6 +229,41 @@ class DealController extends Controller
         return back()->with('success', 'Task completed.');
     }
 
+    /**
+     * Update a task's due date AND cascade-bump any subsequent task
+     * (in stage-then-sort-order) whose due_date is now in the past
+     * relative to the new date. Tasks already due on or after the new
+     * date are left alone — the cascade only pushes dates forward.
+     */
+    public function updateTaskDueDate(Request $request, Deal $deal, int $taskId)
+    {
+        $validated = $request->validate(['due_date' => 'required|date']);
+        $newDate = \Illuminate\Support\Carbon::parse($validated['due_date'])->startOfDay();
+
+        $task = $deal->tasks()->findOrFail($taskId);
+        $task->update(['due_date' => $newDate]);
+
+        $stageRank = array_flip(Deal::STAGES);
+        $tasks = $deal->tasks()
+            ->get()
+            ->sortBy(fn ($t) => ($stageRank[$t->stage] ?? 999) * 1000 + (int) $t->sort_order)
+            ->values();
+
+        $idx = $tasks->search(fn ($t) => $t->id === $task->id);
+        if ($idx === false) return back()->with('success', 'Due date updated.');
+
+        $bumped = 0;
+        foreach ($tasks->slice($idx + 1) as $t) {
+            if ($t->due_date && $t->due_date->lt($newDate)) {
+                $t->update(['due_date' => $newDate]);
+                $bumped++;
+            }
+        }
+
+        $msg = $bumped ? "Due date updated. {$bumped} later task(s) shifted to match." : 'Due date updated.';
+        return back()->with('success', $msg);
+    }
+
     public function addNote(Request $request, Deal $deal)
     {
         $validated = $request->validate(['body' => 'required|string']);

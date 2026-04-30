@@ -179,6 +179,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
 
         // Deal sub-actions
         Route::post('deals/{deal}/tasks/{task}', [DealController::class, 'completeTask'])->name('deals.task');
+        Route::post('deals/{deal}/tasks/{task}/due-date', [DealController::class, 'updateTaskDueDate'])->name('deals.task.due-date');
         Route::post('deals/{deal}/note', [DealController::class, 'addNote'])->name('deals.note');
         Route::post('deals/{deal}/quote', [DealController::class, 'addQuote'])->name('deals.quote');
         Route::post('deals/{deal}/quotes/{quote}/select', [DealController::class, 'selectQuote'])->name('deals.select-quote');
