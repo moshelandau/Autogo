@@ -180,6 +180,10 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::post('deals/{deal}/reorder', [DealController::class, 'reorder'])->name('deals.reorder');
         Route::post('deals/{deal}/lost', [DealController::class, 'markLost'])->name('deals.lost');
 
+        // Vehicle Return (trade-in / lease return) — upsert per deal
+        Route::post  ('deals/{deal}/vehicle-return',                 [\App\Http\Controllers\VehicleReturnController::class, 'store'])->name('deals.vehicle-return.store');
+        Route::delete('deals/{deal}/vehicle-return/{vehicleReturn}', [\App\Http\Controllers\VehicleReturnController::class, 'destroy'])->name('deals.vehicle-return.destroy');
+
         // Deal sub-actions
         Route::post('deals/{deal}/tasks/{task}', [DealController::class, 'completeTask'])->name('deals.task');
         Route::post('deals/{deal}/tasks/{task}/due-date', [DealController::class, 'updateTaskDueDate'])->name('deals.task.due-date');

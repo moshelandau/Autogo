@@ -120,6 +120,7 @@ class Deal extends Model
     public function insurer(): BelongsTo { return $this->belongsTo(Insurer::class); }
     public function dealer(): BelongsTo { return $this->belongsTo(Dealer::class); }
     public function lienholder(): BelongsTo { return $this->belongsTo(Lienholder::class); }
+    public function vehicleReturn(): \Illuminate\Database\Eloquent\Relations\HasOne { return $this->hasOne(VehicleReturn::class); }
     public function quotes(): HasMany { return $this->hasMany(DealQuote::class); }
     public function tasks(): HasMany { return $this->hasMany(DealTask::class)->orderBy('sort_order'); }
     public function documents(): HasMany { return $this->hasMany(DealDocument::class); }
