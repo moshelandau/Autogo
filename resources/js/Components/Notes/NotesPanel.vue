@@ -63,6 +63,10 @@ const submitReply = async (n) => {
         user_initials: data.user_initials, created_at: data.created_at,
     });
     replyDraft[n.id] = '';
+    // axios doesn't refresh Inertia shared props, so the bell stays
+    // stale after a reply that mentions someone. Pull just the
+    // notifications prop so any new mention pings show up immediately.
+    router.reload({ only: ['notifications'] });
 };
 
 const resolve = (n) => router.post(route('notes.resolve', n.id), {}, { preserveScroll: true });
@@ -178,6 +182,12 @@ const renderBody = (body) => {
                             class="text-[11px] text-indigo-600 hover:text-indigo-800">
                         {{ expanded[n.id] ? 'Hide' : 'Reply' }}
                     </button>
+                    <button v-if="!n.is_resolved" type="button" @click="resolve(n)"
+                            class="text-[11px] text-emerald-700 hover:text-emerald-900">Mark done</button>
+                    <button v-else type="button" @click="reopen(n)"
+                            class="text-[11px] text-gray-600 hover:text-gray-800">Reopen</button>
+                    <button v-if="n.reminder_date && !n.is_resolved" type="button" @click="datePickerOpen[n.id] = !datePickerOpen[n.id]"
+                            class="text-[11px] text-blue-600 hover:text-blue-800">📅 Snooze</button>
                     <button type="button" @click="openEdit(n)" class="text-[11px] text-gray-500 hover:text-gray-700">Edit</button>
                     <button type="button" @click="remove(n)" class="text-[11px] text-red-500 hover:text-red-700">Delete</button>
                 </div>
@@ -201,10 +211,10 @@ const renderBody = (body) => {
                 </div>
 
                 <form @submit.prevent="submitReply(n)" class="flex gap-2 pt-1 items-start">
-                    <MentionInput v-model="replyDraft[n.id]" :multiline="false"
+                    <MentionInput v-model="replyDraft[n.id]" :multiline="true" :rows="2"
                                   placeholder="Write a reply… type @ to tag a coworker"
                                   input-class="w-full border-gray-300 rounded-md text-sm" />
-                    <button type="submit" class="px-3 py-1 bg-indigo-600 text-white rounded-md text-xs hover:bg-indigo-700 shrink-0 self-start">Reply</button>
+                    <button type="submit" class="px-3 py-1.5 bg-indigo-600 text-white rounded-md text-xs hover:bg-indigo-700 shrink-0 self-start">Reply</button>
                 </form>
             </div>
         </div>
