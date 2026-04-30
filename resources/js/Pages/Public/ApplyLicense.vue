@@ -1,5 +1,5 @@
 <script setup>
-import { Head, useForm, router } from '@inertiajs/vue3';
+import { Head, router } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 
 const props = defineProps({
@@ -9,10 +9,14 @@ const props = defineProps({
 });
 
 // Per-side state machine: idle → checking → ok | bad
-const frontState  = ref(props.has_front ? 'ok' : 'idle');
-const frontReason = ref('');
+const frontState   = ref(props.has_front ? 'ok' : 'idle');
+const frontReason  = ref('');
 const frontPreview = ref(props.has_front ? '✓ on file from earlier' : '');
-const frontPath   = ref(null);   // server path returned from preview, used on final submit
+const frontPath    = ref(null);
+const frontExtracted = ref({});       // OCR extract for diff resolution
+const frontDiffs   = ref({});          // { field: { license, file } }
+const diffChoices  = ref({});          // { field: 'license' | 'file' | '<custom>' }
+const customInputs = ref({});          // text inputs when user picks Custom
 
 const backState  = ref(props.has_back ? 'ok' : 'idle');
 const backReason = ref('');
@@ -23,8 +27,12 @@ const submitting = ref(false);
 
 const previewFile = async (side, file) => {
     if (!file) return;
-    if (side === 'front') { frontState.value = 'checking'; frontReason.value = ''; frontPreview.value = ''; }
-    else                  { backState.value  = 'checking'; backReason.value  = ''; backPreview.value  = ''; }
+    if (side === 'front') {
+        frontState.value = 'checking'; frontReason.value = ''; frontPreview.value = '';
+        frontDiffs.value = {}; diffChoices.value = {}; customInputs.value = {};
+    } else {
+        backState.value  = 'checking'; backReason.value  = ''; backPreview.value  = '';
+    }
 
     const fd = new FormData();
     fd.append('side', side);
@@ -36,10 +44,12 @@ const previewFile = async (side, file) => {
         });
         const data = r.data;
         if (side === 'front') {
-            frontState.value   = data.valid ? 'ok' : 'bad';
-            frontReason.value  = data.reason || '';
-            frontPreview.value = data.preview || '';
-            frontPath.value    = data.path;
+            frontState.value     = data.valid ? 'ok' : 'bad';
+            frontReason.value    = data.reason || '';
+            frontPreview.value   = data.preview || '';
+            frontPath.value      = data.path;
+            frontExtracted.value = data.extracted || {};
+            frontDiffs.value     = data.diffs || {};
         } else {
             backState.value   = data.valid ? 'ok' : 'bad';
             backReason.value  = data.reason || '';
@@ -56,17 +66,48 @@ const previewFile = async (side, file) => {
 const onPickFront = (e) => previewFile('front', e.target.files[0]);
 const onPickBack  = (e) => previewFile('back',  e.target.files[0]);
 
-// Form is submittable when both sides are validated OK (either freshly
-// uploaded + previewed, or already on file from earlier).
-const canSubmit = computed(() => frontState.value === 'ok' && backState.value === 'ok');
+const diffFields = computed(() => Object.keys(frontDiffs.value || {}));
+const hasUnresolvedDiffs = computed(() =>
+    diffFields.value.some(f => {
+        const c = diffChoices.value[f];
+        if (!c) return true;
+        if (c === 'custom') return !customInputs.value[f] || !customInputs.value[f].trim();
+        return false;
+    }));
+
+const FIELD_LABEL = {
+    date_of_birth: 'DATE OF BIRTH',
+    address:       'ADDRESS',
+    first_name:    'FIRST NAME',
+    last_name:     'LAST NAME',
+};
+
+const fmtDob = (v) => {
+    if (!v) return '—';
+    if (typeof v === 'string' && v.match(/^\d{4}-\d{2}-\d{2}/)) {
+        const [y, m, d] = v.split('-');
+        return `${m}/${d}/${y}`;
+    }
+    return v;
+};
+const fieldDisplay = (field, val) => field === 'date_of_birth' ? fmtDob(val) : (val || '—');
+
+const canSubmit = computed(() =>
+    frontState.value === 'ok' &&
+    backState.value  === 'ok' &&
+    !hasUnresolvedDiffs.value
+);
 
 const submit = () => {
     submitting.value = true;
-    // Submit references the previewed paths — server binds them as the
-    // final upload without re-uploading. If a side is "on file from
-    // earlier" with no fresh path, we just submit empty for that side
-    // and the server keeps what it has.
-    const payload = {};
+    const payload = {
+        extracted: frontExtracted.value,
+        diff_choices: {},
+    };
+    for (const f of diffFields.value) {
+        const c = diffChoices.value[f];
+        payload.diff_choices[f] = c === 'custom' ? customInputs.value[f] : c;
+    }
     if (frontPath.value) payload.front_path = frontPath.value;
     if (backPath.value)  payload.back_path  = backPath.value;
     router.post(`/apply/${props.token}/license`, payload, {
@@ -94,7 +135,7 @@ const stateClass = (state) => state === 'ok'
         <div class="bg-white rounded-2xl shadow-sm w-full max-w-md overflow-hidden">
             <header class="bg-indigo-600 text-white px-6 py-5">
                 <h1 class="text-base font-semibold">AutoGo — License upload</h1>
-                <p class="text-indigo-100 text-xs mt-0.5">Pick each side. We check your photo as soon as you select it.</p>
+                <p class="text-indigo-100 text-xs mt-0.5">We check each photo as soon as you pick it.</p>
             </header>
 
             <div class="p-6 space-y-5">
@@ -111,12 +152,39 @@ const stateClass = (state) => state === 'ok'
                                :disabled="frontState === 'checking'"
                                class="block w-full text-sm" />
                     </label>
-                    <p v-if="frontState === 'ok' && frontPreview" class="text-[11px] text-emerald-700 mt-1.5">
-                        {{ frontPreview }}
-                    </p>
-                    <p v-if="frontState === 'bad' && frontReason" class="text-[11px] text-red-700 mt-1.5">
-                        {{ frontReason }} — please pick a new photo.
-                    </p>
+                    <p v-if="frontState === 'ok' && frontPreview" class="text-[11px] text-emerald-700 mt-1.5">{{ frontPreview }}</p>
+                    <p v-if="frontState === 'bad' && frontReason" class="text-[11px] text-red-700 mt-1.5">{{ frontReason }} — please pick a new photo.</p>
+                </div>
+
+                <!-- DIFF CONFIRMATION (only shown if front read OK and there are diffs) -->
+                <div v-if="frontState === 'ok' && diffFields.length"
+                     class="rounded-md p-3 border border-amber-300 bg-amber-50 space-y-3">
+                    <div class="text-xs font-semibold text-amber-900">
+                        Quick confirm — your license info doesn't match what we have on file:
+                    </div>
+                    <div v-for="field in diffFields" :key="field" class="space-y-1.5 pb-2 border-b border-amber-200 last:border-0">
+                        <div class="text-[10px] font-bold uppercase tracking-wide text-gray-700">
+                            {{ FIELD_LABEL[field] || field.replace('_', ' ').toUpperCase() }}
+                        </div>
+                        <label class="block text-xs">
+                            <input type="radio" :name="`diff_${field}`" value="license" v-model="diffChoices[field]" class="mr-1.5" />
+                            <span class="font-medium">License:</span>
+                            <span class="font-mono ml-1">{{ fieldDisplay(field, frontDiffs[field].license) }}</span>
+                        </label>
+                        <label class="block text-xs">
+                            <input type="radio" :name="`diff_${field}`" value="file" v-model="diffChoices[field]" class="mr-1.5" />
+                            <span class="font-medium">On file:</span>
+                            <span class="font-mono ml-1">{{ fieldDisplay(field, frontDiffs[field].file) }}</span>
+                        </label>
+                        <label class="block text-xs">
+                            <input type="radio" :name="`diff_${field}`" value="custom" v-model="diffChoices[field]" class="mr-1.5" />
+                            <span class="font-medium">Type the correct value:</span>
+                        </label>
+                        <input v-if="diffChoices[field] === 'custom'"
+                               v-model="customInputs[field]"
+                               :placeholder="field === 'date_of_birth' ? 'MM/DD/YYYY' : 'corrected value'"
+                               class="block w-full text-sm border-gray-300 rounded-md ml-5" />
+                    </div>
                 </div>
 
                 <!-- BACK -->
@@ -132,12 +200,8 @@ const stateClass = (state) => state === 'ok'
                                :disabled="backState === 'checking'"
                                class="block w-full text-sm" />
                     </label>
-                    <p v-if="backState === 'ok' && backPreview" class="text-[11px] text-emerald-700 mt-1.5">
-                        {{ backPreview }}
-                    </p>
-                    <p v-if="backState === 'bad' && backReason" class="text-[11px] text-red-700 mt-1.5">
-                        {{ backReason }} — please pick a new photo.
-                    </p>
+                    <p v-if="backState === 'ok' && backPreview" class="text-[11px] text-emerald-700 mt-1.5">{{ backPreview }}</p>
+                    <p v-if="backState === 'bad' && backReason" class="text-[11px] text-red-700 mt-1.5">{{ backReason }} — please pick a new photo.</p>
                 </div>
 
                 <p class="text-[11px] text-gray-500">
@@ -146,7 +210,9 @@ const stateClass = (state) => state === 'ok'
 
                 <button type="button" @click="submit" :disabled="!canSubmit || submitting"
                         class="w-full px-4 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                    {{ submitting ? 'Submitting…' : (canSubmit ? 'Submit' : 'Both sides need a green ✓ first') }}
+                    {{ submitting ? 'Submitting…' :
+                       (!canSubmit && hasUnresolvedDiffs ? 'Pick which value is correct above' :
+                       (!canSubmit ? 'Both sides need a green ✓ first' : 'Submit')) }}
                 </button>
             </div>
         </div>

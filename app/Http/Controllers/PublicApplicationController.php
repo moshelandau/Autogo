@@ -348,12 +348,48 @@ class PublicApplicationController extends Controller
             'license_back'  => 'nullable|file|max:51200|mimetypes:image/jpeg,image/png,image/heic,image/heif,image/webp,image/gif,image/bmp',
             'front_path'    => 'nullable|string|max:255',
             'back_path'     => 'nullable|string|max:255',
+            // Diff choices resolved on-page for fields that mismatched between
+            // the license and the on-file customer record. Pre-applying these
+            // means the bot pipeline below doesn't fire its own SMS diff
+            // prompt — customer already chose on the form.
+            'diff_choices'    => 'nullable|array',
+            'diff_choices.*'  => 'nullable|string|max:255',
+            'extracted'       => 'nullable|array', // OCR extract from preview, used to apply choices
         ]);
 
         $hasAny = $request->hasFile('license_front') || $request->hasFile('license_back')
             || $request->filled('front_path') || $request->filled('back_path');
         if (!$hasAny) {
             return back()->withErrors(['license_front' => 'Pick at least one side to upload.']);
+        }
+
+        // Apply diff choices BEFORE routing through the bot — that way the
+        // bot's licenseFieldDiffs() call won't find a diff and won't fire
+        // an SMS diff prompt the customer already resolved on the page.
+        $extracted = $request->input('extracted', []);
+        $choices   = $request->input('diff_choices', []);
+        if (!empty($choices) && is_array($choices)) {
+            $collected = $session->collected ?? [];
+            $cust = $session->customer;
+            foreach ($choices as $field => $choice) {
+                if ($choice === 'license' && !empty($extracted[$field])) {
+                    $collected[$field] = $extracted[$field];
+                } elseif ($choice === 'file' && $cust) {
+                    $val = $field === 'date_of_birth'
+                        ? ($cust->date_of_birth?->format('Y-m-d'))
+                        : ($cust->{$field} ?? null);
+                    if (!empty($val)) {
+                        $collected[$field] = $val;
+                    } elseif (!empty($extracted[$field])) {
+                        // Empty on file → fallback to license value (PR #37 logic)
+                        $collected[$field] = $extracted[$field];
+                    }
+                } elseif (is_string($choice) && $choice !== 'license' && $choice !== 'file') {
+                    // Free-text correction
+                    $collected[$field] = $choice;
+                }
+            }
+            $session->update(['collected' => $collected, 'last_inbound_at' => now()]);
         }
 
         $customer = $session->customer;
@@ -493,7 +529,7 @@ class PublicApplicationController extends Controller
 
         if ($side === 'front') {
             // For front: OCR is the gate. If 4+ fields extracted, accept
-            // even if verifier disagrees (verifier was over-rejecting).
+            // even if verifier disagrees.
             $ocrMethod = $ref->getMethod('ingestLicenseImage');
             $ocrMethod->setAccessible(true);
             $extracted = $ocrMethod->invoke($bot, $session, \Storage::disk('public')->url($path));
@@ -502,14 +538,24 @@ class PublicApplicationController extends Controller
             $count = $countMethod->invoke($bot, $extracted);
 
             if ($count >= 4) {
+                // Compute diffs vs on-file customer profile and surface
+                // them so the page can show inline confirmation radios.
+                $diffMethod = $ref->getMethod('licenseFieldDiffs');
+                $diffMethod->setAccessible(true);
+                $diffs = $diffMethod->invoke($bot, $session->customer, $extracted);
+
                 return response()->json([
-                    'valid'  => true,
-                    'reason' => '',
+                    'valid'   => true,
+                    'reason'  => '',
                     'preview' => trim(($extracted['first_name'] ?? '') . ' ' . ($extracted['last_name'] ?? '')) ?: 'License read OK',
-                    'path'   => $path,
+                    'path'    => $path,
+                    'extracted' => array_intersect_key($extracted, array_flip([
+                        'first_name','last_name','date_of_birth','address','city','state','zip',
+                        'drivers_license_number','dl_state','dl_expiration',
+                    ])),
+                    'diffs'   => (object) $diffs, // empty {} if none — page won't show diff section
                 ]);
             }
-            // OCR weak — fall back to verifier reason if it has one
             return response()->json([
                 'valid'  => false,
                 'reason' => $verify['reason']
