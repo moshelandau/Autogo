@@ -64,7 +64,7 @@ const activeTab = ref('summary');
 onMounted(() => {
     const params = new URLSearchParams(window.location.search);
     const wantedTab = params.get('tab');
-    if (wantedTab && ['summary','tasks','workflow','calculator','quotes','credit','notes','documents','vehicle_return','sharing','messages','timeline'].includes(wantedTab)) {
+    if (wantedTab && ['summary','customer','tasks','workflow','calculator','quotes','credit','notes','documents','vehicle_return','sharing','messages','timeline'].includes(wantedTab)) {
         activeTab.value = wantedTab;
     }
     if (window.location.hash) {
@@ -179,6 +179,19 @@ const saveVehicleReturn = () => vrForm.post(route('leasing.deals.vehicle-return.
 const removeVehicleReturn = () => {
     if (!d.vehicle_return || !confirm('Remove this vehicle return?')) return;
     router.delete(route('leasing.deals.vehicle-return.destroy', [d.id, d.vehicle_return.id]), { preserveScroll: true });
+};
+
+// ── Co-Signer assignment via existing CustomerSelect ──
+const showCoSignerPicker = ref(false);
+const onCoSignerSelected = (customerId) => {
+    router.put(route('leasing.deals.update', d.id), { co_signer_customer_id: customerId }, {
+        preserveScroll: true, preserveState: true,
+        onFinish: () => { showCoSignerPicker.value = false; },
+    });
+};
+const removeCoSigner = () => {
+    if (!confirm('Remove co-signer from this deal?')) return;
+    router.put(route('leasing.deals.update', d.id), { co_signer_customer_id: null }, { preserveScroll: true, preserveState: true });
 };
 const allStages = ['lead', 'quote', 'application', 'submission', 'pending', 'finalize', 'outstanding', 'complete'];
 
@@ -1427,6 +1440,115 @@ const saveCalcAsQuote = () => {
                                               subject-type="App\\Models\\Deal"
                                               :subject-id="d.id" />
                             <div v-else class="text-center text-gray-400 py-8">No customer linked to this deal.</div>
+                        </div>
+
+                        <!-- Customer Information Tab (xDeskPro parity) -->
+                        <div v-if="activeTab === 'customer'" class="space-y-6">
+                            <div v-if="!d.customer" class="text-center text-gray-400 py-8">No customer linked to this deal.</div>
+                            <template v-else>
+                                <!-- Primary customer -->
+                                <div class="border rounded-xl p-5 bg-white">
+                                    <div class="flex items-start justify-between mb-3">
+                                        <h3 class="text-sm font-semibold text-gray-700">Primary Customer</h3>
+                                        <Link :href="route('customers.show', d.customer.id)"
+                                              class="text-xs text-indigo-600 hover:underline">Open customer page →</Link>
+                                    </div>
+                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                                        <div>
+                                            <div class="text-xs text-gray-500">Name</div>
+                                            <div class="font-medium">{{ d.customer.first_name }} {{ d.customer.last_name }}</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-xs text-gray-500">Phone</div>
+                                            <div>{{ d.customer.phone || '—' }}</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-xs text-gray-500">Email</div>
+                                            <div>{{ d.customer.email || '—' }}</div>
+                                        </div>
+                                        <div class="md:col-span-2">
+                                            <div class="text-xs text-gray-500">Address</div>
+                                            <div>
+                                                <span v-if="d.customer.address">{{ d.customer.address }}</span>
+                                                <span v-if="d.customer.city || d.customer.state || d.customer.zip">, {{ [d.customer.city, d.customer.state, d.customer.zip].filter(Boolean).join(' ') }}</span>
+                                                <span v-if="!d.customer.address && !d.customer.city">—</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div class="text-xs text-gray-500">Date of Birth</div>
+                                            <div>{{ d.customer.date_of_birth || '—' }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Co-signer -->
+                                <div class="border rounded-xl p-5 bg-white">
+                                    <div class="flex items-start justify-between mb-3">
+                                        <h3 class="text-sm font-semibold text-gray-700">Co-Signer</h3>
+                                        <button v-if="d.co_signer && !showCoSignerPicker" type="button" @click="removeCoSigner"
+                                                class="text-xs text-red-600 hover:underline">Remove co-signer</button>
+                                    </div>
+                                    <div v-if="d.co_signer && !showCoSignerPicker" class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                                        <div>
+                                            <div class="text-xs text-gray-500">Name</div>
+                                            <div class="font-medium">{{ d.co_signer.first_name }} {{ d.co_signer.last_name }}</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-xs text-gray-500">Phone</div>
+                                            <div>{{ d.co_signer.phone || '—' }}</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-xs text-gray-500">Email</div>
+                                            <div>{{ d.co_signer.email || '—' }}</div>
+                                        </div>
+                                        <div class="md:col-span-3 pt-2">
+                                            <button type="button" @click="showCoSignerPicker = true"
+                                                    class="text-xs text-indigo-600 hover:underline">Change co-signer</button>
+                                        </div>
+                                    </div>
+                                    <div v-else>
+                                        <p v-if="!d.co_signer" class="text-xs text-gray-500 mb-3">No co-signer assigned.</p>
+                                        <CustomerSelect :model-value="null" @update:model-value="onCoSignerSelected" />
+                                        <button v-if="showCoSignerPicker" type="button" @click="showCoSignerPicker = false"
+                                                class="mt-2 text-xs text-gray-500 hover:underline">Cancel</button>
+                                    </div>
+                                </div>
+
+                                <!-- Customer's other deals -->
+                                <div class="border rounded-xl bg-white">
+                                    <div class="p-5 pb-3 flex items-center justify-between">
+                                        <h3 class="text-sm font-semibold text-gray-700">Other deals for {{ d.customer.first_name }} {{ d.customer.last_name }}</h3>
+                                        <span class="text-xs text-gray-400">{{ (d.customer.deals || []).length }} total</span>
+                                    </div>
+                                    <div class="overflow-x-auto">
+                                        <table class="min-w-full divide-y divide-gray-200">
+                                            <thead class="bg-gray-50">
+                                                <tr>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Deal #</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Vehicle</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Stage</th>
+                                                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-gray-200">
+                                                <tr v-for="row in (d.customer.deals || [])" :key="row.id"
+                                                    :class="row.id === d.id ? 'bg-indigo-50' : 'hover:bg-gray-50'">
+                                                    <td class="px-4 py-2 text-sm">
+                                                        <Link :href="route('leasing.deals.show', row.id)" class="text-indigo-600 hover:underline">#{{ row.deal_number }}</Link>
+                                                        <span v-if="row.id === d.id" class="ml-1 text-xs text-gray-400">(this deal)</span>
+                                                    </td>
+                                                    <td class="px-4 py-2 text-sm">{{ [row.vehicle_year, row.vehicle_make, row.vehicle_model].filter(Boolean).join(' ') || '—' }}</td>
+                                                    <td class="px-4 py-2 text-sm capitalize">{{ stageLabels[row.stage] || row.stage }}</td>
+                                                    <td class="px-4 py-2 text-sm text-gray-500">{{ fmtDate(row.created_at) }}</td>
+                                                </tr>
+                                                <tr v-if="!(d.customer.deals || []).length">
+                                                    <td colspan="4" class="px-4 py-6 text-center text-sm text-gray-400">No other deals.</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </template>
                         </div>
 
                         <!-- Vehicle Return Tab — trade-in / lease-return capture -->
