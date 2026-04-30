@@ -35,7 +35,7 @@ class LeaseApplicationBot
         ['key' => 'first_name',        'prompt' => "Great — what's your FIRST name? (we'll confirm what we read)"],
         ['key' => 'last_name',         'prompt' => "Thanks {first_name}. And your LAST name?"],
         ['key' => 'date_of_birth',     'prompt' => "Date of birth? (MM/DD/YYYY)"],
-        ['key' => 'ssn',               'prompt' => "What's your full SSN? (XXX-XX-XXXX) — used only for the credit application; we mask it and never share it."],
+        ['key' => 'ssn',               'prompt' => "What's your full SSN? (XXX-XX-XXXX) — required for the credit application."],
         ['key' => 'address',           'prompt' => "Current home street address?"],
         ['key' => 'city',              'prompt' => "City?"],
         ['key' => 'state',             'prompt' => "State? (2-letter, e.g. NY)"],
@@ -58,7 +58,7 @@ class LeaseApplicationBot
         ['key' => 'co_first_name',       'prompt' => "Co-applicant FIRST name?",        'requires' => 'has_coapplicant'],
         ['key' => 'co_last_name',        'prompt' => "Co-applicant LAST name?",         'requires' => 'has_coapplicant'],
         ['key' => 'co_date_of_birth',    'prompt' => "Co-applicant date of birth? (MM/DD/YYYY)", 'requires' => 'has_coapplicant'],
-        ['key' => 'co_ssn',              'prompt' => "Co-applicant's full SSN? (XXX-XX-XXXX) — used only for the credit application; we mask it and never share it.", 'requires' => 'has_coapplicant'],
+        ['key' => 'co_ssn',              'prompt' => "Co-applicant's full SSN? (XXX-XX-XXXX) — required for the credit application.", 'requires' => 'has_coapplicant'],
         ['key' => 'co_phone',            'prompt' => "Co-applicant phone?",             'requires' => 'has_coapplicant'],
         ['key' => 'co_address',          'prompt' => "Co-applicant street address?",    'requires' => 'has_coapplicant'],
         ['key' => 'co_city',             'prompt' => "Co-applicant city?",              'requires' => 'has_coapplicant'],
@@ -562,6 +562,37 @@ class LeaseApplicationBot
         $step = $steps[$stepIdx];
         $collected = $session->collected ?? [];
 
+        // Don't regress. If current_step points BEFORE a step the customer
+        // has already answered, silently fast-forward — never re-ask for
+        // something already provided OR something the customer chose to
+        // skip. This catches edge cases like the controller forcing
+        // current_step back to a license step, or stale links re-firing
+        // an old step.
+        if ($step['key'] !== '__done__') {
+            $hasLaterFilled = false;
+            for ($j = $stepIdx + 1; $j < count($steps); $j++) {
+                $sk = $steps[$j]['key'];
+                if (($steps[$j]['expects'] ?? null) === 'image') {
+                    if (!empty($collected[$sk . '_path']) || !empty($collected['_skipped_' . $sk])) { $hasLaterFilled = true; break; }
+                } elseif (!empty($collected[$sk])) { $hasLaterFilled = true; break; }
+            }
+            if ($hasLaterFilled) {
+                $next = $this->nextApplicableStep($steps, $stepIdx, $collected);
+                $thisIsImage    = ($step['expects'] ?? null) === 'image';
+                $thisFilled     = $thisIsImage
+                    ? (!empty($collected[$step['key'] . '_path']) || !empty($collected['_skipped_' . $step['key']]))
+                    : !empty($collected[$step['key']]);
+                if ($thisFilled) {
+                    if ($next === null || $next['key'] === '__done__') { $this->finalize($session); return true; }
+                    $session->update(['current_step' => $next['key'], 'last_inbound_at' => now()]);
+                    $session = $session->fresh();
+                    $stepIdx = $this->indexOfStep($steps, $session->current_step);
+                    $step    = $steps[$stepIdx];
+                    $collected = $session->collected ?? [];
+                }
+            }
+        }
+
         // SECURE reply on any text-input step — checked FIRST, before the
         // pending-diff handler, so a customer who texts SECURE while a
         // diff is pending still gets the secure form link instead of
@@ -861,8 +892,14 @@ class LeaseApplicationBot
                 $val = strtolower((string) ($collected[$s['requires']] ?? ''));
                 if (!in_array($val, ['yes', 'y', '1', 'true'], true)) continue;
             }
-            // Skip steps whose key we already have a value for (re-used customers)
-            if (!empty($collected[$s['key']]) && $s['key'] !== '__done__' && ($s['expects'] ?? null) !== 'image') continue;
+            // Skip steps whose key we already have a value for (re-used customers).
+            // Image steps store under "<key>_path", so check that variant for them.
+            if ($s['key'] === '__done__') return $s;
+            if (($s['expects'] ?? null) === 'image') {
+                if (!empty($collected[$s['key'] . '_path'])) continue;
+            } elseif (!empty($collected[$s['key']])) {
+                continue;
+            }
             return $s;
         }
         return null;
@@ -876,7 +913,11 @@ class LeaseApplicationBot
                 $val = strtolower((string) ($collected[$s['requires']] ?? ''));
                 if (!in_array($val, ['yes', 'y', '1', 'true'], true)) continue;
             }
-            if (empty($collected[$s['key']]) || ($s['expects'] ?? null) === 'image') return $s;
+            if (($s['expects'] ?? null) === 'image') {
+                if (empty($collected[$s['key'] . '_path'])) return $s;
+                continue;
+            }
+            if (empty($collected[$s['key']])) return $s;
         }
         return null;
     }
