@@ -551,9 +551,24 @@ class LeaseApplicationBot
 
         // Image step (license_image_front / license_image_back) needs MMS
         if (($step['expects'] ?? null) === 'image') {
+            // Customer-driven skip — they can reply NEXT / SKIP / LATER to
+            // jump past this step. The image gets flagged as missing on the
+            // session so staff knows to follow up; the application keeps
+            // moving instead of getting stuck forever.
+            $skipWord = strtoupper(trim($body));
+            if (in_array($skipWord, ['NEXT', 'SKIP', 'LATER'], true)) {
+                $collected['_skipped_' . $step['key']] = now()->toIso8601String();
+                $collected['_needs_staff_followup'] = true;
+                Log::error('Image step skipped by customer', ['session_id' => $session->id, 'step' => $step['key']]);
+                return $this->skipImageStepAndAdvance($session, $step, $stepIdx, $collected,
+                    "No problem — I'll skip the photo for now and have the team follow up. Continuing.");
+            }
             if (empty($mediaUrls)) {
                 $side = str_contains($step['key'], 'back') ? 'BACK' : 'FRONT';
-                $this->reply($session->phone, "I need an actual photo — please TEXT (MMS) the {$side} of your driver's license.");
+                $this->reply($session->phone,
+                    "I need an actual photo — please TEXT (MMS) the {$side} of your driver's license.\n\n" .
+                    "Or reply NEXT to skip for now and finish the rest first."
+                );
                 return true;
             }
             $extracted = $this->ingestLicenseImage($session, $mediaUrls[0]);
@@ -578,7 +593,10 @@ class LeaseApplicationBot
                 }
                 $collected[$retryKey] = $retries + 1;
                 $session->update(['collected' => $collected, 'last_inbound_at' => now()]);
-                $this->reply($session->phone, "Sorry, I had trouble receiving your photo — please try sending it again.");
+                $this->reply($session->phone,
+                    "Sorry, I had trouble receiving your photo — please try sending it again.\n\n" .
+                    "Or reply NEXT to skip for now and finish the rest first."
+                );
                 return true; // stay on same step
             }
 
@@ -604,7 +622,8 @@ class LeaseApplicationBot
                     $session->update(['collected' => $collected, 'last_inbound_at' => now()]);
                     $this->reply($session->phone,
                         "I need the FULL back of your license — {$reason}. " .
-                        "Please re-send with the WHOLE back visible: all four corners showing, nothing covered."
+                        "Please re-send with the WHOLE back visible: all four corners showing, nothing covered.\n\n" .
+                        "Or reply NEXT to skip for now and finish the rest first."
                     );
                     return true;
                 }
@@ -638,7 +657,8 @@ class LeaseApplicationBot
                         "I couldn't read your license. Please re-send with: " .
                         "(1) the WHOLE license visible — all four corners, no fingers/thumbs covering anything, " .
                         "(2) right-side up (not rotated/sideways), " .
-                        "(3) clear focus and good lighting (no glare)."
+                        "(3) clear focus and good lighting (no glare).\n\n" .
+                        "Or reply NEXT to skip for now and finish the rest first."
                     );
                     return true; // stay on same step
                 }
