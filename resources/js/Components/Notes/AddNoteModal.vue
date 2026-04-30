@@ -1,7 +1,8 @@
 <script setup>
-import { ref, reactive, computed, watch, nextTick } from 'vue';
-import { useForm, router } from '@inertiajs/vue3';
+import { ref, watch } from 'vue';
+import { useForm } from '@inertiajs/vue3';
 import axios from 'axios';
+import MentionInput from './MentionInput.vue';
 
 const props = defineProps({
     show: { type: Boolean, default: false },
@@ -32,7 +33,7 @@ watch(() => props.editingNote, (n) => {
     }
 }, { immediate: true });
 
-// ── Staff list (loaded once on first open) ───────────────────────────
+// ── Staff list — loaded once on first open and shared with MentionInput ──
 const staff = ref([]);
 const loadingStaff = ref(false);
 const loadStaff = async () => {
@@ -51,52 +52,9 @@ const toggleAssignee = (uid) => {
     else form.assigned_user_ids.splice(i, 1);
 };
 
-// ── @-mention inline typeahead inside the textarea ───────────────────
-const bodyRef = ref(null);
-const mentionOpen = ref(false);
-const mentionQuery = ref('');
-const mentionAnchorPos = ref(0);
-const mentionHighlight = ref(0);
-
-const mentionMatches = computed(() => {
-    const q = mentionQuery.value.toLowerCase();
-    return staff.value.filter(u => u.name && u.name.toLowerCase().includes(q)).slice(0, 6);
-});
-
-const onBodyInput = (e) => {
-    const el = e.target;
-    const pos = el.selectionStart;
-    const before = form.body.slice(0, pos);
-    const m = before.match(/@([\w\s\-\.\']*)$/);
-    if (m) {
-        mentionAnchorPos.value = pos - m[0].length;
-        mentionQuery.value = m[1] || '';
-        mentionOpen.value = true;
-        mentionHighlight.value = 0;
-    } else {
-        mentionOpen.value = false;
-    }
-};
-
-const insertMention = (user) => {
-    const before = form.body.slice(0, mentionAnchorPos.value);
-    const after = form.body.slice(bodyRef.value.selectionStart);
-    form.body = `${before}@${user.name} ${after}`;
-    mentionOpen.value = false;
+// Picking a mention auto-assigns the user — keeps mentions and assignees in sync.
+const onMentionPicked = (user) => {
     if (!form.assigned_user_ids.includes(user.id)) form.assigned_user_ids.push(user.id);
-    nextTick(() => bodyRef.value?.focus());
-};
-
-const onBodyKeydown = (e) => {
-    if (!mentionOpen.value) return;
-    if (e.key === 'ArrowDown') { e.preventDefault(); mentionHighlight.value = Math.min(mentionHighlight.value + 1, mentionMatches.value.length - 1); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); mentionHighlight.value = Math.max(mentionHighlight.value - 1, 0); }
-    else if (e.key === 'Enter' || e.key === 'Tab') {
-        if (mentionMatches.value[mentionHighlight.value]) {
-            e.preventDefault();
-            insertMention(mentionMatches.value[mentionHighlight.value]);
-        }
-    } else if (e.key === 'Escape') { mentionOpen.value = false; }
 };
 
 const submit = () => {
@@ -127,27 +85,13 @@ const showAssigneeList = ref(false);
                                class="w-full border-gray-300 rounded-lg text-sm" />
                     </div>
 
-                    <div class="relative">
+                    <div>
                         <label class="block text-xs font-semibold text-gray-700 mb-1">Note</label>
                         <p class="text-[11px] text-gray-500 mb-1">Type <span class="font-mono bg-gray-100 px-1 rounded">@</span> to mention a coworker — they'll be auto-assigned and notified.</p>
-                        <textarea ref="bodyRef" v-model="form.body" @input="onBodyInput" @keydown="onBodyKeydown"
-                                  rows="5" required
-                                  class="w-full border-gray-300 rounded-lg text-sm font-mono"></textarea>
+                        <MentionInput v-model="form.body" :rows="5" :required="true" :staff="staff"
+                                      input-class="w-full border-gray-300 rounded-lg text-sm font-mono"
+                                      @mention-picked="onMentionPicked" />
                         <p v-if="form.errors.body" class="mt-1 text-xs text-red-600">{{ form.errors.body }}</p>
-
-                        <!-- mention dropdown -->
-                        <div v-if="mentionOpen && mentionMatches.length"
-                             class="absolute left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-20 max-h-60 overflow-y-auto">
-                            <button v-for="(u, i) in mentionMatches" :key="u.id" type="button"
-                                    @mousedown.prevent="insertMention(u)"
-                                    @mouseenter="mentionHighlight = i"
-                                    class="w-full text-left px-3 py-2 flex items-center gap-2 text-sm border-b last:border-b-0"
-                                    :class="mentionHighlight === i ? 'bg-indigo-50' : 'hover:bg-gray-50'">
-                                <span class="w-7 h-7 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center text-xs font-semibold">{{ u.initials }}</span>
-                                <span class="font-medium text-gray-900">{{ u.name }}</span>
-                                <span class="ml-auto text-xs text-gray-500">{{ u.email }}</span>
-                            </button>
-                        </div>
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">

@@ -164,7 +164,7 @@ const kinds = [
                 <nav class="flex border-b">
                     <button v-for="t in [
                         {id:'overview', label:'Overview'},
-                        {id:'notes', label:`Notes (${customer.notes?.length || 0})`},
+                        {id:'notes', label:`Notes (${customer.note_thread?.length || 0})`},
                         {id:'documents', label:`Documents / IDs (${customer.documents?.length || 0})`},
                         {id:'messages', label:'Messages'},
                         {id:'history', label:`History (${timeline.length})`},
@@ -290,7 +290,7 @@ const kinds = [
 
                 <!-- NOTES — mentions, assignments, replies, reminders -->
                 <div v-if="tab === 'notes'" class="p-6">
-                    <NotesPanel :notes="customer.notes || []" notable-type="customer" :notable-id="customer.id" />
+                    <NotesPanel :notes="customer.note_thread || []" notable-type="customer" :notable-id="customer.id" />
                 </div>
 
                 <!-- MESSAGES (SMS thread) -->
