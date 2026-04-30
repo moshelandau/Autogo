@@ -640,9 +640,13 @@ class LeaseApplicationBot
                     $msg = "Got your license. Quick confirm — your license info doesn't match what we have on file:\n\n";
                     foreach ($diffs as $field => $pair) {
                         $label = ['date_of_birth' => 'DATE OF BIRTH', 'address' => 'ADDRESS', 'first_name' => 'FIRST NAME', 'last_name' => 'LAST NAME'][$field] ?? strtoupper($field);
-                        $msg .= "{$label}\n  License: " . ($pair['license'] ?: '—') . "\n  On file: " . ($pair['file'] ?: '—') . "\n\n";
+                        // Display dates MM/DD/YYYY (US convention) — internal
+                        // storage stays YYYY-MM-DD ISO.
+                        $licDisp  = $field === 'date_of_birth' ? $this->displayDate($pair['license']) : $pair['license'];
+                        $fileDisp = $field === 'date_of_birth' ? $this->displayDate($pair['file'])    : $pair['file'];
+                        $msg .= "{$label}\n  License: " . ($licDisp ?: '—') . "\n  On file: " . ($fileDisp ?: '—') . "\n\n";
                     }
-                    $msg .= "Which would you like to use for this application? Reply LICENSE or FILE — or text the value you want.";
+                    $msg .= "Reply:\n  1 — use LICENSE info\n  2 — keep what's ON FILE\n  3 — read looks wrong, flag for team review\nOr text the correct value.";
                     $this->reply($session->phone, $msg);
                     return true; // stay on this step until user confirms
                 }
@@ -1096,6 +1100,23 @@ class LeaseApplicationBot
     }
 
     /**
+     * Format a YYYY-MM-DD-ish date as MM/DD/YYYY for SMS display. Pass-
+     * through anything we can't parse (including "(none on file)") so
+     * the caller doesn't have to special-case empty values.
+     */
+    private function displayDate(?string $v): string
+    {
+        if (!$v) return '';
+        if (!preg_match('/\d{4}-\d{1,2}-\d{1,2}|\d{1,2}\/\d{1,2}\/\d{2,4}/', $v)) return $v; // raw string passthrough
+        try {
+            $ts = strtotime($v);
+            return $ts ? date('m/d/Y', $ts) : $v;
+        } catch (\Throwable) {
+            return $v;
+        }
+    }
+
+    /**
      * Does the customer's free-text correction look like a date? Accepts
      * 12/27/1985, 12-27-1985, 1985-12-27, "Dec 27 1985" etc. Used to
      * route DOB corrections to the right field instead of silently
@@ -1157,25 +1178,37 @@ class LeaseApplicationBot
 
     /**
      * Customer is replying to the diff prompt. We accept:
-     *   "LICENSE" → use license values, overwrite session collected
-     *   "FILE"    → keep on-file values, ignore license extracts
-     *   anything else → treat as a free-text correction (best-effort
-     *                   single-field, applied to the address — DOB
-     *                   corrections are too risky to free-text-parse and
-     *                   are deferred to a follow-up).
+     *   "1" / "LICENSE"  → use license values, overwrite session collected
+     *   "2" / "FILE"     → keep on-file values (with license fallback for
+     *                      empty fields, see PR #37)
+     *   "3" / "REVIEW"   → OCR read looks wrong; keep license values for
+     *                      now BUT flag session for staff to verify later
+     *   date-shaped text → save as DOB, carry on-file address through
+     *   anything else    → save as address, carry license DOB through
      * Then advance to the next applicable step.
      */
     private function handleIdentityConfirmResponse(LeaseApplicationSession $session, array $step, int $stepIdx, array $collected, string $body): bool
     {
         $diffs = $collected['_pending_identity_confirm'] ?? [];
         $extracted = $collected['license_extracted'] ?? [];
-        $upper = strtoupper(trim($body));
+        $trim  = trim($body);
+        $upper = strtoupper($trim);
 
-        if ($upper === 'LICENSE' || $upper === 'L') {
+        // Accept numeric shortcuts first — phone keyboards prefer 1/2/3.
+        $choice = null;
+        if ($trim === '1' || $upper === 'LICENSE' || $upper === 'L') {
+            $choice = 'license';
+        } elseif ($trim === '2' || $upper === 'FILE' || $upper === 'F') {
+            $choice = 'file';
+        } elseif ($trim === '3' || $upper === 'REVIEW' || $upper === 'R') {
+            $choice = 'review';
+        }
+
+        if ($choice === 'license') {
             foreach (['date_of_birth','address','city','state','zip','first_name','last_name'] as $k) {
                 if (!empty($extracted[$k])) $collected[$k] = $extracted[$k];
             }
-        } elseif ($upper === 'FILE' || $upper === 'F') {
+        } elseif ($choice === 'file') {
             // Keep on-file values — but for any field that's EMPTY on file
             // (e.g. DOB never captured), fall back to the license value so
             // the application doesn't end up with blanks. "FILE" means
@@ -1189,6 +1222,18 @@ class LeaseApplicationBot
             $fileDob = $cust && $cust->date_of_birth ? $cust->date_of_birth->format('Y-m-d') : null;
             $licDob  = $extracted['date_of_birth'] ?? null;
             $collected['date_of_birth'] = !empty($fileDob) ? $fileDob : ($licDob ?: ($collected['date_of_birth'] ?? null));
+        } elseif ($choice === 'review') {
+            // Customer thinks the OCR read is wrong but can't easily correct
+            // it via SMS. Take the license values as the best-we-have but
+            // flag the session so staff manually verify before the deal
+            // moves forward. Don't block the flow — let the customer keep
+            // moving through the application.
+            foreach (['date_of_birth','address','city','state','zip','first_name','last_name'] as $k) {
+                if (!empty($extracted[$k])) $collected[$k] = $extracted[$k];
+            }
+            $collected['_needs_license_review'] = true;
+            $collected['_needs_staff_followup'] = true;
+            $collected['_license_review_flagged_at'] = now()->toIso8601String();
         } else {
             // Free-text correction — detect what shape it is so we route to
             // the right field instead of always treating it as an address.
@@ -1236,7 +1281,13 @@ class LeaseApplicationBot
             $this->finalize($session);
             return true;
         }
-        $this->reply($session->phone, "Got it — using " . ($upper === 'LICENSE' ? 'license' : ($upper === 'FILE' ? 'on-file' : 'updated')) . " info.\n\n" . $this->renderPrompt($next, $session));
+        $ack = match ($choice) {
+            'license' => 'Got it — using license info.',
+            'file'    => "Got it — keeping what's on file.",
+            'review'  => "Got it — flagged for our team to review the read. Continuing for now.",
+            default   => 'Got it — saved your correction.',
+        };
+        $this->reply($session->phone, $ack . "\n\n" . $this->renderPrompt($next, $session));
         return true;
     }
 }
