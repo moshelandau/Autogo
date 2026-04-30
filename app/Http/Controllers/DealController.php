@@ -88,7 +88,7 @@ class DealController extends Controller
     public function show(Deal $deal)
     {
         $this->syncCurrentStageTasks($deal);
-        $deal->load(['customer.documents.uploadedBy', 'coSigner.documents', 'salesperson', 'lender', 'quotes.lender', 'tasks', 'documents', 'noteThread.user', 'noteThread.assignedUsers', 'noteThread.comments.user', 'noteThread.activities.user']);
+        $deal->load(['customer.documents.uploadedBy', 'coSigner.documents', 'salesperson', 'lender', 'insurer', 'quotes.lender', 'tasks', 'documents', 'noteThread.user', 'noteThread.assignedUsers', 'noteThread.comments.user', 'noteThread.activities.user']);
 
         // Credit-pull history for this deal's customer (most-recent first)
         $creditPulls = $deal->customer
@@ -186,6 +186,7 @@ class DealController extends Controller
             'paperwork_tracking_number' => 'nullable|string|max:60',
             'bd_payment_received_at' => 'nullable|date',
             'bd_payment_amount' => 'nullable|numeric|min:0',
+            'insurer_id' => 'nullable|exists:insurers,id',
         ]);
 
         $this->leasing->updateDeal($deal, $validated);

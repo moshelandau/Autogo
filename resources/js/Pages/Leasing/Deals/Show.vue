@@ -46,6 +46,40 @@ onMounted(() => {
 });
 
 const stageLabels = { lead: 'Lead', quote: 'Quote', application: 'Application', submission: 'Submission', pending: 'Pending', finalize: 'Finalize', outstanding: 'Outstanding', complete: 'Complete', lost: 'Lost' };
+
+// ── Insurer picker (mirrors xDeskPro's Deal Information → Insurer typeahead) ──
+const insurerQuery = ref('');
+const insurerResults = ref([]);
+const insurerOpen = ref(false);
+const insurerSaving = ref(false);
+let insurerTimer = null;
+const fetchInsurers = (term) => {
+    clearTimeout(insurerTimer);
+    insurerTimer = setTimeout(async () => {
+        try {
+            const r = await fetch(route('leasing.insurers.typeahead', { q: term }), { headers: { 'Accept': 'application/json' } });
+            insurerResults.value = await r.json();
+        } catch { insurerResults.value = []; }
+    }, 200);
+};
+const onInsurerInput = (e) => {
+    insurerQuery.value = e.target.value;
+    insurerOpen.value = true;
+    fetchInsurers(insurerQuery.value);
+};
+const pickInsurer = (ins) => {
+    insurerSaving.value = true;
+    router.put(route('leasing.deals.update', d.id), { insurer_id: ins?.id || null }, {
+        preserveScroll: true,
+        preserveState: true,
+        onFinish: () => {
+            insurerSaving.value = false;
+            insurerOpen.value = false;
+            insurerQuery.value = '';
+        },
+    });
+};
+const clearInsurer = () => pickInsurer(null);
 const allStages = ['lead', 'quote', 'application', 'submission', 'pending', 'finalize', 'outstanding', 'complete'];
 
 // Required document checklist on the Documents tab. Sourced from
@@ -978,6 +1012,44 @@ const saveCalcAsQuote = () => {
                                     <div><span class="text-gray-500">Passengers:</span> <span class="font-medium">{{ d.preferences.passengers || '—' }}</span></div>
                                 </div>
                                 <p v-else class="text-xs text-gray-400 italic">No preferences captured yet — click "+ Add" to fill them in.</p>
+                            </div>
+
+                            <!-- Insurer (xDeskPro parity — Deal Information → Insurer) -->
+                            <div class="border rounded-xl p-4 bg-white">
+                                <div class="flex items-center justify-between mb-2">
+                                    <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Insurer</h4>
+                                    <Link :href="route('leasing.insurers.index')" class="text-xs text-indigo-600 hover:underline">Manage Insurers</Link>
+                                </div>
+                                <div v-if="d.insurer" class="flex items-center justify-between">
+                                    <div class="text-sm">
+                                        <div class="font-medium">{{ d.insurer.name }}</div>
+                                        <div class="text-xs text-gray-500">
+                                            <span v-if="d.insurer.first_name || d.insurer.last_name">{{ [d.insurer.first_name, d.insurer.last_name].filter(Boolean).join(' ') }} · </span>
+                                            <span v-if="d.insurer.phone">{{ d.insurer.phone }}</span>
+                                            <span v-if="d.insurer.email"> · {{ d.insurer.email }}</span>
+                                        </div>
+                                    </div>
+                                    <button type="button" @click="clearInsurer" :disabled="insurerSaving"
+                                            class="text-xs text-red-600 hover:underline">Remove</button>
+                                </div>
+                                <div v-else class="relative">
+                                    <input type="text" :value="insurerQuery" @input="onInsurerInput" @focus="insurerOpen = true"
+                                           placeholder="Search insurer by company, contact, phone…"
+                                           class="block w-full border-gray-300 rounded-md shadow-sm text-sm" />
+                                    <div v-if="insurerOpen && insurerResults.length"
+                                         class="absolute z-10 mt-1 w-full bg-white border rounded-md shadow-lg max-h-64 overflow-y-auto">
+                                        <button v-for="ins in insurerResults" :key="ins.id"
+                                                type="button" @click="pickInsurer(ins)"
+                                                class="block w-full text-left px-3 py-2 text-sm hover:bg-indigo-50">
+                                            <div class="font-medium">{{ ins.name }}</div>
+                                            <div class="text-xs text-gray-500">
+                                                <span v-if="ins.first_name || ins.last_name">{{ [ins.first_name, ins.last_name].filter(Boolean).join(' ') }}</span>
+                                                <span v-if="ins.phone"> · {{ ins.phone }}</span>
+                                            </div>
+                                        </button>
+                                    </div>
+                                    <p class="text-xs text-gray-400 italic mt-1">No insurer assigned. Type to search; <Link :href="route('leasing.insurers.index')" class="text-indigo-600 hover:underline">add a new one</Link> if missing.</p>
+                                </div>
                             </div>
 
                             <div class="grid grid-cols-2 gap-4 text-sm">
