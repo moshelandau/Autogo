@@ -93,8 +93,16 @@ const quoteForm = useForm({
     vehicle_trim: d.vehicle_trim || '',
 });
 const decodingVin = ref(false);
+const vinDecodeStatus = ref(''); // '', 'ok', 'partial', 'error', 'invalid_length'
+const vinDecodeMessage = ref('');
 const decodeVinForQuote = async () => {
-    if (!quoteForm.vehicle_vin || quoteForm.vehicle_vin.length !== 17) return;
+    vinDecodeStatus.value = '';
+    vinDecodeMessage.value = '';
+    if (!quoteForm.vehicle_vin || quoteForm.vehicle_vin.length !== 17) {
+        vinDecodeStatus.value = 'invalid_length';
+        vinDecodeMessage.value = `VIN must be exactly 17 characters (currently ${(quoteForm.vehicle_vin || '').length}).`;
+        return;
+    }
     decodingVin.value = true;
     try {
         const res = await fetch(route('leasing.vin-decode'), {
@@ -104,14 +112,36 @@ const decodeVinForQuote = async () => {
             credentials: 'same-origin',
         });
         const result = await res.json();
-        if (result.success && result.data) {
-            quoteForm.vehicle_year  = result.data.year  || quoteForm.vehicle_year;
-            quoteForm.vehicle_make  = result.data.make  || quoteForm.vehicle_make;
-            quoteForm.vehicle_model = result.data.model || quoteForm.vehicle_model;
-            quoteForm.vehicle_trim  = result.data.trim  || quoteForm.vehicle_trim;
-            if (result.data.msrp && !quoteForm.msrp) quoteForm.msrp = result.data.msrp;
+        console.log('[VIN decode]', result);
+        if (!result.success) {
+            vinDecodeStatus.value = 'error';
+            vinDecodeMessage.value = result.error || 'NHTSA decode failed.';
+        } else if (result.data) {
+            // NHTSA can return empty strings for unknown fields; treat as missing.
+            const got = (k) => (result.data[k] && String(result.data[k]).trim() !== '') ? result.data[k] : null;
+            const y = got('year'), mk = got('make'), md = got('model'), tr = got('trim'), msrp = got('msrp');
+            if (y)  quoteForm.vehicle_year  = y;
+            if (mk) quoteForm.vehicle_make  = mk;
+            if (md) quoteForm.vehicle_model = md;
+            if (tr) quoteForm.vehicle_trim  = tr;
+            if (msrp && !quoteForm.msrp) quoteForm.msrp = msrp;
+            const filled = [y, mk, md].filter(Boolean).length;
+            if (filled === 3) {
+                vinDecodeStatus.value = 'ok';
+                vinDecodeMessage.value = `Decoded: ${y} ${mk} ${md}${tr ? ' ' + tr : ''}.`;
+            } else if (filled > 0) {
+                vinDecodeStatus.value = 'partial';
+                vinDecodeMessage.value = 'NHTSA returned partial data — fill the missing fields manually.';
+            } else {
+                vinDecodeStatus.value = 'error';
+                vinDecodeMessage.value = 'NHTSA returned no data for that VIN — fill the fields manually.';
+            }
         }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        console.error('[VIN decode]', e);
+        vinDecodeStatus.value = 'error';
+        vinDecodeMessage.value = 'Network error contacting decode endpoint — check console.';
+    }
     decodingVin.value = false;
 };
 const addQuote = () => {
@@ -362,10 +392,11 @@ const saveCalcAsQuote = () => {
                             <div class="border-t pt-4">
                                 <h4 class="font-medium text-sm mb-3">Add Quote</h4>
 
-                                <!-- VIN-driven vehicle entry. Decode auto-fills year/make/model/trim;
-                                     submitting the quote also writes these to the deal so the
-                                     right car is on file. -->
-                                <div class="bg-indigo-50/60 border border-indigo-100 rounded-lg p-3 mb-3">
+                                <!-- VIN-driven vehicle entry. Decode auto-fills year/make/model/trim
+                                     (NHTSA, free, no key); fields stay editable so you can correct
+                                     or fill manually if NHTSA returns partial data. Submitting the
+                                     quote also writes these to the deal. -->
+                                <div class="bg-indigo-50/60 border border-indigo-100 rounded-lg p-3 mb-3 space-y-2">
                                     <div class="flex flex-wrap items-end gap-2">
                                         <div class="flex-1 min-w-[220px]">
                                             <label class="block text-[11px] font-medium text-gray-700">VIN</label>
@@ -373,15 +404,34 @@ const saveCalcAsQuote = () => {
                                                    class="mt-0.5 block w-full font-mono border-gray-300 rounded-md text-xs" />
                                         </div>
                                         <button type="button" @click="decodeVinForQuote"
-                                                :disabled="decodingVin || (quoteForm.vehicle_vin || '').length !== 17"
+                                                :disabled="decodingVin"
                                                 class="px-3 py-1.5 bg-blue-600 text-white rounded-md text-xs hover:bg-blue-700 disabled:opacity-50">
                                             {{ decodingVin ? 'Decoding…' : 'Decode' }}
                                         </button>
                                     </div>
-                                    <div v-if="quoteForm.vehicle_year || quoteForm.vehicle_make"
-                                         class="mt-2 text-xs text-gray-700">
-                                        <strong>{{ quoteForm.vehicle_year }} {{ quoteForm.vehicle_make }} {{ quoteForm.vehicle_model }} {{ quoteForm.vehicle_trim }}</strong>
-                                        <span class="ml-2 text-[11px] text-gray-500">— will be saved to the deal on submit</span>
+                                    <div v-if="vinDecodeMessage" class="text-[11px]"
+                                         :class="{
+                                            'text-emerald-700': vinDecodeStatus === 'ok',
+                                            'text-amber-700':   vinDecodeStatus === 'partial',
+                                            'text-red-700':     vinDecodeStatus === 'error' || vinDecodeStatus === 'invalid_length',
+                                         }">{{ vinDecodeMessage }}</div>
+                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Year</label>
+                                            <input v-model="quoteForm.vehicle_year" type="number" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Make</label>
+                                            <input v-model="quoteForm.vehicle_make" type="text" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Model</label>
+                                            <input v-model="quoteForm.vehicle_model" type="text" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Trim</label>
+                                            <input v-model="quoteForm.vehicle_trim" type="text" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
                                     </div>
                                 </div>
 
