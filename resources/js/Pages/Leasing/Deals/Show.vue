@@ -109,13 +109,11 @@ const decodeVinForQuote = async () => {
     }
     decodingVin.value = true;
     try {
-        const res = await fetch(route('leasing.vin-decode'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content },
-            body: JSON.stringify({ vin: quoteForm.vehicle_vin }),
-            credentials: 'same-origin',
-        });
-        const result = await res.json();
+        // Use axios (bootstrap.js wires the XSRF-TOKEN cookie) instead of fetch
+        // — fetch + manual X-CSRF-TOKEN header was 419'ing on this endpoint and
+        // returning Laravel's HTML CSRF page, which then failed res.json() and
+        // surfaced as the unhelpful "Network error" message.
+        const { data: result } = await axios.post(route('leasing.vin-decode'), { vin: quoteForm.vehicle_vin });
         console.log('[VIN decode]', result);
         if (!result.success) {
             vinDecodeStatus.value = 'error';
@@ -144,7 +142,12 @@ const decodeVinForQuote = async () => {
     } catch (e) {
         console.error('[VIN decode]', e);
         vinDecodeStatus.value = 'error';
-        vinDecodeMessage.value = 'Network error contacting decode endpoint — check console.';
+        const status = e.response?.status;
+        const body = e.response?.data;
+        const detail = typeof body === 'string' ? body.slice(0, 80) : (body?.message || body?.error || e.message);
+        vinDecodeMessage.value = status
+            ? `Decode failed: HTTP ${status} — ${detail}`
+            : `Decode failed: ${detail || 'unknown error'}`;
     }
     decodingVin.value = false;
 };
