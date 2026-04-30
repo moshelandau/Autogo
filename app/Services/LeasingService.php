@@ -123,7 +123,20 @@ class LeasingService
 
     public function transitionDeal(Deal $deal, string $newStage): Deal
     {
+        // Moving forward through the funnel implies the previous stage's
+        // required tasks are done — auto-check them so staff don't have to
+        // tick a now-redundant checklist before advancing manually.
+        $stages = Deal::STAGES;
+        $oldIdx = array_search($deal->stage, $stages, true);
+        $newIdx = array_search($newStage, $stages, true);
+        $movingForward = $oldIdx !== false && $newIdx !== false && $newIdx > $oldIdx && $newStage !== 'lost';
+        $previousStage = $deal->stage;
+
         $deal->transitionTo($newStage);
+
+        if ($movingForward) {
+            $this->markPriorStageTasksDone($deal, $previousStage);
+        }
 
         if ($newStage === 'complete' && $deal->profit) {
             $this->accounting->recordLeasingCommission(
@@ -215,6 +228,51 @@ class LeasingService
     public function completeTask(DealTask $task): void
     {
         $task->markComplete();
+        $this->maybeAutoAdvanceStage($task->deal);
+    }
+
+    /**
+     * If every REQUIRED task for the deal's current stage is now complete,
+     * auto-advance the stage. Tasks whose name starts with "Optional:" are
+     * intentionally skippable and don't block advancement.
+     *
+     * Called from completeTask(); also safe to call after Deal::generateTasksForStage
+     * since it just looks at the current is_completed state.
+     */
+    public function maybeAutoAdvanceStage(?Deal $deal): void
+    {
+        if (!$deal || in_array($deal->stage, ['complete', 'lost'], true)) return;
+
+        $required = $deal->tasks()
+            ->where('stage', $deal->stage)
+            ->where('name', 'not ilike', 'Optional:%')
+            ->get();
+
+        if ($required->isEmpty()) return;
+        if ($required->contains(fn ($t) => !$t->is_completed)) return;
+
+        $stages = Deal::STAGES;
+        $idx = array_search($deal->stage, $stages, true);
+        if ($idx === false || $idx + 1 >= count($stages)) return;
+        $next = $stages[$idx + 1];
+        if ($next === 'lost') return;
+
+        $deal->transitionTo($next);
+    }
+
+    /**
+     * When a stage is advanced manually (or via auto-advance), mark every
+     * required task in the *previous* stage complete — staff implicitly
+     * confirmed they did the work by moving forward. Optional tasks are
+     * left alone (un-checking them post-advance is fine).
+     */
+    public function markPriorStageTasksDone(Deal $deal, string $previousStage, ?int $userId = null): void
+    {
+        $deal->tasks()
+            ->where('stage', $previousStage)
+            ->where('is_completed', false)
+            ->where('name', 'not ilike', 'Optional:%')
+            ->each(fn ($t) => $t->markComplete($userId));
     }
 
     public function getOverdueTasks(): Collection
