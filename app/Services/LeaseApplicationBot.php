@@ -607,9 +607,10 @@ class LeaseApplicationBot
                     $collected[$retryKey] = $retries + 1;
                     $session->update(['collected' => $collected, 'last_inbound_at' => now()]);
                     $this->reply($session->phone,
-                        "I need the FULL photo of your license — looks like part of it is cut off or covered. " .
-                        "Please send a photo where the WHOLE license is visible: no fingers or thumbs covering any part, " .
-                        "all four corners showing, and the entire card filling the frame."
+                        "I couldn't read your license. Please re-send with: " .
+                        "(1) the WHOLE license visible — all four corners, no fingers/thumbs covering anything, " .
+                        "(2) right-side up (not rotated/sideways), " .
+                        "(3) clear focus and good lighting (no glare)."
                     );
                     return true; // stay on same step
                 }
@@ -793,7 +794,7 @@ class LeaseApplicationBot
                         // the cost premium over Sonnet is well-spent here. Other uses of
                         // AiClient elsewhere in the bot stay on Sonnet.
                         'model' => 'claude-opus-4-7', 'max_tokens' => 800, 'temperature' => 0,
-                        'system' => 'OCR US driver licenses. Output VALID JSON only. Read each visible digit carefully (1 vs 7, 0 vs 8, 3 vs 8). Use empty string ONLY if a field is truly unreadable or absent — do not skip a whole field over a single uncertain digit, just give your best read.',
+                        'system' => 'OCR US driver licenses. Output VALID JSON only. The photo MAY BE ROTATED 90/180/270 degrees — mentally rotate the image so the license reads upright before extracting any fields, then read normally. Read each visible digit carefully (1 vs 7, 0 vs 8, 3 vs 8). Use empty string ONLY if a field is truly unreadable or absent — do not skip a whole field over a single uncertain digit, just give your best read.',
                         'messages' => [[
                             'role' => 'user',
                             'content' => [
