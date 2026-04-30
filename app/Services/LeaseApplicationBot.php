@@ -782,40 +782,18 @@ class LeaseApplicationBot
         try {
             $binary = @file_get_contents($url);
             if ($binary === false) { Log::warning('Could not fetch license image', ['url' => $url]); return []; }
-            $b64 = base64_encode($binary);
 
-            $extracted = [];
-            if (!empty(config('services.anthropic.api_key'))) {
-                try {
-                    $resp = app(\App\Services\AiClient::class)->messages([
-                        // Opus 4.7 chosen specifically for license OCR — best-in-class
-                        // digit accuracy (Sonnet 4.5 was flipping 1↔7 etc.). The license
-                        // OCR is a low-volume, high-stakes call (one per applicant), so
-                        // the cost premium over Sonnet is well-spent here. Other uses of
-                        // AiClient elsewhere in the bot stay on Sonnet.
-                        'model' => 'claude-opus-4-7', 'max_tokens' => 800, 'temperature' => 0,
-                        'system' => 'OCR US driver licenses. Output VALID JSON only. The photo MAY BE ROTATED 90/180/270 degrees — mentally rotate the image so the license reads upright before extracting any fields, then read normally. Read each visible digit carefully (1 vs 7, 0 vs 8, 3 vs 8). Use empty string ONLY if a field is truly unreadable or absent — do not skip a whole field over a single uncertain digit, just give your best read.',
-                        'messages' => [[
-                            'role' => 'user',
-                            'content' => [
-                                ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => 'image/jpeg', 'data' => $b64]],
-                                ['type' => 'text', 'text' => 'Extract: { "first_name":"", "last_name":"", "address":"", "city":"", "state":"", "zip":"", "drivers_license_number":"", "dl_state":"", "dl_expiration":"YYYY-MM-DD", "date_of_birth":"YYYY-MM-DD" }. Address: street + unit only (no city/state/zip — those have their own fields).'],
-                            ],
-                        ]],
-                    ]);
-                    $text = trim(preg_replace('/^```(?:json)?\s*|\s*```$/m', '', $resp->content[0]->text ?? ''));
-                    $data = json_decode($text, true);
-                    if (is_array($data)) $extracted = $data;
-                } catch (\Throwable $e) {
-                    Log::warning('License OCR failed', ['error' => $e->getMessage()]);
-                }
-            }
-
-            // Save as a CustomerDocument once we know the customer
-            // (will be wired in finalize — for now, stash the binary)
+            // Persist the original image regardless of OCR outcome so staff
+            // always have it on file to review manually.
             $filename = 'license-mms-' . now()->format('YmdHis') . '-' . Str::random(6) . '.jpg';
             $path = "lease-bot-uploads/{$session->id}/{$filename}";
             Storage::disk('public')->put($path, $binary);
+
+            // OCR — try the original orientation first, then 90/180/270 if
+            // it returns nothing usable. Some phones strip EXIF orientation
+            // when sent via MMS; auto-rotating + retrying is much friendlier
+            // than asking the customer to re-shoot.
+            $extracted = $this->ocrLicenseWithRotations($binary);
 
             $extracted['_stored_path'] = $path;
             $extracted['_stored_disk'] = 'public';
@@ -826,6 +804,91 @@ class LeaseApplicationBot
             Log::warning('ingestLicenseImage failed', ['error' => $e->getMessage()]);
             return [];
         }
+    }
+
+    /**
+     * Run the OCR call up to 4 times — original, then 90°/180°/270°
+     * rotations — taking the first attempt that returns ≥4 of the key
+     * fields. Falls back to whichever rotation returned the most fields
+     * (or empty if all 4 yielded nothing). GD's imagerotate is used for
+     * the rotation; if GD isn't available we skip the rotation passes.
+     */
+    private function ocrLicenseWithRotations(string $binary): array
+    {
+        if (empty(config('services.anthropic.api_key'))) return [];
+
+        $rotations = [0];
+        if (function_exists('imagecreatefromstring') && function_exists('imagerotate')) {
+            $rotations = [0, 90, 180, 270];
+        }
+
+        $best = ['count' => 0, 'data' => []];
+        foreach ($rotations as $deg) {
+            $image = $deg === 0 ? $binary : $this->rotateJpeg($binary, $deg);
+            if ($image === null) continue;
+
+            $data = $this->callOcr($image);
+            $count = $this->countOcrFields($data);
+            Log::error('License OCR attempt', ['rotation' => $deg, 'fields' => $count]); // error level survives LOG_LEVEL=error
+
+            if ($count >= 4) return $data; // good enough — stop here
+            if ($count > $best['count']) {
+                $best = ['count' => $count, 'data' => $data];
+            }
+        }
+        return $best['data'];
+    }
+
+    private function rotateJpeg(string $binary, int $degrees): ?string
+    {
+        try {
+            $img = @imagecreatefromstring($binary);
+            if (!$img) return null;
+            // imagerotate is counter-clockwise; flip sign so positive degrees
+            // means clockwise rotation (matches "rotate 90° clockwise").
+            $rotated = @imagerotate($img, -$degrees, 0);
+            imagedestroy($img);
+            if (!$rotated) return null;
+            ob_start();
+            imagejpeg($rotated, null, 90);
+            $out = ob_get_clean();
+            imagedestroy($rotated);
+            return $out !== false ? $out : null;
+        } catch (\Throwable $e) {
+            Log::error('License image rotate failed', ['degrees' => $degrees, 'error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
+    private function callOcr(string $imageBinary): array
+    {
+        try {
+            $resp = app(\App\Services\AiClient::class)->messages([
+                'model' => 'claude-opus-4-7', 'max_tokens' => 800, 'temperature' => 0,
+                'system' => 'OCR US driver licenses. Output VALID JSON only. Read each visible digit carefully (1 vs 7, 0 vs 8, 3 vs 8). Use empty string ONLY if a field is truly unreadable or absent — do not skip a whole field over a single uncertain digit, just give your best read.',
+                'messages' => [[
+                    'role' => 'user',
+                    'content' => [
+                        ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => 'image/jpeg', 'data' => base64_encode($imageBinary)]],
+                        ['type' => 'text', 'text' => 'Extract: { "first_name":"", "last_name":"", "address":"", "city":"", "state":"", "zip":"", "drivers_license_number":"", "dl_state":"", "dl_expiration":"YYYY-MM-DD", "date_of_birth":"YYYY-MM-DD" }. Address: street + unit only (no city/state/zip — those have their own fields).'],
+                    ],
+                ]],
+            ]);
+            $text = trim(preg_replace('/^```(?:json)?\s*|\s*```$/m', '', $resp->content[0]->text ?? ''));
+            $data = json_decode($text, true);
+            return is_array($data) ? $data : [];
+        } catch (\Throwable $e) {
+            Log::error('License OCR call failed', ['error' => $e->getMessage()]);
+            return [];
+        }
+    }
+
+    private function countOcrFields(array $data): int
+    {
+        $keys = ['first_name', 'last_name', 'drivers_license_number', 'date_of_birth', 'address', 'dl_state'];
+        $count = 0;
+        foreach ($keys as $k) if (!empty($data[$k])) $count++;
+        return $count;
     }
 
     private function finalize(LeaseApplicationSession $session): void
