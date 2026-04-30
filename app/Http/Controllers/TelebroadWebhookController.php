@@ -138,21 +138,28 @@ class TelebroadWebhookController extends Controller
         // AI router (layer 0) → rule-based safeguards (layer 1-3) → bot.
         if ($isInbound) {
             // BYPASS — if the customer has an active lease application session
-            // whose current step expects an image AND the inbound has media,
-            // route straight to the bot. The AI router classifies empty-body
-            // MMS as "silent / nothing to respond to" — but for an image step
-            // the photo IS the response, so we mustn't drop it. (This was the
-            // silent-failure bug where a license photo got no bot reply.)
-            $expectingImage = $this->isInboundForImageStep((string) $from, $mediaUrls ?? []);
-            if ($expectingImage) {
-                Log::warning('SmsAiRouter bypass: image step active', ['from' => $from]);
+            // (no completed_at, no aborted_at), route every inbound directly
+            // to the bot. The router is meant to gate cold/unsolicited
+            // messages — once a customer is mid-flow, every text or photo is
+            // a legitimate response to whatever the bot last asked, even if
+            // it's vague ("this good?", just an attachment, "ok"). Letting
+            // the router silence those was creating dead conversations.
+            $activeSession = \App\Models\LeaseApplicationSession::where('phone', $from)
+                ->whereNull('completed_at')
+                ->whereNull('aborted_at')
+                ->orderByDesc('id')
+                ->first();
+            if ($activeSession) {
+                Log::error('SmsAiRouter bypass: active bot session', [
+                    'from' => $from, 'session_id' => $activeSession->id, 'step' => $activeSession->current_step,
+                ]);
                 try {
                     $bot = app(\App\Services\LeaseApplicationBot::class);
                     $bot->handleInbound((string) $from, (string) $body, $customer, collect($mediaUrls ?? [])->all());
                 } catch (\Throwable $e) {
-                    Log::error('Bot handleInbound failed (image bypass)', ['error' => $e->getMessage()]);
+                    Log::error('Bot handleInbound failed (active session bypass)', ['error' => $e->getMessage()]);
                 }
-                return response()->json(['ok' => true, 'id' => $log->id, 'image_bypass' => true]);
+                return response()->json(['ok' => true, 'id' => $log->id, 'session_bypass' => true]);
             }
 
             $decision = app(\App\Services\SmsAiRouter::class)->decide((string) $from, (string) $body, $customer);
