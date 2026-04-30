@@ -264,7 +264,7 @@ class PublicApplicationController extends Controller
         $collected = $session->collected ?? [];
 
         if ($config['type'] === 'file') {
-            $request->validate(['file' => 'required|file|image|max:20480']);
+            $request->validate(['file' => 'required|file|max:51200|mimetypes:image/jpeg,image/png,image/heic,image/heif,image/webp,image/gif,image/bmp']);
             // Route file uploads through the bot's image pipeline — same
             // OCR, side-check, obstruction-detection, diff-confirmation,
             // step-advance, SMS-reply that SMS uploads get. Bot decides
@@ -337,8 +337,8 @@ class PublicApplicationController extends Controller
         }
 
         $request->validate([
-            'license_front' => 'nullable|file|image|max:20480',
-            'license_back'  => 'nullable|file|image|max:20480',
+            'license_front' => 'nullable|file|max:51200|mimetypes:image/jpeg,image/png,image/heic,image/heif,image/webp,image/gif,image/bmp',
+            'license_back'  => 'nullable|file|max:51200|mimetypes:image/jpeg,image/png,image/heic,image/heif,image/webp,image/gif,image/bmp',
         ]);
         if (!$request->hasFile('license_front') && !$request->hasFile('license_back')) {
             return back()->withErrors(['license_front' => 'Pick at least one side to upload.']);

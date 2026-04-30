@@ -659,15 +659,18 @@ class LeaseApplicationBot
                 return true; // stay on same step
             }
 
-            // Side + obstruction gate — runs for BOTH front and back. The
-            // verifier checks that (a) it's the side we asked for (catches
-            // user sending front when bot expected back), (b) entire card
-            // is visible, and (c) nothing's blocking the license — wires,
-            // fingers, papers, glare. The reason string from Opus is
-            // surfaced verbatim in the re-ask so the customer knows
-            // exactly what to fix.
+            // Side + obstruction gate — runs for BACK only. For FRONT, the
+            // OCR-field-count gate below is a stronger and more reliable
+            // signal: if Opus extracted 4+ of the 6 key identity fields,
+            // the photo is good enough. The Opus verifier was over-
+            // rejecting valid front photos with false-positive "bottom
+            // cut off" reasons even when all 6 fields were readable.
+            // BACK has no OCR data to count so we still need the verifier
+            // for it.
             $expectedSide = $step['key'] === 'license_image_back' ? 'back' : 'front';
-            $verify = $this->verifyLicenseSide($extracted['_stored_path'] ?? null, $expectedSide);
+            $verify = $expectedSide === 'back'
+                ? $this->verifyLicenseSide($extracted['_stored_path'] ?? null, 'back')
+                : ['valid' => true, 'reason' => ''];
             if (!empty($verify) && empty($verify['valid'])) {
                 $reason = $verify['reason'] ?: 'looks cut off or covered';
                 Log::error('License side/obstruction check failed', [
