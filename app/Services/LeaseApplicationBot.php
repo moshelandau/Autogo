@@ -763,7 +763,12 @@ class LeaseApplicationBot
             if (!empty(config('services.anthropic.api_key'))) {
                 try {
                     $resp = app(\App\Services\AiClient::class)->messages([
-                        'model' => 'claude-sonnet-4-5', 'max_tokens' => 800, 'temperature' => 0,
+                        // Opus 4.7 chosen specifically for license OCR — best-in-class
+                        // digit accuracy (Sonnet 4.5 was flipping 1↔7 etc.). The license
+                        // OCR is a low-volume, high-stakes call (one per applicant), so
+                        // the cost premium over Sonnet is well-spent here. Other uses of
+                        // AiClient elsewhere in the bot stay on Sonnet.
+                        'model' => 'claude-opus-4-7', 'max_tokens' => 800, 'temperature' => 0,
                         'system' => 'OCR US driver licenses. Output VALID JSON only. Be especially careful with DIGITS in the street number, DL number, ZIP, and dates — re-read each digit (1 vs 7, 0 vs 8/9, 3 vs 8). If any digit is ambiguous, leave the field empty rather than guess.',
                         'messages' => [[
                             'role' => 'user',
