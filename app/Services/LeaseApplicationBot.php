@@ -558,13 +558,26 @@ class LeaseApplicationBot
             }
             $extracted = $this->ingestLicenseImage($session, $mediaUrls[0]);
 
+            // Per-step retry counter — after 2 failed attempts at the same
+            // image step, give up gracefully and advance with a "team will
+            // follow up" note instead of bouncing the customer forever.
+            $retryKey = '_retries_' . $step['key'];
+            $retries  = (int) ($collected[$retryKey] ?? 0);
+
             // Hard-failure: if we couldn't even fetch/store the image, tell the
             // user instead of silently advancing to the next prompt with an
             // empty address line.
             if (empty($extracted['_stored_path'])) {
                 Log::warning('License image ingest had no stored path', [
-                    'session_id' => $session->id, 'step' => $step['key'], 'media' => $mediaUrls[0] ?? null,
+                    'session_id' => $session->id, 'step' => $step['key'], 'attempt' => $retries + 1, 'media' => $mediaUrls[0] ?? null,
                 ]);
+                if ($retries >= 1) {
+                    return $this->skipImageStepAndAdvance($session, $step, $stepIdx, $collected,
+                        "I'm still having trouble with that photo — I can't process it right now. " .
+                        "We'll follow up with you on this. Moving on for now.");
+                }
+                $collected[$retryKey] = $retries + 1;
+                $session->update(['collected' => $collected, 'last_inbound_at' => now()]);
                 $this->reply($session->phone, "Sorry, I had trouble receiving your photo — please try sending it again.");
                 return true; // stay on same step
             }
@@ -581,8 +594,18 @@ class LeaseApplicationBot
                 foreach ($keyFields as $f) if (!empty($extracted[$f])) $present++;
                 if ($present < 4) {
                     Log::error('License front OCR partial — re-asking', [
-                        'session_id' => $session->id, 'present_count' => $present, 'present_fields' => array_filter(array_intersect_key($extracted, array_flip($keyFields))),
+                        'session_id' => $session->id, 'attempt' => $retries + 1, 'present_count' => $present,
                     ]);
+                    if ($retries >= 1) {
+                        // Save the URL so staff can review, then advance.
+                        $collected[$step['key'] . '_url']  = $mediaUrls[0];
+                        $collected[$step['key'] . '_path'] = $extracted['_stored_path'] ?? null;
+                        return $this->skipImageStepAndAdvance($session, $step, $stepIdx, $collected,
+                            "I still can't read your license clearly — I'll save what you sent and have the team " .
+                            "follow up to verify your details. Moving on for now.");
+                    }
+                    $collected[$retryKey] = $retries + 1;
+                    $session->update(['collected' => $collected, 'last_inbound_at' => now()]);
                     $this->reply($session->phone,
                         "I couldn't read your license clearly — looks blurry, partially cut off, or the lighting is off. " .
                         "Please send a sharper photo of the FRONT, with the WHOLE license visible (all four corners) and good lighting."
@@ -769,12 +792,12 @@ class LeaseApplicationBot
                         // the cost premium over Sonnet is well-spent here. Other uses of
                         // AiClient elsewhere in the bot stay on Sonnet.
                         'model' => 'claude-opus-4-7', 'max_tokens' => 800, 'temperature' => 0,
-                        'system' => 'OCR US driver licenses. Output VALID JSON only. Be especially careful with DIGITS in the street number, DL number, ZIP, and dates — re-read each digit (1 vs 7, 0 vs 8/9, 3 vs 8). If any digit is ambiguous, leave the field empty rather than guess.',
+                        'system' => 'OCR US driver licenses. Output VALID JSON only. Read each visible digit carefully (1 vs 7, 0 vs 8, 3 vs 8). Use empty string ONLY if a field is truly unreadable or absent — do not skip a whole field over a single uncertain digit, just give your best read.',
                         'messages' => [[
                             'role' => 'user',
                             'content' => [
                                 ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => 'image/jpeg', 'data' => $b64]],
-                                ['type' => 'text', 'text' => 'Extract: { "first_name":"", "last_name":"", "address":"", "city":"", "state":"", "zip":"", "drivers_license_number":"", "dl_state":"", "dl_expiration":"YYYY-MM-DD", "date_of_birth":"YYYY-MM-DD" }. Empty string if any digit is unreadable. Address: street + unit only (no city/state/zip).'],
+                                ['type' => 'text', 'text' => 'Extract: { "first_name":"", "last_name":"", "address":"", "city":"", "state":"", "zip":"", "drivers_license_number":"", "dl_state":"", "dl_expiration":"YYYY-MM-DD", "date_of_birth":"YYYY-MM-DD" }. Address: street + unit only (no city/state/zip — those have their own fields).'],
                             ],
                         ]],
                     ]);
@@ -992,6 +1015,36 @@ class LeaseApplicationBot
         }
 
         return $diffs;
+    }
+
+    /**
+     * Give-up path for an image step that's failed twice. Saves whatever
+     * we have (URL only — no OCR data), flags the session for staff
+     * follow-up, and advances to the next applicable step. Sends the
+     * provided prefix message followed by the next step's prompt so the
+     * customer keeps moving instead of getting stuck on the photo.
+     */
+    private function skipImageStepAndAdvance(LeaseApplicationSession $session, array $step, int $stepIdx, array $collected, string $prefixMessage): bool
+    {
+        $collected['_image_step_skipped_' . $step['key']] = now()->toIso8601String();
+        $collected['_needs_staff_followup'] = true;
+
+        $steps = $this->stepsFor($session->flow);
+        $next  = $this->nextApplicableStep($steps, $stepIdx, $collected);
+        $session->update([
+            'collected'       => $collected,
+            'current_step'    => $next['key'] ?? '__done__',
+            'last_inbound_at' => now(),
+        ]);
+
+        if ($next === null || ($next['key'] ?? '') === '__done__') {
+            $this->reply($session->phone, $prefixMessage);
+            $this->finalize($session);
+            return true;
+        }
+
+        $this->reply($session->phone, $prefixMessage . "\n\n" . $this->renderPrompt($next, $session));
+        return true;
     }
 
     /**
