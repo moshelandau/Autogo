@@ -353,6 +353,51 @@ class DealController extends Controller
     }
 
     /**
+     * Mark one quote as the accepted/selected one. Atomically clears
+     * is_selected on every other quote for this deal so only one is
+     * accepted at a time (xDeskPro parity — the accepted quote shows
+     * the green ✓ Accepted badge on the Quotes tab).
+     */
+    public function acceptQuote(Deal $deal, int $quoteId)
+    {
+        \DB::transaction(function () use ($deal, $quoteId) {
+            $deal->quotes()->where('id', '!=', $quoteId)->update(['is_selected' => false]);
+            $deal->quotes()->where('id', $quoteId)->update(['is_selected' => true]);
+        });
+        return back()->with('success', 'Quote marked accepted.');
+    }
+
+    /**
+     * Stream a zip of every uploaded document for a deal (Documents tab
+     * "Download All" — xDeskPro parity).
+     */
+    public function downloadAllDocuments(Deal $deal)
+    {
+        $docs = $deal->documents;
+        if ($docs->isEmpty()) {
+            return back()->with('error', 'No documents to download.');
+        }
+
+        $zipName = "deal-{$deal->deal_number}-documents.zip";
+        $tmpPath = tempnam(sys_get_temp_dir(), 'dealdocs_');
+        $zip = new \ZipArchive();
+        if ($zip->open($tmpPath, \ZipArchive::OVERWRITE) !== true) {
+            return back()->with('error', 'Could not create zip file.');
+        }
+        foreach ($docs as $doc) {
+            if (!\Storage::exists($doc->path)) continue;
+            $contents = \Storage::get($doc->path);
+            // Prefix with type so the zip is self-organizing
+            $folder = $doc->type ? str_replace('_', '-', $doc->type) : 'other';
+            $name = ($doc->name ?: basename($doc->path));
+            $zip->addFromString("{$folder}/{$doc->id}-{$name}", $contents);
+        }
+        $zip->close();
+
+        return response()->download($tmpPath, $zipName)->deleteFileAfterSend(true);
+    }
+
+    /**
      * Returns a default SMS or email body for a quote, ready to be
      * shown in a preview modal so staff can review/edit before sending.
      * Returned as JSON so the modal can pre-fill the textarea.

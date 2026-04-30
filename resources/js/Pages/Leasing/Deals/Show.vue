@@ -657,7 +657,10 @@ const saveCalcAsQuote = () => {
                 <!-- Summary Cards -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="bg-white shadow-sm rounded-lg p-6">
-                        <h3 class="text-sm font-medium text-gray-500 mb-3">Customer</h3>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-medium text-gray-500">Customer</h3>
+                            <button type="button" @click="activeTab = 'customer'" class="text-xs text-indigo-600 hover:underline">View</button>
+                        </div>
                         <p class="font-bold text-lg">{{ d.customer?.first_name }} {{ d.customer?.last_name }}</p>
                         <p class="text-sm text-gray-600 flex items-center gap-2">
                             <span>{{ d.customer?.phone }}</span>
@@ -666,14 +669,20 @@ const saveCalcAsQuote = () => {
                         <p v-if="d.credit_score" class="text-sm text-gray-600">Score: {{ d.credit_score }}</p>
                     </div>
                     <div class="bg-white shadow-sm rounded-lg p-6">
-                        <h3 class="text-sm font-medium text-gray-500 mb-3">Vehicle</h3>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-medium text-gray-500">Vehicle</h3>
+                            <button type="button" @click="activeTab = 'workflow'" class="text-xs text-indigo-600 hover:underline">Edit</button>
+                        </div>
                         <p v-if="d.vehicle_make" class="font-bold">{{ d.vehicle_year }} {{ d.vehicle_make }} {{ d.vehicle_model }} {{ d.vehicle_trim || '' }}</p>
                         <p v-else class="text-gray-400 italic">No vehicle yet</p>
                         <p v-if="d.vehicle_vin" class="text-xs font-mono text-gray-500 mt-1">VIN: {{ d.vehicle_vin }}</p>
                         <p v-if="d.msrp" class="text-sm text-gray-600 mt-1">MSRP: {{ fmt(d.msrp) }}</p>
                     </div>
                     <div class="bg-white shadow-sm rounded-lg p-6">
-                        <h3 class="text-sm font-medium text-gray-500 mb-3">Deal Info</h3>
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="text-sm font-medium text-gray-500">Deal Info</h3>
+                            <button type="button" @click="activeTab = 'quotes'" class="text-xs text-indigo-600 hover:underline">Quotes</button>
+                        </div>
                         <div class="space-y-1 text-sm">
                             <div class="flex justify-between"><span class="text-gray-500">Type</span><span class="capitalize font-medium">{{ d.payment_type }}</span></div>
                             <div v-if="d.monthly_payment" class="flex justify-between"><span class="text-gray-500">Payment</span><span class="font-bold text-lg text-green-700">{{ fmt(d.monthly_payment) }}/mo</span></div>
@@ -687,11 +696,11 @@ const saveCalcAsQuote = () => {
                 <!-- Tabs -->
                 <div class="bg-white shadow-sm rounded-lg">
                     <div class="border-b flex gap-0 overflow-x-auto">
-                        <button v-for="tab in ['summary', 'tasks', 'workflow', 'calculator', 'quotes', 'credit', 'notes', 'documents', 'messages']" :key="tab"
+                        <button v-for="tab in ['summary', 'customer', 'tasks', 'workflow', 'calculator', 'quotes', 'credit', 'notes', 'documents', 'vehicle_return', 'sharing', 'messages', 'timeline']" :key="tab"
                                 @click="activeTab = tab"
                                 class="px-6 py-3 text-sm font-medium capitalize whitespace-nowrap"
                                 :class="activeTab === tab ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500 hover:text-gray-700'">
-                            {{ tab }}
+                            {{ tab.replace(/_/g, ' ') }}
                             <span v-if="tab === 'tasks' && d.tasks?.filter(t => !t.is_completed).length"
                                   class="ml-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{{ d.tasks.filter(t => !t.is_completed).length }}</span>
                         </button>
@@ -766,9 +775,9 @@ const saveCalcAsQuote = () => {
                                         <span class="text-sm text-gray-500 ml-2">{{ q.term }}mo / {{ q.mileage_per_year?.toLocaleString() }}mi</span>
                                     </div>
                                     <div class="flex gap-2 items-center">
-                                        <span v-if="q.is_selected" class="text-xs bg-green-600 text-white px-2 py-1 rounded">Selected</span>
+                                        <span v-if="q.is_selected" class="text-xs bg-green-600 text-white px-2 py-1 rounded">✓ Accepted</span>
                                         <button v-else type="button" @click="selectQuote(q.id)"
-                                                class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200">Select</button>
+                                                class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded hover:bg-indigo-200">Mark Accepted</button>
                                         <button type="button" @click="openSendQuote(q, 'sms')"
                                                 class="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded hover:bg-emerald-200">📱 SMS</button>
                                         <button type="button" @click="openSendQuote(q, 'email')"
@@ -985,9 +994,16 @@ const saveCalcAsQuote = () => {
                         <div v-if="activeTab === 'documents'" class="space-y-3">
                             <div class="flex items-center justify-between mb-2">
                                 <h4 class="text-sm font-semibold text-gray-700">Required documents</h4>
-                                <span class="text-xs text-gray-500">
-                                    {{ docsUploadedCount }} of {{ REQUIRED_DOCS.length }} uploaded
-                                </span>
+                                <div class="flex items-center gap-3">
+                                    <span class="text-xs text-gray-500">
+                                        {{ docsUploadedCount }} of {{ REQUIRED_DOCS.length }} uploaded
+                                    </span>
+                                    <a v-if="(d.documents || []).length"
+                                       :href="route('leasing.deals.documents.download-all', d.id)"
+                                       class="text-xs px-2.5 py-1 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200">
+                                        ⬇ Download All ({{ (d.documents || []).length }})
+                                    </a>
+                                </div>
                             </div>
                             <div class="space-y-2">
                                 <div v-for="req in REQUIRED_DOCS" :key="req.type"

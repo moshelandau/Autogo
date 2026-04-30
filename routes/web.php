@@ -192,6 +192,10 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::patch ('deals/{deal}/action-items/{actionItem}',       [\App\Http\Controllers\DealActionItemController::class, 'update'])->name('deals.action-items.update');
         Route::delete('deals/{deal}/action-items/{actionItem}',       [\App\Http\Controllers\DealActionItemController::class, 'destroy'])->name('deals.action-items.destroy');
 
+        // Polish: mark a quote accepted, download all documents zip
+        Route::post('deals/{deal}/quotes/{quoteId}/accept', [DealController::class, 'acceptQuote'])->name('deals.quote.accept');
+        Route::get ('deals/{deal}/documents/download-all',  [DealController::class, 'downloadAllDocuments'])->name('deals.documents.download-all');
+
         // Deal sub-actions
         Route::post('deals/{deal}/tasks/{task}', [DealController::class, 'completeTask'])->name('deals.task');
         Route::post('deals/{deal}/tasks/{task}/due-date', [DealController::class, 'updateTaskDueDate'])->name('deals.task.due-date');
