@@ -1,6 +1,6 @@
 <script setup>
 import { Head, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, computed, onMounted, nextTick } from 'vue';
 
 const props = defineProps({
     session: { type: Object, required: true },
@@ -51,6 +51,31 @@ const submit = () => {
 // Convenience — prefilled flag so we can hint to the user when fields
 // are pre-populated from the SMS conversation.
 const hasPrefill = Object.values(c).some(v => v !== null && v !== '' && typeof v !== 'object');
+
+// ?focus=<step_key> — bot sends this when customer replies SECURE on a
+// specific question. We scroll to that field and pulse it so the
+// customer's eye lands there immediately on a small phone screen.
+const focused = computed(() => new URLSearchParams(window.location.search).get('focus') || '');
+
+// Maps STEPS_LEASE keys → form field names. Most are 1:1 already; the
+// license_image_* steps target the file inputs.
+const FIELD_FOR_STEP = {
+    license_image_front: 'license_front',
+    license_image_back:  'license_back',
+};
+const focusFieldName = computed(() => FIELD_FOR_STEP[focused.value] || focused.value);
+
+onMounted(() => {
+    if (!focusFieldName.value) return;
+    nextTick(() => {
+        const el = document.querySelector(`[name="${focusFieldName.value}"]`);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('ring-4', 'ring-amber-300');
+        setTimeout(() => el.classList.remove('ring-4', 'ring-amber-300'), 3500);
+        if (el.focus) el.focus({ preventScroll: true });
+    });
+});
 </script>
 
 <template>
@@ -92,7 +117,7 @@ const hasPrefill = Object.values(c).some(v => v !== null && v !== '' && typeof v
                                 <input v-model="form.date_of_birth" type="date" required class="w-full border-gray-300 rounded-md text-sm" />
                             </Field>
                             <Field label="SSN (XXX-XX-XXXX)">
-                                <input v-model="form.ssn" type="password" placeholder="encrypted" class="w-full border-gray-300 rounded-md text-sm" />
+                                <input v-model="form.ssn" name="ssn" type="password" placeholder="encrypted" class="w-full border-gray-300 rounded-md text-sm" />
                             </Field>
                             <Field label="Email">
                                 <input v-model="form.email" type="email" class="w-full border-gray-300 rounded-md text-sm" />
@@ -106,11 +131,11 @@ const hasPrefill = Object.values(c).some(v => v !== null && v !== '' && typeof v
                         <p class="text-xs text-gray-500 mb-3">Upload clear photos — all four corners visible, no fingers covering anything.</p>
                         <div class="grid grid-cols-2 gap-3">
                             <Field label="License — front">
-                                <input ref="licenseFrontInput" type="file" accept="image/*" capture="environment" @change="onPickFront" class="w-full text-xs" />
+                                <input ref="licenseFrontInput" name="license_front" type="file" accept="image/*" capture="environment" @change="onPickFront" class="w-full text-xs" />
                                 <span v-if="form.license_front" class="text-[11px] text-emerald-600">{{ form.license_front.name }}</span>
                             </Field>
                             <Field label="License — back">
-                                <input ref="licenseBackInput" type="file" accept="image/*" capture="environment" @change="onPickBack" class="w-full text-xs" />
+                                <input ref="licenseBackInput" name="license_back" type="file" accept="image/*" capture="environment" @change="onPickBack" class="w-full text-xs" />
                                 <span v-if="form.license_back" class="text-[11px] text-emerald-600">{{ form.license_back.name }}</span>
                             </Field>
                         </div>
