@@ -90,7 +90,7 @@ class DealController extends Controller
         $this->syncCurrentStageTasks($deal);
         $deal->load(['customer.documents.uploadedBy', 'coSigner.documents', 'salesperson', 'lender', 'insurer', 'dealer', 'lienholder', 'vehicleReturn', 'sharedWith:id,name',
             'customer.deals' => fn ($q) => $q->select(['id', 'deal_number', 'customer_id', 'stage', 'vehicle_year', 'vehicle_make', 'vehicle_model', 'created_at'])->orderByDesc('created_at')->limit(20),
-            'quotes.lender', 'tasks', 'documents', 'noteThread.user', 'noteThread.assignedUsers', 'noteThread.comments.user', 'noteThread.activities.user']);
+            'quotes.lender', 'tasks', 'actionItems.completedBy', 'documents', 'noteThread.user', 'noteThread.assignedUsers', 'noteThread.comments.user', 'noteThread.activities.user']);
 
         // Credit-pull history for this deal's customer (most-recent first)
         $creditPulls = $deal->customer

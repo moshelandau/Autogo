@@ -187,6 +187,11 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         // Internal Sharing (xDeskPro Sharing tab)
         Route::put('deals/{deal}/sharing', [\App\Http\Controllers\DealShareController::class, 'update'])->name('deals.sharing.update');
 
+        // Action Items (ad-hoc todos under Current Tasks)
+        Route::post  ('deals/{deal}/action-items',                    [\App\Http\Controllers\DealActionItemController::class, 'store'])->name('deals.action-items.store');
+        Route::patch ('deals/{deal}/action-items/{actionItem}',       [\App\Http\Controllers\DealActionItemController::class, 'update'])->name('deals.action-items.update');
+        Route::delete('deals/{deal}/action-items/{actionItem}',       [\App\Http\Controllers\DealActionItemController::class, 'destroy'])->name('deals.action-items.destroy');
+
         // Deal sub-actions
         Route::post('deals/{deal}/tasks/{task}', [DealController::class, 'completeTask'])->name('deals.task');
         Route::post('deals/{deal}/tasks/{task}/due-date', [DealController::class, 'updateTaskDueDate'])->name('deals.task.due-date');

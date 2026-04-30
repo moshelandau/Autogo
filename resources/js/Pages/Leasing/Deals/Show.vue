@@ -438,6 +438,28 @@ const updateTaskDueDate = (task, dateStr) => {
 };
 
 const transitionTo = (stage) => router.post(route('leasing.deals.transition', d.id), { stage });
+const toggleTask = (t) => completeTask(t.id);
+
+// ── Action Items (right rail) ──
+const newActionItemOpen = ref(false);
+const newActionItem = reactive({ title: '', due_date: '' });
+const addActionItem = () => {
+    if (!newActionItem.title) return;
+    router.post(route('leasing.deals.action-items.store', d.id),
+        { title: newActionItem.title, due_date: newActionItem.due_date || null },
+        { preserveScroll: true, preserveState: true,
+          onSuccess: () => { newActionItem.title = ''; newActionItem.due_date = ''; newActionItemOpen.value = false; }});
+};
+const toggleActionItem = (ai) => {
+    router.patch(route('leasing.deals.action-items.update', [d.id, ai.id]),
+        { is_completed: !ai.is_completed },
+        { preserveScroll: true, preserveState: true });
+};
+const deleteActionItem = (ai) => {
+    if (!confirm('Remove this action item?')) return;
+    router.delete(route('leasing.deals.action-items.destroy', [d.id, ai.id]),
+        { preserveScroll: true, preserveState: true });
+};
 const selectQuote = (quoteId) => router.post(route('leasing.deals.select-quote', { deal: d.id, quote: quoteId }));
 
 // Inline edit / delete on each quote card
@@ -602,7 +624,7 @@ const saveCalcAsQuote = () => {
         </template>
 
         <div class="py-6">
-            <div class="max-w-6xl mx-auto sm:px-6 lg:px-8 space-y-6">
+            <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
                 <!-- Stage Pipeline (breadcrumb style — xDeskPro parity) -->
                 <div class="bg-white shadow-sm rounded-lg p-4">
                     <div class="flex items-center gap-1 overflow-x-auto whitespace-nowrap">
@@ -627,6 +649,10 @@ const saveCalcAsQuote = () => {
                         </template>
                     </div>
                 </div>
+
+                <!-- Two-column layout: deal body + persistent right rail (Current Tasks + Action Items) -->
+                <div class="lg:grid lg:grid-cols-[1fr_320px] lg:gap-6 space-y-6 lg:space-y-0">
+                <div class="space-y-6 min-w-0">
 
                 <!-- Summary Cards -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1695,6 +1721,75 @@ const saveCalcAsQuote = () => {
                         </div>
                     </div>
                 </div>
+                </div><!-- /main column -->
+
+                <!-- Right rail: Current Tasks + Action Items (xDeskPro parity) -->
+                <aside class="space-y-4 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+                    <div class="bg-white shadow-sm rounded-lg">
+                        <div class="px-4 py-3 border-b flex items-center justify-between">
+                            <h3 class="text-sm font-semibold text-gray-700">Current Tasks</h3>
+                            <button v-if="d.stage !== 'complete' && d.stage !== 'lost'"
+                                    type="button" @click="transitionTo('complete')"
+                                    class="px-2.5 py-1 text-xs bg-emerald-600 text-white rounded-md hover:bg-emerald-700">
+                                Complete Deal
+                            </button>
+                        </div>
+                        <ul class="divide-y divide-gray-100 max-h-[60vh] overflow-y-auto">
+                            <li v-for="t in (d.tasks || [])" :key="t.id"
+                                class="px-4 py-2 flex items-start gap-2 text-sm">
+                                <input type="checkbox" :checked="t.is_completed"
+                                       @change="toggleTask(t)"
+                                       class="mt-0.5 rounded border-gray-300" />
+                                <div class="flex-1 min-w-0">
+                                    <div :class="t.is_completed ? 'text-gray-400 line-through' : 'text-gray-900'">{{ t.name }}</div>
+                                    <div class="text-[10px] text-gray-400 capitalize">{{ stageLabels[t.stage] || t.stage }}</div>
+                                </div>
+                                <span v-if="t.due_date && !t.is_completed"
+                                      :class="new Date(t.due_date) < new Date() ? 'text-red-600' : 'text-gray-500'"
+                                      class="text-xs whitespace-nowrap">
+                                    {{ fmtDate(t.due_date) }}
+                                </span>
+                                <span v-else-if="t.is_completed" class="text-xs text-gray-400">✓</span>
+                            </li>
+                            <li v-if="!(d.tasks || []).length" class="px-4 py-6 text-center text-xs text-gray-400">No tasks for this deal.</li>
+                        </ul>
+                    </div>
+
+                    <div class="bg-white shadow-sm rounded-lg">
+                        <div class="px-4 py-3 border-b flex items-center justify-between">
+                            <h3 class="text-sm font-semibold text-gray-700">Action Items</h3>
+                            <button type="button" @click="newActionItemOpen = !newActionItemOpen"
+                                    class="text-xs text-indigo-600 hover:underline">+ Add</button>
+                        </div>
+                        <div v-if="newActionItemOpen" class="px-4 py-2 border-b bg-indigo-50/30">
+                            <input v-model="newActionItem.title" type="text" placeholder="What needs doing?"
+                                   class="block w-full border-gray-300 rounded-md text-sm" @keyup.enter="addActionItem" />
+                            <div class="flex items-center gap-2 mt-2">
+                                <input v-model="newActionItem.due_date" type="date" class="flex-1 border-gray-300 rounded-md text-xs" />
+                                <button type="button" @click="addActionItem" :disabled="!newActionItem.title"
+                                        class="px-2.5 py-1 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50">Add</button>
+                            </div>
+                        </div>
+                        <ul class="divide-y divide-gray-100 max-h-[40vh] overflow-y-auto">
+                            <li v-for="ai in (d.action_items || [])" :key="ai.id" class="px-4 py-2 flex items-start gap-2 text-sm group">
+                                <input type="checkbox" :checked="ai.is_completed"
+                                       @change="toggleActionItem(ai)"
+                                       class="mt-0.5 rounded border-gray-300" />
+                                <div class="flex-1 min-w-0">
+                                    <div :class="ai.is_completed ? 'text-gray-400 line-through' : 'text-gray-900'">{{ ai.title }}</div>
+                                    <div v-if="ai.due_date && !ai.is_completed"
+                                         :class="new Date(ai.due_date) < new Date() ? 'text-red-600' : 'text-gray-500'"
+                                         class="text-[10px]">due {{ fmtDate(ai.due_date) }}</div>
+                                </div>
+                                <button type="button" @click="deleteActionItem(ai)"
+                                        class="opacity-0 group-hover:opacity-100 text-red-600 text-xs hover:underline">×</button>
+                            </li>
+                            <li v-if="!(d.action_items || []).length" class="px-4 py-6 text-center text-xs text-gray-400">No action items yet.</li>
+                        </ul>
+                    </div>
+                </aside>
+
+                </div><!-- /grid wrapper -->
             </div>
         </div>
 
