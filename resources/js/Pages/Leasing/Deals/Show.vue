@@ -475,15 +475,28 @@ const saveCalcAsQuote = () => {
 
         <div class="py-6">
             <div class="max-w-6xl mx-auto sm:px-6 lg:px-8 space-y-6">
-                <!-- Stage Pipeline -->
+                <!-- Stage Pipeline (breadcrumb style — xDeskPro parity) -->
                 <div class="bg-white shadow-sm rounded-lg p-4">
-                    <div class="flex gap-1 overflow-x-auto">
-                        <button v-for="stage in allStages" :key="stage"
-                                @click="d.stage !== stage && d.stage !== 'lost' && d.stage !== 'complete' ? transitionTo(stage) : null"
-                                class="px-3 py-2 text-xs rounded-md whitespace-nowrap transition-colors"
-                                :class="d.stage === stage ? 'bg-indigo-600 text-white' : allStages.indexOf(stage) < allStages.indexOf(d.stage) ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'">
-                            {{ stageLabels[stage] }}
-                        </button>
+                    <div class="flex items-center gap-1 overflow-x-auto whitespace-nowrap">
+                        <template v-for="(stage, idx) in allStages" :key="stage">
+                            <button @click="d.stage !== stage && d.stage !== 'lost' && d.stage !== 'complete' ? transitionTo(stage) : null"
+                                    type="button"
+                                    class="flex items-center gap-1.5 px-2.5 py-1.5 text-sm rounded-md transition-colors group"
+                                    :class="d.stage === stage
+                                        ? 'text-gray-900 font-semibold'
+                                        : allStages.indexOf(stage) < allStages.indexOf(d.stage)
+                                            ? 'text-green-700 hover:bg-green-50'
+                                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'">
+                                <span v-if="allStages.indexOf(stage) < allStages.indexOf(d.stage)"
+                                      class="text-green-600 font-bold">✓</span>
+                                <span v-else-if="d.stage === stage"
+                                      class="inline-block w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span>
+                                <span v-else
+                                      class="inline-block w-2 h-2 rounded-full border border-gray-300"></span>
+                                {{ stageLabels[stage] }}
+                            </button>
+                            <span v-if="idx < allStages.length - 1" class="text-gray-300 text-sm">›</span>
+                        </template>
                     </div>
                 </div>
 
