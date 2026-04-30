@@ -1106,12 +1106,25 @@ class LeaseApplicationBot
                 // model uses its default. (Sonnet 4.5/4.6 accept temperature
                 // but Opus 4.7 doesn't.)
                 'model' => 'claude-opus-4-7', 'max_tokens' => 800,
-                'system' => 'OCR US driver licenses. Output VALID JSON only. The photo MAY BE ROTATED 90/180/270 degrees — mentally rotate the image so the license reads upright before extracting any fields, then read normally. Read each visible digit carefully (1 vs 7, 0 vs 8, 3 vs 8). Use empty string ONLY if a field is truly unreadable or absent — do not skip a whole field over a single uncertain digit, just give your best read.',
+                'system' => "OCR US driver licenses. Output VALID JSON only. " .
+                    "The photo MAY BE ROTATED 90/180/270 degrees — mentally rotate the image so the license reads upright before extracting any fields. " .
+                    "Read each visible digit carefully (1 vs 7, 0 vs 8, 3 vs 8). Use empty string ONLY if a field is truly unreadable or absent — do not skip a whole field over a single uncertain digit.\n\n" .
+                    "NAME PARSING — this is the most common source of mistakes:\n" .
+                    "• US licenses label fields with codes/abbreviations. Look for the EXPLICIT labels: \"LN\" / \"1\" / \"FAMILY NAME\" / \"LAST\" → last_name. \"FN\" / \"2\" / \"GIVEN NAME\" / \"FIRST\" / \"FIRST NAME\" → first_name.\n" .
+                    "• If labels exist, USE THEM as the source of truth — never guess by visual size or position alone.\n" .
+                    "• If the FN field has multiple words (e.g. \"BARRY YISSUCHER\" or \"MARY JANE\"), put ALL of them in first_name. Keep middle names with the first name unless they're labeled as MN/MIDDLE separately.\n" .
+                    "• The LARGER, top line is typically the LAST name on NY/NJ/CA licenses, but defer to the labels when present.\n" .
+                    "• Hyphenated last names (e.g. \"SMITH-JONES\") stay together in last_name.\n\n" .
+                    "ADDRESS PARSING:\n" .
+                    "• Look for the address block — usually labeled \"8\" on the front, or appears below the name block.\n" .
+                    "• street_address = full street line including apt/unit/# (e.g. \"123 MAIN ST APT 4B\"). If apt/unit is on a second line, concatenate it.\n" .
+                    "• Do NOT include city/state/zip in the address field — those go in their own fields.\n" .
+                    "• If the address line is truncated/cut off, include whatever you can read.",
                 'messages' => [[
                     'role' => 'user',
                     'content' => [
                         ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => 'image/jpeg', 'data' => base64_encode($imageBinary)]],
-                        ['type' => 'text', 'text' => 'Extract: { "first_name":"", "last_name":"", "address":"", "city":"", "state":"", "zip":"", "drivers_license_number":"", "dl_state":"", "dl_expiration":"YYYY-MM-DD", "date_of_birth":"YYYY-MM-DD" }. Address: street + unit only (no city/state/zip — those have their own fields).'],
+                        ['type' => 'text', 'text' => 'Extract: { "first_name":"", "last_name":"", "address":"", "city":"", "state":"", "zip":"", "drivers_license_number":"", "dl_state":"", "dl_expiration":"YYYY-MM-DD", "date_of_birth":"YYYY-MM-DD" }'],
                     ],
                 ]],
             ]);
