@@ -107,6 +107,21 @@ const REQUIRED_DOCS = [
 const REQUIRED_TYPES = REQUIRED_DOCS.map(r => r.type);
 const DOC_ACCEPT = 'image/*,application/pdf';
 
+// Deal-level slots (xDeskPro parity — Documents tab)
+const DEAL_DOC_SLOTS = [
+    { type: 'application',          label: 'Application' },
+    { type: 'lease_finance_agreement', label: 'Lease / Finance Agreement' },
+    { type: 'dealer_invoice',       label: 'Dealer Invoice' },
+    { type: 'customer_invoice',     label: 'Customer Invoice' },
+    { type: 'window_sticker',       label: 'Window Sticker' },
+    { type: 'rebate_docs',          label: 'Rebate Docs' },
+    { type: 'damage_waiver',        label: 'Damage Waiver' },
+    { type: 'worksheet',            label: 'Worksheet' },
+    { type: 'insurance',            label: 'Insurance' },
+];
+const DEAL_DOC_TYPES = DEAL_DOC_SLOTS.map(s => s.type);
+const findDealDoc = (type) => (d.documents || []).find(x => x.type === type);
+
 const allDocs = computed(() => {
     const fromCustomer = (d.customer?.documents || []).map(x => ({ ...x, _source: 'customer' }));
     const fromDeal     = (d.documents || []).map(x => ({ ...x, _source: 'deal' }));
@@ -114,7 +129,7 @@ const allDocs = computed(() => {
 });
 const findDoc = (type) => allDocs.value.find(doc => doc.type === type);
 const docsUploadedCount = computed(() => REQUIRED_TYPES.filter(t => !!findDoc(t)).length);
-const otherDocs = computed(() => allDocs.value.filter(doc => !REQUIRED_TYPES.includes(doc.type)));
+const otherDocs = computed(() => allDocs.value.filter(doc => !REQUIRED_TYPES.includes(doc.type) && !DEAL_DOC_TYPES.includes(doc.type)));
 
 const docUrl = (doc) => {
     if (!doc) return '#';
@@ -865,6 +880,32 @@ const saveCalcAsQuote = () => {
                                         <input type="file" class="hidden" :accept="DOC_ACCEPT"
                                                @change="(e) => uploadDocFor(req.type, req.label, e.target.files[0])" />
                                     </label>
+                                </div>
+                            </div>
+
+                            <div class="pt-4">
+                                <h4 class="text-sm font-semibold text-gray-700 mb-2">Deal documents</h4>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
+                                    <div v-for="slot in DEAL_DOC_SLOTS" :key="slot.type"
+                                         class="flex items-center gap-3 py-2 border-b last:border-0">
+                                        <span class="text-lg" :class="findDealDoc(slot.type) ? 'text-emerald-600' : 'text-gray-300'">
+                                            {{ findDealDoc(slot.type) ? '✓' : '○' }}
+                                        </span>
+                                        <div class="flex-1 min-w-0">
+                                            <div class="text-sm font-medium text-gray-900">{{ slot.label }}</div>
+                                            <div v-if="findDealDoc(slot.type)" class="text-xs text-gray-500 truncate">
+                                                <a :href="docUrl(findDealDoc(slot.type))" target="_blank" class="text-indigo-600 hover:text-indigo-800 underline">
+                                                    {{ findDealDoc(slot.type).name || 'View file' }}
+                                                </a>
+                                            </div>
+                                            <div v-else class="text-xs text-gray-400 italic">Not uploaded</div>
+                                        </div>
+                                        <label class="text-xs text-indigo-600 hover:text-indigo-800 cursor-pointer underline whitespace-nowrap">
+                                            {{ findDealDoc(slot.type) ? 'Replace' : 'Upload' }}
+                                            <input type="file" class="hidden" :accept="DOC_ACCEPT"
+                                                   @change="(e) => uploadDocFor(slot.type, slot.label, e.target.files[0])" />
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
 
