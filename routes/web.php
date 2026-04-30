@@ -9,7 +9,7 @@ use App\Http\Controllers\DealController;
 use App\Http\Controllers\InspectionController;
 use App\Http\Controllers\LeaseDocumentController;
 use App\Http\Controllers\DealerController;
-use App\Http\Controllers\InsurerController;
+use App\Http\Controllers\InsuranceBrokerController;
 use App\Http\Controllers\LenderController;
 use App\Http\Controllers\LienholderController;
 use App\Http\Controllers\OfficeTaskController;
@@ -231,12 +231,12 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::post('lenders', [LenderController::class, 'store'])->name('lenders.store');
         Route::put('lenders/{lender}', [LenderController::class, 'update'])->name('lenders.update');
 
-        // Insurers (mirrors xDeskPro's per-deal Insurer typeahead)
-        Route::get   ('insurers',                [InsurerController::class, 'index'])->name('insurers.index');
-        Route::post  ('insurers',                [InsurerController::class, 'store'])->name('insurers.store');
-        Route::put   ('insurers/{insurer}',      [InsurerController::class, 'update'])->name('insurers.update');
-        Route::delete('insurers/{insurer}',      [InsurerController::class, 'destroy'])->name('insurers.destroy');
-        Route::get   ('insurers-typeahead',      [InsurerController::class, 'typeahead'])->name('insurers.typeahead');
+        // Insurance Brokers (xDeskPro labels these "Insurers" but they're agencies, not carriers)
+        Route::get   ('brokers',                 [InsuranceBrokerController::class, 'index'])->name('brokers.index');
+        Route::post  ('brokers',                 [InsuranceBrokerController::class, 'store'])->name('brokers.store');
+        Route::put   ('brokers/{broker}',        [InsuranceBrokerController::class, 'update'])->name('brokers.update');
+        Route::delete('brokers/{broker}',        [InsuranceBrokerController::class, 'destroy'])->name('brokers.destroy');
+        Route::get   ('brokers-typeahead',       [InsuranceBrokerController::class, 'typeahead'])->name('brokers.typeahead');
 
         // Dealerships
         Route::get   ('dealers',                 [DealerController::class, 'index'])->name('dealers.index');

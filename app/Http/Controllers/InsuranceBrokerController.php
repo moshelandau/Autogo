@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Models\Insurer;
+use App\Models\InsuranceBroker;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
-class InsurerController extends Controller
+class InsuranceBrokerController extends Controller
 {
     public function index(Request $request)
     {
         $term = $request->string('q')->toString();
-        $query = Insurer::query()->withCount('deals')->orderBy('name');
+        $query = InsuranceBroker::query()->withCount('deals')->orderBy('name');
         if ($term !== '') {
             $like = '%' . trim($term) . '%';
             $query->where(function ($w) use ($like) {
@@ -26,8 +26,8 @@ class InsurerController extends Controller
             });
         }
 
-        return Inertia::render('Insurers/Index', [
-            'insurers' => $query->paginate(50)->withQueryString(),
+        return Inertia::render('Brokers/Index', [
+            'brokers' => $query->paginate(50)->withQueryString(),
             'filters' => ['q' => $term],
         ]);
     }
@@ -35,29 +35,28 @@ class InsurerController extends Controller
     public function store(Request $request)
     {
         $data = $this->validated($request);
-        Insurer::create($data + ['is_active' => true]);
-        return back()->with('success', 'Insurer added.');
+        InsuranceBroker::create($data + ['is_active' => true]);
+        return back()->with('success', 'Broker added.');
     }
 
-    public function update(Request $request, Insurer $insurer)
+    public function update(Request $request, InsuranceBroker $broker)
     {
         $data = $this->validated($request, withActive: true);
-        $insurer->update($data);
-        return back()->with('success', 'Insurer updated.');
+        $broker->update($data);
+        return back()->with('success', 'Broker updated.');
     }
 
-    public function destroy(Insurer $insurer)
+    public function destroy(InsuranceBroker $broker)
     {
-        // Soft-deactivate rather than delete — append-only-ish, keeps deal history intact.
-        $insurer->update(['is_active' => false]);
-        return back()->with('success', 'Insurer deactivated.');
+        $broker->update(['is_active' => false]);
+        return back()->with('success', 'Broker deactivated.');
     }
 
     /** Typeahead JSON for Deal Information dropdown. */
     public function typeahead(Request $request): JsonResponse
     {
         $term = $request->string('q')->toString();
-        $rows = Insurer::search($term)
+        $rows = InsuranceBroker::search($term)
             ->limit(15)
             ->get(['id', 'name', 'first_name', 'last_name', 'phone', 'email']);
         return response()->json($rows);

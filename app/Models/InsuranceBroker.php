@@ -7,8 +7,15 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Insurer extends Model
+/**
+ * Insurance broker / agency the dealer works with — NOT the insurance
+ * carrier (GEICO, Progressive, etc.). The carrier name lives on the
+ * deal itself as a free-text `insurance_carrier` column.
+ */
+class InsuranceBroker extends Model
 {
+    protected $table = 'insurance_brokers';
+
     protected $fillable = [
         'name', 'contact_name', 'first_name', 'last_name',
         'phone', 'email', 'website',
@@ -34,7 +41,7 @@ class Insurer extends Model
 
     protected function casts(): array { return ['is_active' => 'boolean']; }
 
-    public function deals(): HasMany { return $this->hasMany(Deal::class); }
+    public function deals(): HasMany { return $this->hasMany(Deal::class, 'broker_id'); }
 
     public function scopeActive($query) { return $query->where('is_active', true)->orderBy('name'); }
 }
