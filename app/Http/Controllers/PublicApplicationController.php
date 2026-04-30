@@ -393,9 +393,64 @@ class PublicApplicationController extends Controller
         }
 
         $customer = $session->customer;
+
+        // ATOMIC PATH — when both sides come from /preview-license (paths,
+        // not files), the OCR + verify already ran. We save the data
+        // directly, advance the step PAST both license steps in one go,
+        // then send a SINGLE next-step SMS. This avoids the user getting
+        // an intermediate "now please send the back" SMS that PR's the
+        // bot pipeline would emit between processing front and back.
+        $hasPreviewedBoth = $request->filled('front_path') && $request->filled('back_path');
+        if ($hasPreviewedBoth) {
+            $collected = $session->collected ?? [];
+            foreach (['front' => 'front_path', 'back' => 'back_path'] as $side => $field) {
+                $localPath = ltrim((string) $request->input($field), '/');
+                $collected['license_image_' . $side . '_path'] = $localPath;
+                $collected['license_image_' . $side . '_url']  = $this->urlForStoredPath($localPath);
+                if ($customer) {
+                    \App\Models\CustomerDocument::firstOrCreate(
+                        ['customer_id' => $customer->id, 'path' => $localPath],
+                        [
+                            'type'          => 'drivers_license_' . $side,
+                            'label'         => trim(($collected['first_name'] ?? '') . ' ' . ($collected['last_name'] ?? '') . " ({$side})", ' '),
+                            'disk'          => 'public',
+                            'original_name' => basename($localPath),
+                            'mime_type'     => 'image/jpeg',
+                            'uploaded_by'   => null,
+                        ]
+                    );
+                }
+            }
+            // Find the step AFTER license_image_back and advance there
+            $steps   = $this->stagesForFlow($session);
+            $afterIdx = null;
+            foreach ($steps as $i => $s) {
+                if ($s['key'] === 'license_image_back') { $afterIdx = $i + 1; break; }
+            }
+            $nextStep = ($afterIdx !== null && isset($steps[$afterIdx])) ? $steps[$afterIdx] : null;
+            $session->update([
+                'collected'    => $collected,
+                'current_step' => $nextStep['key'] ?? '__done__',
+                'last_inbound_at' => now(),
+            ]);
+
+            // ONE SMS — the next-step prompt. No intermediate "send the back".
+            if ($nextStep && ($nextStep['key'] ?? '') !== '__done__') {
+                $ref = new \ReflectionClass($bot);
+                $renderMethod = $ref->getMethod('renderPrompt');
+                $renderMethod->setAccessible(true);
+                $replyMethod = $ref->getMethod('reply');
+                $replyMethod->setAccessible(true);
+                $replyMethod->invoke($bot, $session->phone,
+                    "Got both sides — thanks. " . $renderMethod->invoke($bot, $nextStep, $session));
+            }
+            return redirect()->route('public.apply.done', ['token' => $token]);
+        }
+
+        // FALLBACK PATH — single side or fresh file uploads. Routes
+        // through the bot pipeline as before.
         $stageOrder = $this->stageOrder($session);
 
-        // FRONT
         if ($request->hasFile('license_front')) {
             $url = $this->saveAndUrl($request->file('license_front'), $session);
             $this->routeOrSaveLicense($session, $bot, $customer, $url, 'license_image_front', $stageOrder);
@@ -406,7 +461,6 @@ class PublicApplicationController extends Controller
             $session = $session->fresh();
         }
 
-        // BACK
         if ($request->hasFile('license_back')) {
             $url = $this->saveAndUrl($request->file('license_back'), $session);
             $this->routeOrSaveLicense($session, $bot, $customer, $url, 'license_image_back', $stageOrder);
@@ -416,6 +470,15 @@ class PublicApplicationController extends Controller
         }
 
         return redirect()->route('public.apply.done', ['token' => $token]);
+    }
+
+    private function stagesForFlow(LeaseApplicationSession $session): array
+    {
+        $bot = app(LeaseApplicationBot::class);
+        $ref = new \ReflectionClass($bot);
+        $m = $ref->getMethod('stepsFor');
+        $m->setAccessible(true);
+        return $m->invoke($bot, $session->flow);
     }
 
     /**
