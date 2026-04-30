@@ -249,9 +249,24 @@ class DealController extends Controller
             'msrp' => 'nullable|numeric',
             'rebates' => 'nullable|numeric',
             'notes' => 'nullable|string',
+            // Optional VIN-driven vehicle details — when present, also applied
+            // to the deal so the right car is on file alongside the quote.
+            'vehicle_vin' => 'nullable|string|max:17',
+            'vehicle_year' => 'nullable|integer',
+            'vehicle_make' => 'nullable|string|max:100',
+            'vehicle_model' => 'nullable|string|max:100',
+            'vehicle_trim' => 'nullable|string|max:100',
         ]);
 
-        $this->leasing->createQuote($deal, $validated);
+        // Split out vehicle fields so the quote row only stores quote-shaped data.
+        $vehicleKeys = ['vehicle_vin', 'vehicle_year', 'vehicle_make', 'vehicle_model', 'vehicle_trim'];
+        $vehicleData = array_filter(array_intersect_key($validated, array_flip($vehicleKeys)), fn ($v) => $v !== null && $v !== '');
+        $quoteData = array_diff_key($validated, array_flip($vehicleKeys));
+
+        if (!empty($vehicleData)) {
+            $deal->update($vehicleData);
+        }
+        $this->leasing->createQuote($deal, $quoteData);
 
         return back()->with('success', 'Quote added.');
     }

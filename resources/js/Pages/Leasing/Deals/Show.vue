@@ -14,6 +14,7 @@ const props = defineProps({
 });
 const d = props.deal;
 const fmt = (v) => v ? '$' + parseFloat(v).toLocaleString() : '-';
+const fmtDate = (v) => v ? new Date(v).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 const activeTab = ref('summary');
 
 const stageLabels = { lead: 'Lead', quote: 'Quote', application: 'Application', submission: 'Submission', pending: 'Pending', finalize: 'Finalize', outstanding: 'Outstanding', complete: 'Complete', lost: 'Lost' };
@@ -82,10 +83,65 @@ const runCreditPull = () => {
     creditPullForm.post(route('leasing.deals.credit-pull', d.id), { preserveScroll: true });
 };
 
-const quoteForm = useForm({ lender_id: '', payment_type: d.payment_type, term: 36, mileage_per_year: 10000, monthly_payment: '', das: '', sell_price: d.sell_price || '', msrp: d.msrp || '', rebates: 0, notes: '' });
-const addQuote = () => { quoteForm.post(route('leasing.deals.quote', d.id), { onSuccess: () => quoteForm.reset() }); };
+const quoteForm = useForm({
+    lender_id: '', payment_type: d.payment_type, term: 36, mileage_per_year: 10000,
+    monthly_payment: '', das: '', sell_price: d.sell_price || '', msrp: d.msrp || '', rebates: 0, notes: '',
+    // Optional VIN-driven vehicle details — when present, addQuote also
+    // updates the deal's vehicle fields so the right car is on file.
+    vehicle_vin: d.vehicle_vin || '', vehicle_year: d.vehicle_year || '',
+    vehicle_make: d.vehicle_make || '', vehicle_model: d.vehicle_model || '',
+    vehicle_trim: d.vehicle_trim || '',
+});
+const decodingVin = ref(false);
+const decodeVinForQuote = async () => {
+    if (!quoteForm.vehicle_vin || quoteForm.vehicle_vin.length !== 17) return;
+    decodingVin.value = true;
+    try {
+        const res = await fetch(route('leasing.vin-decode'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content },
+            body: JSON.stringify({ vin: quoteForm.vehicle_vin }),
+            credentials: 'same-origin',
+        });
+        const result = await res.json();
+        if (result.success && result.data) {
+            quoteForm.vehicle_year  = result.data.year  || quoteForm.vehicle_year;
+            quoteForm.vehicle_make  = result.data.make  || quoteForm.vehicle_make;
+            quoteForm.vehicle_model = result.data.model || quoteForm.vehicle_model;
+            quoteForm.vehicle_trim  = result.data.trim  || quoteForm.vehicle_trim;
+            if (result.data.msrp && !quoteForm.msrp) quoteForm.msrp = result.data.msrp;
+        }
+    } catch (e) { console.error(e); }
+    decodingVin.value = false;
+};
+const addQuote = () => {
+    quoteForm.post(route('leasing.deals.quote', d.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            // Keep the VIN/vehicle so subsequent quotes against the same car
+            // don't need re-decoding; reset only the per-quote pricing fields.
+            quoteForm.reset('lender_id', 'monthly_payment', 'das', 'rebates', 'notes');
+        },
+    });
+};
 
-const completeTask = (taskId) => router.post(route('leasing.deals.task', { deal: d.id, task: taskId }));
+const completeTask = (taskId) => {
+    // Optimistic — flip the local task object so the checkbox + line-through
+    // appear instantly. Server confirms; on error we roll back.
+    const task = (d.tasks || []).find((t) => t.id === taskId);
+    if (!task || task.is_completed) return;
+    const original = { is_completed: task.is_completed, completed_at: task.completed_at };
+    task.is_completed = true;
+    task.completed_at = new Date().toISOString();
+    router.post(route('leasing.deals.task', { deal: d.id, task: taskId }), {}, {
+        preserveScroll: true,
+        preserveState: true,
+        onError: () => {
+            task.is_completed = original.is_completed;
+            task.completed_at = original.completed_at;
+        },
+    });
+};
 const transitionTo = (stage) => router.post(route('leasing.deals.transition', d.id), { stage });
 const selectQuote = (quoteId) => router.post(route('leasing.deals.select-quote', { deal: d.id, quote: quoteId }));
 
@@ -270,9 +326,12 @@ const saveCalcAsQuote = () => {
                                     <span class="text-sm" :class="task.is_completed ? 'line-through text-gray-400' : ''">{{ task.name }}</span>
                                     <span v-if="task.stage && showAllStageTasks" class="ml-2 text-xs text-gray-400 capitalize">({{ task.stage }})</span>
                                 </div>
-                                <span v-if="task.due_date && !task.is_completed" class="text-xs"
+                                <span v-if="task.is_completed && task.completed_at" class="text-xs text-emerald-600">
+                                    ✓ Completed {{ fmtDate(task.completed_at) }}
+                                </span>
+                                <span v-else-if="task.due_date" class="text-xs"
                                       :class="new Date(task.due_date) < new Date() ? 'text-red-600 font-bold' : 'text-gray-400'">
-                                    {{ task.due_date }}
+                                    Due {{ fmtDate(task.due_date) }}
                                 </span>
                             </div>
                             <p v-if="!visibleTasks.length" class="text-gray-500 text-sm">No tasks for this stage.</p>
@@ -302,12 +361,74 @@ const saveCalcAsQuote = () => {
 
                             <div class="border-t pt-4">
                                 <h4 class="font-medium text-sm mb-3">Add Quote</h4>
+
+                                <!-- VIN-driven vehicle entry. Decode auto-fills year/make/model/trim;
+                                     submitting the quote also writes these to the deal so the
+                                     right car is on file. -->
+                                <div class="bg-indigo-50/60 border border-indigo-100 rounded-lg p-3 mb-3">
+                                    <div class="flex flex-wrap items-end gap-2">
+                                        <div class="flex-1 min-w-[220px]">
+                                            <label class="block text-[11px] font-medium text-gray-700">VIN</label>
+                                            <input v-model="quoteForm.vehicle_vin" type="text" maxlength="17" placeholder="17-char VIN"
+                                                   class="mt-0.5 block w-full font-mono border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                        <button type="button" @click="decodeVinForQuote"
+                                                :disabled="decodingVin || (quoteForm.vehicle_vin || '').length !== 17"
+                                                class="px-3 py-1.5 bg-blue-600 text-white rounded-md text-xs hover:bg-blue-700 disabled:opacity-50">
+                                            {{ decodingVin ? 'Decoding…' : 'Decode' }}
+                                        </button>
+                                    </div>
+                                    <div v-if="quoteForm.vehicle_year || quoteForm.vehicle_make"
+                                         class="mt-2 text-xs text-gray-700">
+                                        <strong>{{ quoteForm.vehicle_year }} {{ quoteForm.vehicle_make }} {{ quoteForm.vehicle_model }} {{ quoteForm.vehicle_trim }}</strong>
+                                        <span class="ml-2 text-[11px] text-gray-500">— will be saved to the deal on submit</span>
+                                    </div>
+                                </div>
+
                                 <form @submit.prevent="addQuote" class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                    <div><select v-model="quoteForm.lender_id" class="block w-full border-gray-300 rounded-md shadow-sm text-xs"><option value="">Lender</option><option v-for="l in lenders" :key="l.id" :value="l.id">{{ l.name }}</option></select></div>
-                                    <div><input v-model="quoteForm.monthly_payment" type="number" step="0.01" placeholder="Monthly $" class="block w-full border-gray-300 rounded-md shadow-sm text-xs" /></div>
-                                    <div><input v-model="quoteForm.term" type="number" placeholder="Term (mo)" class="block w-full border-gray-300 rounded-md shadow-sm text-xs" /></div>
-                                    <div><input v-model="quoteForm.das" type="number" step="0.01" placeholder="DAS $" class="block w-full border-gray-300 rounded-md shadow-sm text-xs" /></div>
-                                    <div class="md:col-span-4"><button type="submit" :disabled="quoteForm.processing" class="px-4 py-2 bg-indigo-600 text-white rounded-md text-xs hover:bg-indigo-700">Add Quote</button></div>
+                                    <div>
+                                        <label class="block text-[11px] text-gray-500">Lender</label>
+                                        <select v-model="quoteForm.lender_id" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs">
+                                            <option value="">—</option>
+                                            <option v-for="l in lenders" :key="l.id" :value="l.id">{{ l.name }}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] text-gray-500">Monthly $</label>
+                                        <input v-model="quoteForm.monthly_payment" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] text-gray-500">Term (mo)</label>
+                                        <input v-model="quoteForm.term" type="number" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] text-gray-500">Miles / year</label>
+                                        <select v-model.number="quoteForm.mileage_per_year" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs">
+                                            <option v-for="m in [7500, 10000, 12000, 15000, 18000, 20000]" :key="m" :value="m">{{ m.toLocaleString() }}</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] text-gray-500">DAS $</label>
+                                        <input v-model="quoteForm.das" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] text-gray-500">Sell $</label>
+                                        <input v-model="quoteForm.sell_price" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] text-gray-500">MSRP $</label>
+                                        <input v-model="quoteForm.msrp" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                    </div>
+                                    <div>
+                                        <label class="block text-[11px] text-gray-500">Rebates $</label>
+                                        <input v-model="quoteForm.rebates" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                    </div>
+                                    <div class="md:col-span-4">
+                                        <button type="submit" :disabled="quoteForm.processing"
+                                                class="px-4 py-2 bg-indigo-600 text-white rounded-md text-xs hover:bg-indigo-700 disabled:opacity-50">
+                                            {{ quoteForm.processing ? 'Saving…' : 'Add Quote' }}
+                                        </button>
+                                    </div>
                                 </form>
                             </div>
                         </div>
