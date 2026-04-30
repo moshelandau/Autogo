@@ -269,6 +269,88 @@ class PublicApplicationController extends Controller
         ]);
     }
 
+    /**
+     * Combined license-upload page — front + back together. Linked from
+     * the bot's SECURE reply on either license_image_* step. Submitting
+     * lets the customer pick to upload one or both at the same time
+     * instead of navigating two separate single-step pages.
+     */
+    public function showLicense(string $token): Response
+    {
+        $session = LeaseApplicationSession::where('web_token', $token)->firstOrFail();
+
+        if (is_null($session->web_first_visited_at)) {
+            $session->update(['web_first_visited_at' => now(), 'web_verified_at' => now()]);
+        }
+        if (!$this->isVerified($session)) {
+            return Inertia::render('Public/ApplyVerify', [
+                'token' => $token,
+                'phone_hint' => $this->maskPhone($session->phone),
+            ]);
+        }
+
+        $c = $session->collected ?? [];
+        return Inertia::render('Public/ApplyLicense', [
+            'token'     => $token,
+            'has_front' => !empty($c['license_image_front_path']),
+            'has_back'  => !empty($c['license_image_back_path']),
+        ]);
+    }
+
+    public function submitLicense(Request $request, string $token)
+    {
+        $session = LeaseApplicationSession::where('web_token', $token)->firstOrFail();
+        if (!$this->isVerified($session)) {
+            return redirect()->route('public.apply.show.license', ['token' => $token]);
+        }
+
+        $request->validate([
+            'license_front' => 'nullable|file|image|max:20480',
+            'license_back'  => 'nullable|file|image|max:20480',
+        ]);
+        if (!$request->hasFile('license_front') && !$request->hasFile('license_back')) {
+            return back()->withErrors(['license_front' => 'Pick at least one side to upload.']);
+        }
+
+        $collected = $session->collected ?? [];
+        foreach (['front' => 'license_front', 'back' => 'license_back'] as $side => $field) {
+            if (!$request->hasFile($field)) continue;
+            $path = $request->file($field)->store("lease-bot-uploads/{$session->id}", 'public');
+            $collected['license_image_' . $side . '_path'] = $path;
+            $collected['license_image_' . $side . '_url']  = Storage::disk('public')->url($path);
+
+            // Save as CustomerDocument right away, mirroring the bot's
+            // upload-time persistence so the doc shows up on the deal
+            // Documents tab without waiting for finalize().
+            if ($session->customer) {
+                \App\Models\CustomerDocument::firstOrCreate(
+                    ['customer_id' => $session->customer->id, 'path' => $path],
+                    [
+                        'type'          => 'drivers_license_' . $side,
+                        'label'         => trim(($collected['first_name'] ?? '') . ' ' . ($collected['last_name'] ?? '') . " ({$side})", ' '),
+                        'disk'          => 'public',
+                        'original_name' => $request->file($field)->getClientOriginalName(),
+                        'mime_type'     => $request->file($field)->getMimeType(),
+                        'uploaded_by'   => null,
+                    ]
+                );
+            }
+        }
+
+        $session->collected = $collected;
+        $session->last_inbound_at = now();
+        $session->save();
+
+        try {
+            app(\App\Services\TelebroadService::class)->sendSms($session->phone,
+                "Got your license — thanks. Continuing your application.");
+        } catch (\Throwable $e) {
+            \Log::error('SMS resume failed after license submit', ['error' => $e->getMessage()]);
+        }
+
+        return redirect()->route('public.apply.done', ['token' => $token]);
+    }
+
     private function stepConfig(string $stepKey): array
     {
         $map = [

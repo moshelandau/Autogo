@@ -34,6 +34,8 @@ Route::get ('apply/{token}/done',                  [\App\Http\Controllers\Public
 Route::get ('apply/{token}/step/{step}',           [\App\Http\Controllers\PublicApplicationController::class, 'showStep'])->name('public.apply.show.step');
 Route::post('apply/{token}/step/{step}',           [\App\Http\Controllers\PublicApplicationController::class, 'submitStep'])->name('public.apply.submit.step');
 Route::get ('apply/{token}/step/{step}/done',      [\App\Http\Controllers\PublicApplicationController::class, 'stepDone'])->name('public.apply.step.done');
+Route::get ('apply/{token}/license',               [\App\Http\Controllers\PublicApplicationController::class, 'showLicense'])->name('public.apply.show.license');
+Route::post('apply/{token}/license',               [\App\Http\Controllers\PublicApplicationController::class, 'submitLicense'])->name('public.apply.submit.license');
 
 Route::get('/', function () {
     return redirect()->route('dashboard');
