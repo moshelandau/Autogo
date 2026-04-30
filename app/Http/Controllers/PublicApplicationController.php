@@ -363,12 +363,24 @@ class PublicApplicationController extends Controller
     /**
      * Save an uploaded file to the lease-bot-uploads/{session_id}/ folder
      * on the public disk and return its full public URL — what the bot
-     * expects when handling an "MMS" (it fetches the URL).
+     * expects when handling an "MMS" (it fetches the URL via file_get_contents).
+     *
+     * Storage::disk('public')->url() returns a full URL when the public
+     * disk has 'url' configured (default in Laravel: APP_URL/storage).
+     * Don't prepend APP_URL again — that gave us a double-prefix bug
+     * earlier, the bot's file_get_contents failed silently, and the
+     * customer got "trouble receiving your photo" instead of validation.
      */
     private function saveAndUrl(\Illuminate\Http\UploadedFile $file, LeaseApplicationSession $session): string
     {
         $path = $file->store("lease-bot-uploads/{$session->id}", 'public');
-        return rtrim(config('app.url', 'https://app.autogoco.com'), '/') . Storage::disk('public')->url($path);
+        $url  = Storage::disk('public')->url($path);
+        // Belt-and-suspenders: if Storage returns a relative path (when
+        // APP_URL isn't wired into the disk config), prepend it ourselves.
+        if (!preg_match('#^https?://#i', $url)) {
+            $url = rtrim(config('app.url', 'https://app.autogoco.com'), '/') . '/' . ltrim($url, '/');
+        }
+        return $url;
     }
 
     private function stepConfig(string $stepKey): array
