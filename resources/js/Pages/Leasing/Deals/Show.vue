@@ -242,6 +242,20 @@ const completeTask = (taskId) => {
         },
     });
 };
+// Inline due-date editor — clicking a task's "Due ..." swaps it for a
+// date input. Picking a new date posts to the cascade endpoint, which
+// also bumps any later task whose date would now be in the past.
+const editingDueId = ref(null);
+const updateTaskDueDate = (task, dateStr) => {
+    editingDueId.value = null;
+    if (!dateStr) return;
+    router.post(
+        route('leasing.deals.task.due-date', { deal: d.id, task: task.id }),
+        { due_date: dateStr },
+        { preserveScroll: true }
+    );
+};
+
 const transitionTo = (stage) => router.post(route('leasing.deals.transition', d.id), { stage });
 const selectQuote = (quoteId) => router.post(route('leasing.deals.select-quote', { deal: d.id, quote: quoteId }));
 
@@ -492,10 +506,19 @@ const saveCalcAsQuote = () => {
                                 <span v-if="task.is_completed && task.completed_at" class="text-xs text-emerald-600">
                                     ✓ Completed {{ fmtDate(task.completed_at) }}
                                 </span>
-                                <span v-else-if="task.due_date" class="text-xs"
-                                      :class="new Date(task.due_date) < new Date() ? 'text-red-600 font-bold' : 'text-gray-400'">
-                                    Due {{ fmtDate(task.due_date) }}
-                                </span>
+                                <template v-else>
+                                    <input v-if="editingDueId === task.id" type="date"
+                                           :value="task.due_date ? String(task.due_date).slice(0, 10) : ''"
+                                           @change="updateTaskDueDate(task, $event.target.value)"
+                                           @blur="editingDueId = null"
+                                           class="border-gray-300 rounded text-xs py-0.5" />
+                                    <button v-else type="button" @click="editingDueId = task.id"
+                                            class="text-xs hover:bg-gray-100 px-1.5 py-0.5 rounded transition"
+                                            :class="task.due_date && new Date(task.due_date) < new Date() ? 'text-red-600 font-bold' : 'text-gray-500 hover:text-gray-800'"
+                                            title="Click to change — tasks below will shift forward to match">
+                                        {{ task.due_date ? `Due ${fmtDate(task.due_date)}` : 'Set due date' }}
+                                    </button>
+                                </template>
                             </div>
                             <p v-if="!visibleTasks.length" class="text-gray-500 text-sm">No tasks for this stage.</p>
                         </div>

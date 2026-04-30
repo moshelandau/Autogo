@@ -150,9 +150,20 @@ class Deal extends Model
         foreach ($tasks as $i => $taskName) {
             $this->tasks()->firstOrCreate(
                 ['name' => $taskName, 'stage' => $stage],
-                ['sort_order' => $i, 'due_date' => now()->addDays(3)]
+                ['sort_order' => $i, 'due_date' => now()->addDays(self::defaultDueDaysFor($taskName))]
             );
         }
+    }
+
+    /**
+     * Default number of days from now for a freshly-generated task.
+     * The Bird Dog payment is collected ~1 month after delivery, so it
+     * gets a 30-day default rather than the usual 3.
+     */
+    public static function defaultDueDaysFor(string $taskName): int
+    {
+        if (stripos($taskName, 'bird dog') !== false) return 30;
+        return 3;
     }
 
     public function transitionTo(string $newStage): void
