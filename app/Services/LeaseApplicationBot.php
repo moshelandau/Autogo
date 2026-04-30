@@ -986,11 +986,20 @@ class LeaseApplicationBot
         $norm = fn ($v) => trim(preg_replace('/\s+/', ' ', strtolower((string) $v)));
         $diffs = [];
 
-        // DOB — customer.date_of_birth is a date cast; compare as YYYY-MM-DD
+        // DOB — customer.date_of_birth is a date cast; compare as YYYY-MM-DD.
+        // We flag a diff in three cases:
+        //   1. License has a DOB and on-file has a DOB and they don't match
+        //   2. License has a DOB and on-file is EMPTY (so customer confirms
+        //      the extracted date before we silently save it)
+        // We never flag when license is empty — that's a missed extraction,
+        // not a confirmation prompt.
         $licDob  = $norm($extracted['date_of_birth'] ?? '');
         $fileDob = $customer->date_of_birth ? $customer->date_of_birth->format('Y-m-d') : '';
-        if ($licDob && $fileDob && $norm($fileDob) !== $licDob) {
-            $diffs['date_of_birth'] = ['license' => $extracted['date_of_birth'], 'file' => $fileDob];
+        if ($licDob && (empty($fileDob) || $norm($fileDob) !== $licDob)) {
+            $diffs['date_of_birth'] = [
+                'license' => $extracted['date_of_birth'],
+                'file'    => $fileDob ?: '(none on file)',
+            ];
         }
 
         // Address — combine line1 + city + state + zip into one normalised
