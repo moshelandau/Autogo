@@ -1146,15 +1146,19 @@ class LeaseApplicationBot
                 if (!empty($extracted[$k])) $collected[$k] = $extracted[$k];
             }
         } elseif ($upper === 'FILE' || $upper === 'F') {
-            // Keep on-file — pull the file values into collected so downstream
-            // steps see consistent data.
+            // Keep on-file values — but for any field that's EMPTY on file
+            // (e.g. DOB never captured), fall back to the license value so
+            // the application doesn't end up with blanks. "FILE" means
+            // "don't overwrite what I have"; if nothing's there, use license.
             $cust = $session->customer;
-            if ($cust) {
-                foreach (['address','city','state','zip','first_name','last_name'] as $k) {
-                    if (!empty($cust->{$k})) $collected[$k] = $cust->{$k};
-                }
-                if ($cust->date_of_birth) $collected['date_of_birth'] = $cust->date_of_birth->format('Y-m-d');
+            foreach (['address','city','state','zip','first_name','last_name'] as $k) {
+                $fileVal = $cust->{$k} ?? null;
+                $licVal  = $extracted[$k] ?? null;
+                $collected[$k] = !empty($fileVal) ? $fileVal : ($licVal ?: ($collected[$k] ?? null));
             }
+            $fileDob = $cust && $cust->date_of_birth ? $cust->date_of_birth->format('Y-m-d') : null;
+            $licDob  = $extracted['date_of_birth'] ?? null;
+            $collected['date_of_birth'] = !empty($fileDob) ? $fileDob : ($licDob ?: ($collected['date_of_birth'] ?? null));
         } else {
             // Free-text correction — apply to address (most common case).
             // DOB / name corrections need a proper sub-prompt; we just skip
