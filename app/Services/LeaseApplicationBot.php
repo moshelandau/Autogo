@@ -555,14 +555,44 @@ class LeaseApplicationBot
             return $this->handleIdentityConfirmResponse($session, $step, $stepIdx, $collected, $body);
         }
 
+        // SECURE reply on any text-input step → send the customer the full
+        // form URL with a ?focus=<step_key> hint so the page scrolls and
+        // highlights that specific question. Useful for SSN and other
+        // sensitive fields the customer doesn't want to text in plaintext.
+        if (($step['expects'] ?? null) !== 'image' && $step['key'] !== '__done__') {
+            $upper = strtoupper(trim($body));
+            if (in_array($upper, ['SECURE', 'WEB', 'LINK', 'FORM'], true)) {
+                $url = $session->apply_url . '?focus=' . urlencode($step['key']);
+                $this->reply($session->phone,
+                    "Use this secure form: {$url}\n\n" .
+                    "It's pre-filled with what you've shared so far. After you submit, no need to keep texting back."
+                );
+                $session->update(['last_inbound_at' => now()]);
+                return true;
+            }
+        }
+
         // Image step (license_image_front / license_image_back) needs MMS
         if (($step['expects'] ?? null) === 'image') {
+            $reply = strtoupper(trim($body));
+
+            // SECURE on image step → send the form URL so they can upload
+            // via web file picker instead of MMS.
+            if (in_array($reply, ['SECURE', 'WEB', 'LINK', 'FORM'], true)) {
+                $url = $session->apply_url . '?focus=' . urlencode($step['key']);
+                $this->reply($session->phone,
+                    "Use this secure form to upload your license: {$url}\n\n" .
+                    "Tap to take or pick a photo, then submit."
+                );
+                $session->update(['last_inbound_at' => now()]);
+                return true;
+            }
+
             // Customer-driven skip — they can reply NEXT / SKIP / LATER to
             // jump past this step. The image gets flagged as missing on the
             // session so staff knows to follow up; the application keeps
             // moving instead of getting stuck forever.
-            $skipWord = strtoupper(trim($body));
-            if (in_array($skipWord, ['NEXT', 'SKIP', 'LATER'], true)) {
+            if (in_array($reply, ['NEXT', 'SKIP', 'LATER'], true)) {
                 $collected['_skipped_' . $step['key']] = now()->toIso8601String();
                 $collected['_needs_staff_followup'] = true;
                 Log::error('Image step skipped by customer', ['session_id' => $session->id, 'step' => $step['key']]);
