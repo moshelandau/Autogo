@@ -172,10 +172,9 @@ class PublicApplicationController extends Controller
             }
         }
 
-        // For license uploads in the full form, run the bot's image pipeline
-        // first so we get OCR, side check, obstruction detection, etc. Don't
-        // just blindly save the path. If the bot rejects the photo, the
-        // customer gets a re-ask via SMS and the path stays unset.
+        // License uploads route through the bot's image pipeline so they
+        // get OCR + side check + obstruction detection + diff confirmation
+        // (same as SMS path). Bot SMSes the customer about the outcome.
         foreach (['front' => 'license_front', 'back' => 'license_back'] as $side => $field) {
             if (!$request->hasFile($field)) continue;
             $url = $this->saveAndUrl($request->file($field), $session);
@@ -184,24 +183,34 @@ class PublicApplicationController extends Controller
             $bot->handleInbound($session->phone, '', $session->customer, [$url]);
             $session = $session->fresh();
         }
-        // Re-merge any text fields the bot didn't touch (full-form has
-        // many fields; bot only handled the license uploads above).
+        // Re-merge text fields. Bot only handled image uploads above; the
+        // many text fields below come straight from the form.
         $collected = array_merge($session->collected ?? [], array_diff_key(
             $collected,
             array_flip(['license_image_front_path','license_image_front_url','license_image_back_path','license_image_back_url'])
         ));
-
-        $session->collected = $collected;
-        $session->current_step = '__done__';
+        $session->collected       = $collected;
         $session->last_inbound_at = now();
         $session->save();
 
-        $ref = new \ReflectionClass($bot);
-        $finalize = $ref->getMethod('finalize');
-        $finalize->setAccessible(true);
-        $finalize->invoke($bot, $session);
+        // Finalize only if we have enough to actually create a Customer +
+        // Deal record (name + DOB at minimum). Otherwise this was a
+        // partial save and we just persist progress — staff can finish
+        // the rest, customer can come back to the same URL later.
+        $hasMinimum = !empty($collected['first_name']) && !empty($collected['last_name']) && !empty($collected['date_of_birth']);
+        if ($hasMinimum) {
+            $session->update(['current_step' => '__done__']);
+            $ref = new \ReflectionClass($bot);
+            $finalize = $ref->getMethod('finalize');
+            $finalize->setAccessible(true);
+            $finalize->invoke($bot, $session);
+            return redirect()->route('public.apply.done', ['token' => $token]);
+        }
 
-        return redirect()->route('public.apply.done', ['token' => $token]);
+        // Partial save — don't finalize, don't create stub records. Tell
+        // user we got their progress; the SMS bot will keep nudging them
+        // for what's still missing.
+        return back()->with('success', 'Saved your progress — finish the rest when you can. We will text you reminders.');
     }
 
     public function done(string $token): Response
