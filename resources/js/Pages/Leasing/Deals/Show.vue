@@ -461,14 +461,38 @@ const saveCalcAsQuote = () => {
                         </div>
 
                         <!-- Summary Tab -->
-                        <div v-if="activeTab === 'summary'" class="grid grid-cols-2 gap-4 text-sm">
-                            <div><span class="text-gray-500">Sell Price:</span> {{ fmt(d.sell_price) }}</div>
-                            <div><span class="text-gray-500">MSRP:</span> {{ fmt(d.msrp) }}</div>
-                            <div><span class="text-gray-500">Trade Allowance:</span> {{ fmt(d.trade_allowance) }}</div>
-                            <div><span class="text-gray-500">Trade Payoff:</span> {{ fmt(d.trade_payoff) }}</div>
-                            <div><span class="text-gray-500">Drive Off:</span> {{ fmt(d.drive_off) }}</div>
-                            <div><span class="text-gray-500">Mileage/Year:</span> {{ d.mileage_per_year?.toLocaleString() || '-' }}</div>
-                            <div class="col-span-2"><span class="text-gray-500">Notes:</span> {{ d.notes || '-' }}</div>
+                        <div v-if="activeTab === 'summary'" class="space-y-5">
+                            <!-- Customer preferences (lead-stage capture) — visible at a glance.
+                                 Edit lives on the Workflow tab; this is read-only summary. -->
+                            <div class="border rounded-xl p-4 bg-gray-50/50">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Customer Preferences</h4>
+                                    <button type="button" @click="activeTab = 'workflow'"
+                                            class="text-xs text-indigo-600 hover:text-indigo-800 underline">
+                                        {{ d.preferences && Object.values(d.preferences).some(v => v) ? 'Edit' : '+ Add' }}
+                                    </button>
+                                </div>
+                                <div v-if="d.preferences && Object.values(d.preferences).some(v => v)"
+                                     class="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2 text-sm">
+                                    <div><span class="text-gray-500">Style:</span> <span class="font-medium">{{ d.preferences.style || '—' }}</span></div>
+                                    <div><span class="text-gray-500">Brand:</span> <span class="font-medium">{{ d.preferences.brand || '—' }}</span></div>
+                                    <div><span class="text-gray-500">Color:</span> <span class="font-medium">{{ d.preferences.color || '—' }}</span></div>
+                                    <div><span class="text-gray-500">Budget:</span> <span class="font-medium">{{ d.preferences.budget ? '$' + Number(d.preferences.budget).toLocaleString() + '/mo' : '—' }}</span></div>
+                                    <div><span class="text-gray-500">Miles/yr:</span> <span class="font-medium">{{ d.preferences.miles_per_year ? Number(d.preferences.miles_per_year).toLocaleString() : '—' }}</span></div>
+                                    <div><span class="text-gray-500">Passengers:</span> <span class="font-medium">{{ d.preferences.passengers || '—' }}</span></div>
+                                </div>
+                                <p v-else class="text-xs text-gray-400 italic">No preferences captured yet — click "+ Add" to fill them in.</p>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4 text-sm">
+                                <div><span class="text-gray-500">Sell Price:</span> {{ fmt(d.sell_price) }}</div>
+                                <div><span class="text-gray-500">MSRP:</span> {{ fmt(d.msrp) }}</div>
+                                <div><span class="text-gray-500">Trade Allowance:</span> {{ fmt(d.trade_allowance) }}</div>
+                                <div><span class="text-gray-500">Trade Payoff:</span> {{ fmt(d.trade_payoff) }}</div>
+                                <div><span class="text-gray-500">Drive Off:</span> {{ fmt(d.drive_off) }}</div>
+                                <div><span class="text-gray-500">Mileage/Year:</span> {{ d.mileage_per_year?.toLocaleString() || '-' }}</div>
+                                <div class="col-span-2"><span class="text-gray-500">Notes:</span> {{ d.notes || '-' }}</div>
+                            </div>
                         </div>
 
                         <!-- Workflow Tab — one card per stage in workflow order.
