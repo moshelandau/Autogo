@@ -659,33 +659,36 @@ class LeaseApplicationBot
                 return true; // stay on same step
             }
 
-            // Quality gate — BACK: verify the photo shows the full back of
-            // the license, no parts cut off / covered. Back has no useful
-            // OCR fields so the front's 4-of-6 gate doesn't apply; we make
-            // a single Opus call asking "is this complete?".
-            if ($step['key'] === 'license_image_back') {
-                $verify = $this->verifyBackLicenseImage($extracted['_stored_path'] ?? null);
-                if (!empty($verify) && empty($verify['complete'])) {
-                    $reason = $verify['reason'] ?? 'looks cut off or covered';
-                    Log::error('License back verification failed', [
-                        'session_id' => $session->id, 'attempt' => $retries + 1, 'reason' => $reason,
-                    ]);
-                    if ($retries >= 1) {
-                        $collected[$step['key'] . '_url']  = $mediaUrls[0];
-                        $collected[$step['key'] . '_path'] = $extracted['_stored_path'] ?? null;
-                        $collected['_needs_license_review'] = true;
-                        return $this->skipImageStepAndAdvance($session, $step, $stepIdx, $collected,
-                            "Still can't see the whole back — I'll save what you sent and have the team verify. Moving on for now.");
-                    }
-                    $collected[$retryKey] = $retries + 1;
-                    $session->update(['collected' => $collected, 'last_inbound_at' => now()]);
-                    $this->reply($session->phone,
-                        "I need the FULL back of your license — {$reason}. " .
-                        "Please re-send with the WHOLE back visible: all four corners showing, nothing covered.\n\n" .
-                        "Or reply NEXT to skip for now and finish the rest first."
-                    );
-                    return true;
+            // Side + obstruction gate — runs for BOTH front and back. The
+            // verifier checks that (a) it's the side we asked for (catches
+            // user sending front when bot expected back), (b) entire card
+            // is visible, and (c) nothing's blocking the license — wires,
+            // fingers, papers, glare. The reason string from Opus is
+            // surfaced verbatim in the re-ask so the customer knows
+            // exactly what to fix.
+            $expectedSide = $step['key'] === 'license_image_back' ? 'back' : 'front';
+            $verify = $this->verifyLicenseSide($extracted['_stored_path'] ?? null, $expectedSide);
+            if (!empty($verify) && empty($verify['valid'])) {
+                $reason = $verify['reason'] ?: 'looks cut off or covered';
+                Log::error('License side/obstruction check failed', [
+                    'session_id' => $session->id, 'expected' => $expectedSide, 'attempt' => $retries + 1, 'reason' => $reason,
+                ]);
+                if ($retries >= 1) {
+                    $collected[$step['key'] . '_url']  = $mediaUrls[0];
+                    $collected[$step['key'] . '_path'] = $extracted['_stored_path'] ?? null;
+                    $collected['_needs_license_review'] = true;
+                    return $this->skipImageStepAndAdvance($session, $step, $stepIdx, $collected,
+                        "Still can't get a clean photo — I'll save what you sent and have the team verify. Moving on for now.");
                 }
+                $collected[$retryKey] = $retries + 1;
+                $session->update(['collected' => $collected, 'last_inbound_at' => now()]);
+                $sideUp = strtoupper($expectedSide);
+                $this->reply($session->phone,
+                    "Can't accept this photo — {$reason}. " .
+                    "Please re-send the {$sideUp} of your license: whole card visible, all four corners, nothing covering it (no wires, fingers, papers).\n\n" .
+                    "Or reply NEXT to skip for now and finish the rest first."
+                );
+                return true;
             }
 
             // Quality gate (FRONT only): require ≥4 of the 6 key identity
@@ -1039,35 +1042,68 @@ class LeaseApplicationBot
      * Fails open (returns complete=true) on any error so we don't block
      * progress when the verifier is itself broken.
      */
+    /**
+     * Wrapper kept for backwards compat — back-only verification now
+     * delegates to the unified verifier.
+     */
     private function verifyBackLicenseImage(?string $storedPath): array
     {
+        $r = $this->verifyLicenseSide($storedPath, 'back');
+        return ['complete' => $r['valid'], 'reason' => $r['reason']];
+    }
+
+    /**
+     * Verify a license photo is (1) the right side, (2) the entire card
+     * is visible, and (3) nothing is obstructing it (wires, fingers,
+     * shadows, glare). Failing any of these returns valid=false with a
+     * one-sentence reason that the bot uses verbatim in the re-ask
+     * prompt — so the customer knows exactly what to fix.
+     *
+     * Common rejection cases this catches:
+     *  - User sent the FRONT when bot asked for the BACK (or vice versa)
+     *  - Wire / cable visible on top of the license (your case!)
+     *  - Cropped at any edge
+     *  - Finger or thumb covering data
+     *  - Severe glare washing out printed text
+     *
+     * Fails OPEN on any error (returns valid=true) so a broken verifier
+     * never blocks legitimate uploads.
+     */
+    private function verifyLicenseSide(?string $storedPath, string $expectedSide): array
+    {
         if (!$storedPath || empty(config('services.anthropic.api_key'))) {
-            return ['complete' => true, 'reason' => ''];
+            return ['valid' => true, 'reason' => ''];
         }
+        $expectedSide = $expectedSide === 'back' ? 'back' : 'front';
         try {
             $binary = \Storage::disk('public')->get($storedPath);
-            if (!$binary) return ['complete' => true, 'reason' => '']; // can't read, fail open
+            if (!$binary) return ['valid' => true, 'reason' => ''];
+
+            $sideRule = $expectedSide === 'front'
+                ? 'The photo MUST be the FRONT of the license — the side with the photo, name, address, DOB, and DL number. If it is the BACK (barcode/magnetic-stripe side), set valid=false with reason "this is the back, please send the FRONT".'
+                : 'The photo MUST be the BACK of the license — the side with the magnetic stripe, barcode, restrictions, donor info. If it is the FRONT (photo + identity fields), set valid=false with reason "this is the front, please send the BACK".';
+
             $resp = app(\App\Services\AiClient::class)->messages([
                 'model' => 'claude-opus-4-7', 'max_tokens' => 200,
-                'system' => 'You verify photos of the BACK of US driver licenses. Output VALID JSON only: {"complete": <bool>, "reason": "<short reason if not complete>"}. Set complete=true ONLY if the entire back of the license is visible with all four corners showing, no fingers / objects covering it, and the image is in focus enough to read printed text. Otherwise complete=false with a brief reason like "right edge cut off" or "thumb covering top".',
+                'system' => "You verify US driver license photos. Output VALID JSON only: {\"valid\": <bool>, \"reason\": \"<short reason if invalid>\"}. {$sideRule} Also set valid=false if (a) any part of the license is cut off, (b) any object is covering or partially blocking the license — fingers, thumbs, wires, cables, papers, glare patches, shadows over printed text — or (c) the print is too blurry to read. Be strict — better to reject a borderline photo than accept a bad one. Reason should be customer-facing, e.g. \"a wire is covering part of the license\" or \"top-right corner is cut off\".",
                 'messages' => [[
                     'role' => 'user',
                     'content' => [
                         ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => 'image/jpeg', 'data' => base64_encode($binary)]],
-                        ['type' => 'text', 'text' => 'Verify this back-of-license photo.'],
+                        ['type' => 'text', 'text' => "Verify this {$expectedSide}-of-license photo."],
                     ],
                 ]],
             ]);
             $text = trim(preg_replace('/^```(?:json)?\s*|\s*```$/m', '', $resp->content[0]->text ?? ''));
             $data = json_decode($text, true);
-            if (!is_array($data)) return ['complete' => true, 'reason' => ''];
+            if (!is_array($data)) return ['valid' => true, 'reason' => ''];
             return [
-                'complete' => (bool) ($data['complete'] ?? false),
-                'reason'   => (string) ($data['reason'] ?? ''),
+                'valid'  => (bool) ($data['valid'] ?? false),
+                'reason' => (string) ($data['reason'] ?? ''),
             ];
         } catch (\Throwable $e) {
-            Log::error('verifyBackLicenseImage failed', ['error' => $e->getMessage()]);
-            return ['complete' => true, 'reason' => '']; // fail open
+            Log::error('verifyLicenseSide failed', ['expected' => $expectedSide, 'error' => $e->getMessage()]);
+            return ['valid' => true, 'reason' => ''];
         }
     }
 
