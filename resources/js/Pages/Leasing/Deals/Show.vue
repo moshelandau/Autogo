@@ -6,6 +6,8 @@ import SmsButton from '@/Components/SmsButton.vue';
 import CustomerMessages from '@/Components/CustomerMessages.vue';
 import CustomerSelect from '@/Components/CustomerSelect.vue';
 import NotesPanel from '@/Components/Notes/NotesPanel.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
+import { VEHICLE_MAKES, VEHICLE_COLORS } from '@/Components/vehicleOptions.js';
 
 const props = defineProps({
     deal: Object,
@@ -641,7 +643,7 @@ const saveCalcAsQuote = () => {
                                         </div>
                                         <div>
                                             <label class="block text-[11px] text-gray-500">Make</label>
-                                            <input v-model="quoteForm.vehicle_make" type="text" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                            <SearchableSelect v-model="quoteForm.vehicle_make" :options="VEHICLE_MAKES" placeholder="Honda, Toyota, …" input-class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
                                         </div>
                                         <div>
                                             <label class="block text-[11px] text-gray-500">Model</label>
@@ -967,11 +969,11 @@ const saveCalcAsQuote = () => {
                                     </div>
                                     <div>
                                         <label class="block text-xs text-gray-500">Brand</label>
-                                        <input v-model="workflow.preferences.brand" type="text" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                        <SearchableSelect v-model="workflow.preferences.brand" :options="VEHICLE_MAKES" placeholder="Honda, Toyota, …" input-class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
                                     </div>
                                     <div>
                                         <label class="block text-xs text-gray-500">Color</label>
-                                        <input v-model="workflow.preferences.color" type="text" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                        <SearchableSelect v-model="workflow.preferences.color" :options="VEHICLE_COLORS" placeholder="White, Black, …" input-class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
                                     </div>
                                     <div>
                                         <label class="block text-xs text-gray-500">Budget ($/mo)</label>
