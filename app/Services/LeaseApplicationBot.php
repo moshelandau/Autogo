@@ -403,6 +403,12 @@ class LeaseApplicationBot
                 'bodyshop'         => "Hi {$customer->first_name}! 👋 This is AutoGo Bodyshop.",
                 default            => "Hi {$customer->first_name}! 👋",
             };
+            // For lease/finance, also offer the web form as a faster
+            // alternative to the SMS Q&A. Either path lands in the same
+            // session — they can switch back and forth.
+            if (in_array($flow, ['lease', 'finance'], true)) {
+                $intro .= "\n\nFastest way: tap to fill out the form ({$session->apply_url}) — or just keep replying here and I'll ask you piece by piece.";
+            }
             $this->reply($phone, $intro);
 
             $name = trim(($customer->first_name ?? '') . ' ' . ($customer->last_name ?? ''));
