@@ -7,6 +7,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Customer extends Model
@@ -111,6 +112,7 @@ class Customer extends Model
     public function ezPassAccounts(): HasMany  { return $this->hasMany(EzPassAccount::class); }
     public function cards(): HasMany           { return $this->hasMany(CustomerCard::class); }
     public function phones(): HasMany          { return $this->hasMany(CustomerPhone::class)->orderByDesc('is_primary')->orderBy('id'); }
+    public function notes(): MorphMany         { return $this->morphMany(Note::class, 'notable')->orderByDesc('created_at'); }
 
     /**
      * Lookup by the last 10 digits of any phone tied to this customer

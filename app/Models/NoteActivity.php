@@ -7,10 +7,10 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class DealNote extends Model
+class NoteActivity extends Model
 {
-    protected $fillable = ['deal_id', 'body', 'user_id'];
+    protected $fillable = ['note_id', 'user_id', 'action', 'detail'];
 
-    public function deal(): BelongsTo { return $this->belongsTo(Deal::class); }
+    public function note(): BelongsTo { return $this->belongsTo(Note::class); }
     public function user(): BelongsTo { return $this->belongsTo(User::class); }
 }

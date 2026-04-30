@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class Deal extends Model
 {
@@ -118,7 +119,10 @@ class Deal extends Model
     public function quotes(): HasMany { return $this->hasMany(DealQuote::class); }
     public function tasks(): HasMany { return $this->hasMany(DealTask::class)->orderBy('sort_order'); }
     public function documents(): HasMany { return $this->hasMany(DealDocument::class); }
-    public function dealNotes(): HasMany { return $this->hasMany(DealNote::class)->orderByDesc('created_at'); }
+    public function notes(): MorphMany
+    {
+        return $this->morphMany(Note::class, 'notable')->orderByDesc('created_at');
+    }
 
     public function incompleteTasks(): HasMany
     {

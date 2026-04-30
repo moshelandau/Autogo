@@ -51,6 +51,22 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     Route::post('customers/{customer}/documents', [\App\Http\Controllers\CustomerDocumentController::class, 'store'])->name('customers.documents.store');
     Route::delete('customers/{customer}/documents/{document}', [\App\Http\Controllers\CustomerDocumentController::class, 'destroy'])->name('customers.documents.destroy');
     Route::get('customers-search', [CustomerController::class, 'search'])->name('customers.search');
+
+    // Notes (polymorphic — Deal, Customer, etc.) with @-mentions,
+    // assignees, comments thread and reminder-as-todo. Bell pings via
+    // database notifications.
+    Route::post  ('notes',                   [\App\Http\Controllers\NoteController::class, 'store'])->name('notes.store');
+    Route::put   ('notes/{note}',            [\App\Http\Controllers\NoteController::class, 'update'])->name('notes.update');
+    Route::delete('notes/{note}',            [\App\Http\Controllers\NoteController::class, 'destroy'])->name('notes.destroy');
+    Route::post  ('notes/{note}/resolve',    [\App\Http\Controllers\NoteController::class, 'resolve'])->name('notes.resolve');
+    Route::post  ('notes/{note}/reopen',     [\App\Http\Controllers\NoteController::class, 'reopen'])->name('notes.reopen');
+    Route::post  ('notes/{note}/reminder',   [\App\Http\Controllers\NoteController::class, 'updateReminderDate'])->name('notes.reminder');
+    Route::post  ('notes/{note}/comments',   [\App\Http\Controllers\NoteController::class, 'addComment'])->name('notes.comments.store');
+    Route::get   ('notes/{note}/thread',     [\App\Http\Controllers\NoteController::class, 'thread'])->name('notes.thread');
+
+    // Mention typeahead — used by the AddNote modal.
+    Route::get('users-search', [\App\Http\Controllers\NoteController::class, 'searchUsers'])->name('users.search');
+    // Bell read-state already wired via NotificationController (see below).
     Route::post('customers-quick', [CustomerController::class, 'quickStore'])->name('customers.quick-store');
     Route::get('customers/{customer}/scan',  [\App\Http\Controllers\CustomerScanController::class, 'index'])->name('customers.scan');
     Route::post('customers/{customer}/scan', [\App\Http\Controllers\CustomerScanController::class, 'ingest'])->name('customers.scan.ingest');

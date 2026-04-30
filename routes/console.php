@@ -24,3 +24,11 @@ Schedule::command('tasks:open-violations-check')
     ->cron('0 9 * * 1,4')         // 9:00 AM on Monday and Thursday
     ->timezone('America/New_York')
     ->withoutOverlapping();
+
+// Every 15 minutes: ping the bell for any due note reminders. Idempotent —
+// each (note, user) pivot row has email_sent that flips true once notified.
+Schedule::command('notes:reminders-notify')
+    ->everyFifteenMinutes()
+    ->timezone('America/New_York')
+    ->withoutOverlapping()
+    ->runInBackground();

@@ -70,4 +70,18 @@ class User extends Authenticatable
             'password' => 'hashed',
         ];
     }
+
+    /**
+     * Two-letter initials for the small round avatar in note threads /
+     * activity feeds, derived from `name`. "Mike Brown" -> "MB", single
+     * word -> first two letters.
+     */
+    public function getInitialsAttribute(): string
+    {
+        $parts = preg_split('/\s+/', trim((string) $this->name)) ?: [];
+        if (count($parts) >= 2) {
+            return strtoupper(substr($parts[0], 0, 1) . substr(end($parts), 0, 1));
+        }
+        return strtoupper(substr((string) $this->name, 0, 2)) ?: '?';
+    }
 }
