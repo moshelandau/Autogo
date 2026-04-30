@@ -1,7 +1,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, useForm, router } from '@inertiajs/vue3';
-import { ref, computed, reactive, watch } from 'vue';
+import { ref, computed, reactive, watch, onMounted, nextTick } from 'vue';
 import SmsButton from '@/Components/SmsButton.vue';
 import CustomerMessages from '@/Components/CustomerMessages.vue';
 import CustomerSelect from '@/Components/CustomerSelect.vue';
@@ -26,6 +26,24 @@ watch(() => props.deal, (val) => Object.assign(d, val), { deep: false });
 const fmt = (v) => v ? '$' + parseFloat(v).toLocaleString() : '-';
 const fmtDate = (v) => v ? new Date(v).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 const activeTab = ref('summary');
+
+// Deep-link support — when the bell links to /leasing/deals/X?tab=notes#note-Y
+// (set by MentionedInNoteNotification + NoteReminderDueNotification), open
+// the Notes tab on mount and scroll to the specific note. Without this the
+// page lands on Summary and the user has to find the note manually.
+onMounted(() => {
+    const params = new URLSearchParams(window.location.search);
+    const wantedTab = params.get('tab');
+    if (wantedTab && ['summary','tasks','workflow','calculator','quotes','credit','notes','documents','messages'].includes(wantedTab)) {
+        activeTab.value = wantedTab;
+    }
+    if (window.location.hash) {
+        nextTick(() => {
+            const target = document.querySelector(window.location.hash);
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+    }
+});
 
 const stageLabels = { lead: 'Lead', quote: 'Quote', application: 'Application', submission: 'Submission', pending: 'Pending', finalize: 'Finalize', outstanding: 'Outstanding', complete: 'Complete', lost: 'Lost' };
 const allStages = ['lead', 'quote', 'application', 'submission', 'pending', 'finalize', 'outstanding', 'complete'];
