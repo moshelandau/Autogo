@@ -63,8 +63,12 @@ const activeTab = ref('summary');
 // page lands on Summary and the user has to find the note manually.
 onMounted(() => {
     const params = new URLSearchParams(window.location.search);
-    const wantedTab = params.get('tab');
-    if (wantedTab && ['summary','customer','tasks','workflow','calculator','quotes','credit','notes','documents','vehicle_return','sharing','messages','timeline'].includes(wantedTab)) {
+    let wantedTab = params.get('tab');
+    // Calculator + Credit are now folded into the Quotes + Workflow tabs.
+    // Redirect stale deep-links so the right merged tab opens.
+    if (wantedTab === 'calculator') wantedTab = 'quotes';
+    if (wantedTab === 'credit')     wantedTab = 'workflow';
+    if (wantedTab && ['summary','customer','tasks','workflow','quotes','notes','documents','vehicle_return','sharing','messages','timeline'].includes(wantedTab)) {
         activeTab.value = wantedTab;
     }
     if (window.location.hash) {
@@ -706,7 +710,9 @@ const saveCalcAsQuote = () => {
                 <!-- Tabs -->
                 <div class="bg-white shadow-sm rounded-lg">
                     <div class="border-b flex gap-0 overflow-x-auto">
-                        <button v-for="tab in ['summary', 'customer', 'tasks', 'workflow', 'calculator', 'quotes', 'credit', 'notes', 'documents', 'vehicle_return', 'sharing', 'messages', 'timeline']" :key="tab"
+                        <!-- "calculator" merges into Quotes; "credit" merges into Workflow — fewer
+                             tabs so the row no longer needs horizontal scrolling on most laptops. -->
+                        <button v-for="tab in ['summary', 'customer', 'tasks', 'workflow', 'quotes', 'notes', 'documents', 'vehicle_return', 'sharing', 'messages', 'timeline']" :key="tab"
                                 @click="activeTab = tab"
                                 class="px-6 py-3 text-sm font-medium capitalize whitespace-nowrap"
                                 :class="activeTab === tab ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500 hover:text-gray-700'">
@@ -1086,8 +1092,9 @@ const saveCalcAsQuote = () => {
                             </div>
                         </div>
 
-                        <!-- Calculator Tab -->
-                        <div v-if="activeTab === 'calculator'" class="space-y-4">
+                        <!-- Calculator — merged under the Quotes tab so they sit together. -->
+                        <div v-if="activeTab === 'quotes'" class="mt-6 pt-6 border-t space-y-4">
+                            <h3 class="text-base font-semibold text-gray-700">📊 Calculator</h3>
                             <div class="flex items-center gap-2 mb-3">
                                 <button @click="findProgram" class="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700">⚡ Auto-Find Lender Program</button>
                                 <span v-if="matchedProgram" class="text-xs text-green-600 font-medium">✓ Loaded {{ matchedProgram.lender?.name }} program</span>
@@ -1153,8 +1160,9 @@ const saveCalcAsQuote = () => {
                             </div>
                         </div>
 
-                        <!-- Credit Tab — inline soft pull (no separate page) -->
-                        <div v-if="activeTab === 'credit'" class="space-y-4">
+                        <!-- Credit — merged under the Workflow tab. Soft pull inline. -->
+                        <div v-if="activeTab === 'workflow'" class="mt-6 pt-6 border-t space-y-4">
+                            <h3 class="text-base font-semibold text-gray-700">💳 Credit</h3>
                             <div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-900">
                                 <strong>Soft pull only.</strong> AutoGo never runs hard pulls — those are done by the dealer / lender after the application is submitted. No SSN required, no impact on the customer's credit score.
                                 <span v-if="!creditConfigured" class="block mt-1 text-amber-700">⚠ 700Credit API key not configured — pulls will return mock scores. Set CREDIT700_API_KEY in Settings.</span>
