@@ -70,6 +70,7 @@ const navSections = [
             { name: 'Deals Pipeline', route: 'leasing.deals.index', icon: 'briefcase', pattern: ['leasing.deals.*'], pageKey: 'deals_pipeline' },
             { name: 'Damage Waivers', route: 'leasing.documents.index', icon: 'clipboard', pattern: ['leasing.documents.*'], pageKey: 'damage_waivers' },
             { name: 'Lenders', route: 'leasing.lenders.index', icon: 'building', pattern: 'leasing.lenders.*', pageKey: 'lenders' },
+            { name: 'Insurers', route: 'leasing.insurers.index', icon: 'shield', pattern: 'leasing.insurers.*', pageKey: 'lenders' },
             // Credit Pulls — moved inline into the Deal/Application page; no standalone nav
             { name: 'Lender Programs', route: 'lender-programs.index', icon: 'list', pattern: 'lender-programs.*', pageKey: 'lenders' },
         ]

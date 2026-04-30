@@ -8,6 +8,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DealController;
 use App\Http\Controllers\InspectionController;
 use App\Http\Controllers\LeaseDocumentController;
+use App\Http\Controllers\InsurerController;
 use App\Http\Controllers\LenderController;
 use App\Http\Controllers\OfficeTaskController;
 use App\Http\Controllers\RentalDashboardController;
@@ -211,6 +212,13 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::get('lenders', [LenderController::class, 'index'])->name('lenders.index');
         Route::post('lenders', [LenderController::class, 'store'])->name('lenders.store');
         Route::put('lenders/{lender}', [LenderController::class, 'update'])->name('lenders.update');
+
+        // Insurers (mirrors xDeskPro's per-deal Insurer typeahead)
+        Route::get   ('insurers',                [InsurerController::class, 'index'])->name('insurers.index');
+        Route::post  ('insurers',                [InsurerController::class, 'store'])->name('insurers.store');
+        Route::put   ('insurers/{insurer}',      [InsurerController::class, 'update'])->name('insurers.update');
+        Route::delete('insurers/{insurer}',      [InsurerController::class, 'destroy'])->name('insurers.destroy');
+        Route::get   ('insurers-typeahead',      [InsurerController::class, 'typeahead'])->name('insurers.typeahead');
     });
 
     // ── Rental Claims Module ───────────────────────────
