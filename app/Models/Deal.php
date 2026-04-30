@@ -75,9 +75,7 @@ class Deal extends Model
             'Follow up for acceptance',
         ],
         'application' => [
-            'Receive full application',
-            'Receive driver\'s license — front',
-            'Receive driver\'s license — back',
+            'Receive full application + driver\'s license (front + back)',
             'Co-signer license front + back (if applicable)',
             'Optional: Run soft credit pull',
         ],
@@ -86,17 +84,14 @@ class Deal extends Model
         ],
         'pending' => [
             'Work on insurance',
-            'Optional: Collect conquest documentation',
-            'Optional: Collect rebate documentation',
+            'Optional: Collect conquest and rebate documentation',
             'Follow up with dealer — insurance / rebates / registration / plate transfer',
             'Receive approval',
         ],
         'finalize' => [
-            'Schedule delivery',
-            'Confirm car is ready for pickup',
+            'Schedule delivery & send pickup details to customer (confirm car is ready)',
         ],
         'outstanding' => [
-            'Send pickup details to customer',
             'Collect down payment at delivery',
             'Get paperwork signed same day',
             'Express signed paperwork to dealer',
