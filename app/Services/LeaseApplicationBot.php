@@ -201,12 +201,26 @@ class LeaseApplicationBot
         }
 
         if ($session && !$isTopLevelTrigger) {
+            // Hard-routed control keywords must bypass the AI agent — the
+            // agent often interprets them as conversational ("SECURE" got
+            // mis-classified as an SSN escalation, "NEXT" can be re-read as
+            // the customer wanting to move on with content, etc.). Route
+            // straight to advanceSession so the explicit keyword handlers
+            // there (SECURE/WEB/LINK/FORM, NEXT/SKIP/LATER, 1/2/3/LICENSE/
+            // FILE/REVIEW for diff confirm) take precedence.
+            $controlKeyword = strtoupper(trim($body));
+            $isControl = in_array($controlKeyword, [
+                'SECURE', 'WEB', 'LINK', 'FORM',
+                'NEXT', 'SKIP', 'LATER',
+                '1', '2', '3', 'LICENSE', 'FILE', 'REVIEW', 'L', 'F', 'R',
+            ], true) || !empty($mediaUrls); // media → image step handles it directly
+
             // Try the AI agent first — it handles sidetracks, free-form
             // replies, and non-priority field updates naturally. Falls
             // through to the rule-based advanceSession() if the agent
             // bails (no API key, image step, unclear decision).
             $agentHandled = false;
-            if ((string) \App\Models\Setting::getValue('ai_agent_disabled') !== '1') {
+            if (!$isControl && (string) \App\Models\Setting::getValue('ai_agent_disabled') !== '1') {
                 try {
                     $agentHandled = app(\App\Services\SmsAgentBot::class)->handle($session, $body, $mediaUrls);
                 } catch (\Throwable $e) {
