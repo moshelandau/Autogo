@@ -30,8 +30,8 @@ use Illuminate\Support\Str;
 class LeaseApplicationBot
 {
     public const STEPS_LEASE = [
-        ['key' => 'license_image_front', 'prompt' => "Let's start with your DRIVER'S LICENSE. Please TEXT a photo of the FRONT of your license. (We'll auto-read your name, DL #, expiration, and address.)", 'expects' => 'image'],
-        ['key' => 'license_image_back',  'prompt' => "Now please TEXT a photo of the BACK of your license.", 'expects' => 'image'],
+        ['key' => 'license_image_front', 'prompt' => "Let's start with your DRIVER'S LICENSE. Please TEXT a photo of the FRONT of your license. (We'll auto-read your name, DL #, expiration, and address.) Or reply SECURE for a web upload form.", 'expects' => 'image'],
+        ['key' => 'license_image_back',  'prompt' => "Now please TEXT a photo of the BACK of your license. Or reply SECURE for a web upload form.", 'expects' => 'image'],
         ['key' => 'first_name',        'prompt' => "Great — what's your FIRST name? (we'll confirm what we read)"],
         ['key' => 'last_name',         'prompt' => "Thanks {first_name}. And your LAST name?"],
         ['key' => 'date_of_birth',     'prompt' => "Date of birth? (MM/DD/YYYY)"],
@@ -889,9 +889,19 @@ class LeaseApplicationBot
 
     private function renderPrompt(array $step, LeaseApplicationSession $session): string
     {
-        return preg_replace_callback('/\{(\w+)\}/', function ($m) use ($session) {
+        $rendered = preg_replace_callback('/\{(\w+)\}/', function ($m) use ($session) {
             return (string) ($session->collected[$m[1]] ?? '');
         }, $step['prompt']);
+
+        // Sensitive steps auto-append the single-step secure form URL —
+        // SSN especially. License doesn't get this; SMS-photos are fine
+        // for most customers and the URL would be noise on that step.
+        if (in_array($step['key'], ['ssn', 'co_ssn'], true) && !empty($session->web_token)) {
+            $stepUrl = rtrim(config('app.url', 'https://app.autogoco.com'), '/')
+                . '/apply/' . $session->web_token . '/step/' . $step['key'];
+            $rendered .= "\n\n🔒 Or enter it on this secure form (recommended for SSN): {$stepUrl}";
+        }
+        return $rendered;
     }
 
     /**
