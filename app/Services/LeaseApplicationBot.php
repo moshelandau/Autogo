@@ -542,6 +542,13 @@ class LeaseApplicationBot
         $step = $steps[$stepIdx];
         $collected = $session->collected ?? [];
 
+        // Pending identity-confirmation reply (set when license OCR found
+        // values that differ from on-file). User answers LICENSE / FILE /
+        // <new value>; we apply, clear the flag, then advance to next step.
+        if (!empty($collected['_pending_identity_confirm']) && empty($mediaUrls)) {
+            return $this->handleIdentityConfirmResponse($session, $step, $stepIdx, $collected, $body);
+        }
+
         // Image step (license_image_front / license_image_back) needs MMS
         if (($step['expects'] ?? null) === 'image') {
             if (empty($mediaUrls)) {
@@ -562,21 +569,23 @@ class LeaseApplicationBot
                 return true; // stay on same step
             }
 
-            // Quality gate (FRONT only): if OCR got nothing usable (no name +
-            // no DL # + no DOB), the photo is almost certainly blurry, glare-
-            // covered, or partially cut off. Re-ask for a sharper photo
-            // instead of advancing into a half-empty address prompt.
+            // Quality gate (FRONT only): require ≥4 of the 6 key identity
+            // fields. Previously we passed if ANY one was extracted, so a
+            // cropped photo where OCR caught the name + DL # but missed DOB
+            // and address would advance the bot — exactly the failure mode
+            // we hit. Demanding a fuller extraction forces a re-ask on
+            // partial / cropped photos.
             if ($step['key'] === 'license_image_front') {
-                $hasIdentity = !empty($extracted['first_name'])
-                    || !empty($extracted['drivers_license_number'])
-                    || !empty($extracted['date_of_birth']);
-                if (!$hasIdentity) {
-                    Log::info('License front OCR returned no usable identity fields — re-asking', [
-                        'session_id' => $session->id,
+                $keyFields = ['first_name', 'last_name', 'drivers_license_number', 'date_of_birth', 'address', 'dl_state'];
+                $present = 0;
+                foreach ($keyFields as $f) if (!empty($extracted[$f])) $present++;
+                if ($present < 4) {
+                    Log::error('License front OCR partial — re-asking', [
+                        'session_id' => $session->id, 'present_count' => $present, 'present_fields' => array_filter(array_intersect_key($extracted, array_flip($keyFields))),
                     ]);
                     $this->reply($session->phone,
-                        "I couldn't read your license clearly — looks blurry or partially cut off. " .
-                        "Please send a sharper photo of the FRONT, with the whole license visible and good lighting."
+                        "I couldn't read your license clearly — looks blurry, partially cut off, or the lighting is off. " .
+                        "Please send a sharper photo of the FRONT, with the WHOLE license visible (all four corners) and good lighting."
                     );
                     return true; // stay on same step
                 }
@@ -588,6 +597,31 @@ class LeaseApplicationBot
             // Only the FRONT is OCR'd for identity fields
             if ($step['key'] === 'license_image_front') {
                 $collected['license_extracted'] = $extracted;
+
+                // Compare extracted identity fields against the on-file
+                // customer profile. If any differ (DOB, address, name), pause
+                // here and ask which is correct before advancing. Returning
+                // customers especially — we don't want to silently overwrite
+                // their saved address with whatever the license says, OR
+                // accept a license without flagging that the DOB doesn't
+                // match what we have.
+                $diffs = $this->licenseFieldDiffs($session->customer, $extracted);
+                if (!empty($diffs)) {
+                    $collected['_pending_identity_confirm'] = $diffs;
+                    $session->update([
+                        'collected' => $collected,
+                        'last_inbound_at' => now(),
+                    ]);
+                    $msg = "Got your license. I see some differences from what we have on file:\n\n";
+                    foreach ($diffs as $field => $pair) {
+                        $label = ['date_of_birth' => 'DATE OF BIRTH', 'address' => 'ADDRESS', 'first_name' => 'FIRST NAME', 'last_name' => 'LAST NAME'][$field] ?? strtoupper($field);
+                        $msg .= "{$label}\n  License: " . ($pair['license'] ?: '—') . "\n  On file: " . ($pair['file'] ?: '—') . "\n\n";
+                    }
+                    $msg .= "Reply LICENSE to use the license info, FILE to keep what's on file, or text the correct value(s).";
+                    $this->reply($session->phone, $msg);
+                    return true; // stay on this step until user confirms
+                }
+
                 foreach (['first_name','last_name','date_of_birth','address','city','state','zip'] as $k) {
                     if (empty($collected[$k]) && !empty($extracted[$k])) $collected[$k] = $extracted[$k];
                 }
@@ -908,5 +942,110 @@ class LeaseApplicationBot
             'status'       => ($result['success'] ?? false) ? 'sent' : 'failed',
             'sent_at'      => now(),
         ]);
+    }
+
+    /**
+     * Compare extracted license fields to the on-file customer profile.
+     * Returns ['field' => ['license' => 'X', 'file' => 'Y'], ...] for any
+     * field that's set on BOTH sides and differs (case-/punctuation-
+     * normalised). Empty array if no diffs (or no on-file customer to
+     * compare against).
+     */
+    private function licenseFieldDiffs(?Customer $customer, array $extracted): array
+    {
+        if (!$customer) return [];
+        $norm = fn ($v) => trim(preg_replace('/\s+/', ' ', strtolower((string) $v)));
+        $diffs = [];
+
+        // DOB — customer.date_of_birth is a date cast; compare as YYYY-MM-DD
+        $licDob  = $norm($extracted['date_of_birth'] ?? '');
+        $fileDob = $customer->date_of_birth ? $customer->date_of_birth->format('Y-m-d') : '';
+        if ($licDob && $fileDob && $norm($fileDob) !== $licDob) {
+            $diffs['date_of_birth'] = ['license' => $extracted['date_of_birth'], 'file' => $fileDob];
+        }
+
+        // Address — combine line1 + city + state + zip into one normalised
+        // string so a different street number trips the diff but the same
+        // address with different formatting doesn't.
+        $licAddr  = $norm(trim(($extracted['address'] ?? '') . ' ' . ($extracted['city'] ?? '') . ' ' . ($extracted['state'] ?? '') . ' ' . ($extracted['zip'] ?? '')));
+        $fileAddr = $norm(trim(($customer->address ?? '') . ' ' . ($customer->city ?? '') . ' ' . ($customer->state ?? '') . ' ' . ($customer->zip ?? '')));
+        if ($licAddr && $fileAddr && $licAddr !== $fileAddr) {
+            $diffs['address'] = [
+                'license' => trim(($extracted['address'] ?? '') . ', ' . ($extracted['city'] ?? '') . ', ' . ($extracted['state'] ?? '') . ' ' . ($extracted['zip'] ?? ''), ' ,'),
+                'file'    => trim(($customer->address ?? '') . ', ' . ($customer->city ?? '') . ', ' . ($customer->state ?? '') . ' ' . ($customer->zip ?? ''), ' ,'),
+            ];
+        }
+
+        // Names — only flag if different non-empty values (typo tolerance via
+        // normalize). Common case: nickname on license vs. legal name on file.
+        foreach (['first_name', 'last_name'] as $f) {
+            $lic  = $norm($extracted[$f] ?? '');
+            $file = $norm($customer->{$f} ?? '');
+            if ($lic && $file && $lic !== $file) {
+                $diffs[$f] = ['license' => $extracted[$f], 'file' => $customer->{$f}];
+            }
+        }
+
+        return $diffs;
+    }
+
+    /**
+     * Customer is replying to the diff prompt. We accept:
+     *   "LICENSE" → use license values, overwrite session collected
+     *   "FILE"    → keep on-file values, ignore license extracts
+     *   anything else → treat as a free-text correction (best-effort
+     *                   single-field, applied to the address — DOB
+     *                   corrections are too risky to free-text-parse and
+     *                   are deferred to a follow-up).
+     * Then advance to the next applicable step.
+     */
+    private function handleIdentityConfirmResponse(LeaseApplicationSession $session, array $step, int $stepIdx, array $collected, string $body): bool
+    {
+        $diffs = $collected['_pending_identity_confirm'] ?? [];
+        $extracted = $collected['license_extracted'] ?? [];
+        $upper = strtoupper(trim($body));
+
+        if ($upper === 'LICENSE' || $upper === 'L') {
+            foreach (['date_of_birth','address','city','state','zip','first_name','last_name'] as $k) {
+                if (!empty($extracted[$k])) $collected[$k] = $extracted[$k];
+            }
+        } elseif ($upper === 'FILE' || $upper === 'F') {
+            // Keep on-file — pull the file values into collected so downstream
+            // steps see consistent data.
+            $cust = $session->customer;
+            if ($cust) {
+                foreach (['address','city','state','zip','first_name','last_name'] as $k) {
+                    if (!empty($cust->{$k})) $collected[$k] = $cust->{$k};
+                }
+                if ($cust->date_of_birth) $collected['date_of_birth'] = $cust->date_of_birth->format('Y-m-d');
+            }
+        } else {
+            // Free-text correction — apply to address (most common case).
+            // DOB / name corrections need a proper sub-prompt; we just skip
+            // those here and let downstream validation catch issues.
+            $collected['address'] = trim($body);
+        }
+
+        unset($collected['_pending_identity_confirm']);
+        $collected['_identity_confirmed_at'] = now()->toIso8601String();
+
+        // Persist so the front-license is recorded as accepted.
+        $collected['license_image_front_url']  = $collected['license_image_front_url']  ?? null;
+        $collected['license_image_front_path'] = $collected['license_image_front_path'] ?? null;
+
+        $steps = $this->stepsFor($session->flow);
+        $next = $this->nextApplicableStep($steps, $stepIdx, $collected);
+        $session->update([
+            'collected'       => $collected,
+            'current_step'    => $next['key'] ?? '__done__',
+            'last_inbound_at' => now(),
+        ]);
+
+        if ($next === null || ($next['key'] ?? '') === '__done__') {
+            $this->finalize($session);
+            return true;
+        }
+        $this->reply($session->phone, "Got it — using " . ($upper === 'LICENSE' ? 'license' : ($upper === 'FILE' ? 'on-file' : 'updated')) . " info.\n\n" . $this->renderPrompt($next, $session));
+        return true;
     }
 }
