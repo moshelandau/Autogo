@@ -84,7 +84,11 @@ const runCreditPull = () => {
 };
 
 const quoteForm = useForm({
-    lender_id: '', payment_type: d.payment_type, term: 36, mileage_per_year: 10000,
+    lender_id: '',
+    // payment_type is required by the backend; fall back to 'lease' if the
+    // deal somehow doesn't have one set (otherwise the form silently 422s).
+    payment_type: d.payment_type || 'lease',
+    term: 36, mileage_per_year: 10000,
     monthly_payment: '', das: '', sell_price: d.sell_price || '', msrp: d.msrp || '', rebates: 0, notes: '',
     // Optional VIN-driven vehicle details — when present, addQuote also
     // updates the deal's vehicle fields so the right car is on file.
@@ -144,13 +148,22 @@ const decodeVinForQuote = async () => {
     }
     decodingVin.value = false;
 };
+const justAddedQuote = ref(false);
 const addQuote = () => {
+    quoteForm.clearErrors();
     quoteForm.post(route('leasing.deals.quote', d.id), {
         preserveScroll: true,
+        preserveState: true,
         onSuccess: () => {
             // Keep the VIN/vehicle so subsequent quotes against the same car
-            // don't need re-decoding; reset only the per-quote pricing fields.
+            // don't need re-decoding; reset only the per-quote pricing fields
+            // so the user can immediately tweak and add another quote.
             quoteForm.reset('lender_id', 'monthly_payment', 'das', 'rebates', 'notes');
+            justAddedQuote.value = true;
+            setTimeout(() => { justAddedQuote.value = false; }, 2500);
+        },
+        onError: (errors) => {
+            console.warn('[Add Quote] validation errors', errors);
         },
     });
 };
@@ -435,49 +448,74 @@ const saveCalcAsQuote = () => {
                                     </div>
                                 </div>
 
-                                <form @submit.prevent="addQuote" class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                    <div>
-                                        <label class="block text-[11px] text-gray-500">Lender</label>
-                                        <select v-model="quoteForm.lender_id" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs">
-                                            <option value="">—</option>
-                                            <option v-for="l in lenders" :key="l.id" :value="l.id">{{ l.name }}</option>
-                                        </select>
+                                <form @submit.prevent="addQuote" class="space-y-3">
+                                    <!-- Validation errors / submission feedback. Without this the form
+                                         was silently 422'ing and looking like nothing was happening. -->
+                                    <div v-if="Object.keys(quoteForm.errors).length"
+                                         class="border border-red-300 bg-red-50 text-red-800 rounded-md p-2 text-xs space-y-0.5">
+                                        <div class="font-semibold">Couldn't save the quote:</div>
+                                        <div v-for="(msg, field) in quoteForm.errors" :key="field">• {{ msg }}</div>
+                                    </div>
+                                    <div v-else-if="justAddedQuote"
+                                         class="border border-emerald-300 bg-emerald-50 text-emerald-800 rounded-md p-2 text-xs">
+                                        ✓ Quote added — fill in the next one to add another.
+                                    </div>
+
+                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Payment type *</label>
+                                            <select v-model="quoteForm.payment_type" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs">
+                                                <option value="lease">Lease</option>
+                                                <option value="finance">Finance</option>
+                                                <option value="one_pay">One-Pay</option>
+                                                <option value="balloon">Balloon</option>
+                                                <option value="cash">Cash</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Lender</label>
+                                            <select v-model="quoteForm.lender_id" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs">
+                                                <option value="">—</option>
+                                                <option v-for="l in lenders" :key="l.id" :value="l.id">{{ l.name }}</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Monthly $</label>
+                                            <input v-model="quoteForm.monthly_payment" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Term (mo)</label>
+                                            <input v-model="quoteForm.term" type="number" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Miles / year</label>
+                                            <select v-model.number="quoteForm.mileage_per_year" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs">
+                                                <option v-for="m in [7500, 10000, 12000, 15000, 18000, 20000]" :key="m" :value="m">{{ m.toLocaleString() }}</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">DAS $</label>
+                                            <input v-model="quoteForm.das" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Sell $</label>
+                                            <input v-model="quoteForm.sell_price" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">MSRP $</label>
+                                            <input v-model="quoteForm.msrp" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
+                                        <div>
+                                            <label class="block text-[11px] text-gray-500">Rebates $</label>
+                                            <input v-model="quoteForm.rebates" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
+                                        </div>
                                     </div>
                                     <div>
-                                        <label class="block text-[11px] text-gray-500">Monthly $</label>
-                                        <input v-model="quoteForm.monthly_payment" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
-                                    </div>
-                                    <div>
-                                        <label class="block text-[11px] text-gray-500">Term (mo)</label>
-                                        <input v-model="quoteForm.term" type="number" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
-                                    </div>
-                                    <div>
-                                        <label class="block text-[11px] text-gray-500">Miles / year</label>
-                                        <select v-model.number="quoteForm.mileage_per_year" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs">
-                                            <option v-for="m in [7500, 10000, 12000, 15000, 18000, 20000]" :key="m" :value="m">{{ m.toLocaleString() }}</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label class="block text-[11px] text-gray-500">DAS $</label>
-                                        <input v-model="quoteForm.das" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
-                                    </div>
-                                    <div>
-                                        <label class="block text-[11px] text-gray-500">Sell $</label>
-                                        <input v-model="quoteForm.sell_price" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
-                                    </div>
-                                    <div>
-                                        <label class="block text-[11px] text-gray-500">MSRP $</label>
-                                        <input v-model="quoteForm.msrp" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
-                                    </div>
-                                    <div>
-                                        <label class="block text-[11px] text-gray-500">Rebates $</label>
-                                        <input v-model="quoteForm.rebates" type="number" step="0.01" class="mt-0.5 block w-full border-gray-300 rounded-md text-xs" />
-                                    </div>
-                                    <div class="md:col-span-4">
                                         <button type="submit" :disabled="quoteForm.processing"
                                                 class="px-4 py-2 bg-indigo-600 text-white rounded-md text-xs hover:bg-indigo-700 disabled:opacity-50">
                                             {{ quoteForm.processing ? 'Saving…' : 'Add Quote' }}
                                         </button>
+                                        <span class="ml-3 text-[11px] text-gray-500">Pricing fields reset after save so you can add another quote.</span>
                                     </div>
                                 </form>
                             </div>
