@@ -550,6 +550,38 @@ class LeaseApplicationBot
                 return true;
             }
             $extracted = $this->ingestLicenseImage($session, $mediaUrls[0]);
+
+            // Hard-failure: if we couldn't even fetch/store the image, tell the
+            // user instead of silently advancing to the next prompt with an
+            // empty address line.
+            if (empty($extracted['_stored_path'])) {
+                Log::warning('License image ingest had no stored path', [
+                    'session_id' => $session->id, 'step' => $step['key'], 'media' => $mediaUrls[0] ?? null,
+                ]);
+                $this->reply($session->phone, "Sorry, I had trouble receiving your photo — please try sending it again.");
+                return true; // stay on same step
+            }
+
+            // Quality gate (FRONT only): if OCR got nothing usable (no name +
+            // no DL # + no DOB), the photo is almost certainly blurry, glare-
+            // covered, or partially cut off. Re-ask for a sharper photo
+            // instead of advancing into a half-empty address prompt.
+            if ($step['key'] === 'license_image_front') {
+                $hasIdentity = !empty($extracted['first_name'])
+                    || !empty($extracted['drivers_license_number'])
+                    || !empty($extracted['date_of_birth']);
+                if (!$hasIdentity) {
+                    Log::info('License front OCR returned no usable identity fields — re-asking', [
+                        'session_id' => $session->id,
+                    ]);
+                    $this->reply($session->phone,
+                        "I couldn't read your license clearly — looks blurry or partially cut off. " .
+                        "Please send a sharper photo of the FRONT, with the whole license visible and good lighting."
+                    );
+                    return true; // stay on same step
+                }
+            }
+
             $collected[$step['key'] . '_url'] = $mediaUrls[0];      // license_image_front_url, _back_url
             $collected[$step['key'] . '_path'] = $extracted['_stored_path'] ?? null;
 
