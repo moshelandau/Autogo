@@ -3,6 +3,8 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { useForm, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import CustomerSelect from '@/Components/CustomerSelect.vue';
+import SearchableSelect from '@/Components/SearchableSelect.vue';
+import { VEHICLE_MAKES, VEHICLE_COLORS } from '@/Components/vehicleOptions.js';
 
 const props = defineProps({ customers: Array, lenders: Array, salespeople: Array, prefill: { type: Object, default: () => ({}) } });
 
@@ -105,11 +107,11 @@ const submit = () => form.post(route('leasing.deals.store'));
                             </div>
                             <div>
                                 <label class="block text-xs font-medium text-gray-700">Brand</label>
-                                <input v-model="form.preferences.brand" type="text" placeholder="Kia, Honda, …" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" />
+                                <SearchableSelect v-model="form.preferences.brand" :options="VEHICLE_MAKES" placeholder="Kia, Honda, …" input-class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" />
                             </div>
                             <div>
                                 <label class="block text-xs font-medium text-gray-700">Color</label>
-                                <input v-model="form.preferences.color" type="text" placeholder="White, Black, …" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" />
+                                <SearchableSelect v-model="form.preferences.color" :options="VEHICLE_COLORS" placeholder="White, Black, …" input-class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" />
                             </div>
                             <div>
                                 <label class="block text-xs font-medium text-gray-700">Budget ($/mo)</label>
@@ -142,7 +144,7 @@ const submit = () => form.post(route('leasing.deals.store'));
                         </div>
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                             <div><label class="block text-sm font-medium text-gray-700">Year</label><input v-model="form.vehicle_year" type="number" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" /></div>
-                            <div><label class="block text-sm font-medium text-gray-700">Make</label><input v-model="form.vehicle_make" type="text" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" /></div>
+                            <div><label class="block text-sm font-medium text-gray-700">Make</label><SearchableSelect v-model="form.vehicle_make" :options="VEHICLE_MAKES" placeholder="Honda, Toyota, …" input-class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" /></div>
                             <div><label class="block text-sm font-medium text-gray-700">Model</label><input v-model="form.vehicle_model" type="text" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" /></div>
                             <div><label class="block text-sm font-medium text-gray-700">Trim</label><input v-model="form.vehicle_trim" type="text" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-sm" /></div>
                         </div>
