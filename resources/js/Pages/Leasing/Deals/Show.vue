@@ -1,7 +1,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, useForm, router } from '@inertiajs/vue3';
-import { ref, computed } from 'vue';
+import { ref, computed, reactive, watch } from 'vue';
 import SmsButton from '@/Components/SmsButton.vue';
 import CustomerMessages from '@/Components/CustomerMessages.vue';
 import CustomerSelect from '@/Components/CustomerSelect.vue';
@@ -12,7 +12,14 @@ const props = defineProps({
     creditPulls: { type: Array, default: () => [] },
     creditConfigured: { type: Boolean, default: false },
 });
-const d = props.deal;
+
+// `const d = props.deal` snapshots the reference at mount; Inertia replaces
+// props.deal with a new object after every action, so the snapshot goes
+// stale and the page looks frozen until you hard-refresh. Wrapping it in
+// reactive + watch keeps `d.X` reads pointing at the current props.deal
+// without forcing a 80-callsite rename to props.deal.X.
+const d = reactive({ ...props.deal });
+watch(() => props.deal, (val) => Object.assign(d, val), { deep: false });
 const fmt = (v) => v ? '$' + parseFloat(v).toLocaleString() : '-';
 const fmtDate = (v) => v ? new Date(v).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
 const activeTab = ref('summary');
@@ -156,7 +163,6 @@ const addQuote = () => {
     quoteForm.clearErrors();
     quoteForm.post(route('leasing.deals.quote', d.id), {
         preserveScroll: true,
-        preserveState: true,
         onSuccess: () => {
             // Keep the VIN/vehicle so subsequent quotes against the same car
             // don't need re-decoding; reset only the per-quote pricing fields
@@ -181,7 +187,6 @@ const completeTask = (taskId) => {
     task.completed_at = new Date().toISOString();
     router.post(route('leasing.deals.task', { deal: d.id, task: taskId }), {}, {
         preserveScroll: true,
-        preserveState: true,
         onError: () => {
             task.is_completed = original.is_completed;
             task.completed_at = original.completed_at;
@@ -418,6 +423,18 @@ const saveCalcAsQuote = () => {
 
                         <!-- Quotes Tab -->
                         <div v-if="activeTab === 'quotes'" class="space-y-4">
+                            <!-- Vehicle context — quotes are scoped to this deal's vehicle.
+                                 Updates live when a quote's VIN entry changes the deal vehicle. -->
+                            <div v-if="d.vehicle_make || d.vehicle_vin"
+                                 class="border border-blue-100 bg-blue-50/60 rounded-md px-3 py-2 text-xs">
+                                <span class="text-gray-500">Quotes for:</span>
+                                <span class="ml-1 font-semibold">{{ d.vehicle_year }} {{ d.vehicle_make }} {{ d.vehicle_model }} {{ d.vehicle_trim }}</span>
+                                <span v-if="d.vehicle_vin" class="ml-2 font-mono text-gray-500">VIN {{ d.vehicle_vin }}</span>
+                            </div>
+                            <div v-else class="border border-amber-200 bg-amber-50 rounded-md px-3 py-2 text-xs text-amber-800">
+                                No vehicle on this deal yet — enter a VIN in the Add Quote form below to set it.
+                            </div>
+
                             <div v-for="q in d.quotes" :key="q.id"
                                  class="border rounded-lg p-4" :class="q.is_selected ? 'border-green-500 bg-green-50' : 'border-gray-200'">
                                 <div class="flex justify-between items-start mb-2">
