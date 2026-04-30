@@ -59,17 +59,21 @@ class LeasingService
 
             foreach ($deals as $deal) {
                 $count = 0;
-                $cust = $deal->customer;
-                if ($cust) {
-                    // Customer can have multiple phones. Sum unread across all of them.
-                    $candidates = collect([$cust->phone, $cust->secondary_phone])
-                        ->merge($cust->phones->pluck('phone'))
-                        ->filter()
-                        ->map($last10)
-                        ->filter()
-                        ->unique();
-                    foreach ($candidates as $p) {
-                        $count += (int) ($unreadByPhone[$p] ?? 0);
+                // Skip 'complete' deals — the customer's done; if the SMS
+                // bot is still chatting with them about something else,
+                // don't pollute the active-pipeline view with it.
+                if ($stage !== 'complete') {
+                    $cust = $deal->customer;
+                    if ($cust) {
+                        $candidates = collect([$cust->phone, $cust->secondary_phone])
+                            ->merge($cust->phones->pluck('phone'))
+                            ->filter()
+                            ->map($last10)
+                            ->filter()
+                            ->unique();
+                        foreach ($candidates as $p) {
+                            $count += (int) ($unreadByPhone[$p] ?? 0);
+                        }
                     }
                 }
                 $deal->unread_sms_count = $count;

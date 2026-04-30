@@ -37,6 +37,17 @@ const dealsWithUnreadCount = computed(() => {
     return n;
 });
 
+// Unread count per stage (column header badge). 'complete' stage is
+// always 0 server-side per LeasingService — see the skip-complete
+// branch there.
+const unreadByStage = computed(() => {
+    const out = {};
+    for (const [stage, deals] of Object.entries(props.stages || {})) {
+        out[stage] = (deals || []).reduce((sum, d) => sum + (d.unread_sms_count || 0), 0);
+    }
+    return out;
+});
+
 const filteredStages = computed(() => {
     const q = search.value.trim().toLowerCase();
     if (!q) return props.stages;
@@ -158,8 +169,15 @@ const submit = (dealId, stage, beforeId) => {
                             dragOverStage === stage ? 'ring-4 ring-indigo-300' : ''
                          ]">
                         <div class="p-3 border-b bg-white rounded-t-lg flex-shrink-0">
-                            <div class="flex justify-between items-center">
-                                <h3 class="font-semibold text-sm text-gray-700">{{ stageLabels[stage] }}</h3>
+                            <div class="flex justify-between items-center gap-2">
+                                <h3 class="font-semibold text-sm text-gray-700 flex items-center gap-1.5">
+                                    {{ stageLabels[stage] }}
+                                    <span v-if="unreadByStage[stage] > 0"
+                                          title="Unread SMS in this stage"
+                                          class="px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-red-600 text-white">
+                                        💬 {{ unreadByStage[stage] }}
+                                    </span>
+                                </h3>
                                 <span class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
                                     {{ deals?.length || 0 }}<template v-if="search && (props.stages?.[stage]?.length || 0) !== (deals?.length || 0)">/{{ props.stages?.[stage]?.length || 0 }}</template>
                                 </span>
