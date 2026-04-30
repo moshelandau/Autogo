@@ -4,7 +4,7 @@ import { router, useForm } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 
 const props = defineProps({
-    insurers: Object,
+    brokers: Object,
     filters: Object,
 });
 
@@ -13,7 +13,7 @@ let qTimer = null;
 watch(q, (v) => {
     clearTimeout(qTimer);
     qTimer = setTimeout(() => {
-        router.get(route('leasing.insurers.index'), { q: v }, { preserveState: true, replace: true });
+        router.get(route('leasing.brokers.index'), { q: v }, { preserveState: true, replace: true });
     }, 250);
 });
 
@@ -22,7 +22,7 @@ const newForm = useForm({
     phone: '', email: '', website: '',
     claims_phone: '', claims_email: '', address: '', notes: '',
 });
-const submitNew = () => newForm.post(route('leasing.insurers.store'), {
+const submitNew = () => newForm.post(route('leasing.brokers.store'), {
     preserveScroll: true,
     onSuccess: () => newForm.reset(),
 });
@@ -43,7 +43,7 @@ const startEdit = (row) => {
     editForm.notes = row.notes;
     editForm.is_active = row.is_active;
 };
-const saveEdit = () => editForm.put(route('leasing.insurers.update', editing.value), {
+const saveEdit = () => editForm.put(route('leasing.brokers.update', editing.value), {
     preserveScroll: true,
     onSuccess: () => { editing.value = null; },
 });
@@ -51,21 +51,21 @@ const cancelEdit = () => { editing.value = null; };
 
 const deactivate = (row) => {
     if (!confirm(`Deactivate ${row.name}? Existing deals keep the link; future deal pickers won't show it.`)) return;
-    router.delete(route('leasing.insurers.destroy', row.id), { preserveScroll: true });
+    router.delete(route('leasing.brokers.destroy', row.id), { preserveScroll: true });
 };
 </script>
 
 <template>
-    <AppLayout title="Insurers">
+    <AppLayout title="Insurance Brokers">
         <template #header>
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Insurers</h2>
+            <h2 class="font-semibold text-xl text-gray-800 leading-tight">Insurance Brokers</h2>
         </template>
 
         <div class="py-6">
             <div class="max-w-6xl mx-auto sm:px-6 lg:px-8 space-y-6">
-                <!-- Add Insurer -->
+                <!-- Add Broker -->
                 <div class="bg-white shadow-sm rounded-lg p-6">
-                    <h3 class="font-medium text-sm mb-3">Add Insurer</h3>
+                    <h3 class="font-medium text-sm mb-3">Add Broker</h3>
                     <form @submit.prevent="submitNew" class="grid grid-cols-2 md:grid-cols-4 gap-3">
                         <input v-model="newForm.name" type="text" placeholder="Company *" class="block w-full border-gray-300 rounded-md shadow-sm text-sm" />
                         <input v-model="newForm.first_name" type="text" placeholder="Contact First" class="block w-full border-gray-300 rounded-md shadow-sm text-sm" />
@@ -77,7 +77,7 @@ const deactivate = (row) => {
                         <input v-model="newForm.address" type="text" placeholder="Address" class="block w-full border-gray-300 rounded-md shadow-sm text-sm" />
                         <input v-model="newForm.website" type="text" placeholder="Website" class="block w-full border-gray-300 rounded-md shadow-sm text-sm md:col-span-3" />
                         <button type="submit" :disabled="newForm.processing || !newForm.name"
-                                class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700 disabled:opacity-50">Add Insurer</button>
+                                class="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700 disabled:opacity-50">Add Broker</button>
                     </form>
                 </div>
 
@@ -102,7 +102,7 @@ const deactivate = (row) => {
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-gray-200">
-                                <template v-for="row in insurers.data" :key="row.id">
+                                <template v-for="row in brokers.data" :key="row.id">
                                     <tr v-if="editing !== row.id" class="hover:bg-gray-50">
                                         <td class="px-4 py-3 text-sm font-medium">{{ row.name }}</td>
                                         <td class="px-4 py-3 text-sm text-gray-600">{{ [row.first_name, row.last_name].filter(Boolean).join(' ') || row.contact_name || '-' }}</td>
@@ -149,9 +149,9 @@ const deactivate = (row) => {
                                         </td>
                                     </tr>
                                 </template>
-                                <tr v-if="!insurers.data.length">
+                                <tr v-if="!brokers.data.length">
                                     <td colspan="8" class="px-4 py-12 text-center text-sm text-gray-400">
-                                        No insurers yet. Add one above.
+                                        No brokers yet. Add one above.
                                     </td>
                                 </tr>
                             </tbody>

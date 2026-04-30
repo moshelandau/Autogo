@@ -88,7 +88,7 @@ class DealController extends Controller
     public function show(Deal $deal)
     {
         $this->syncCurrentStageTasks($deal);
-        $deal->load(['customer.documents.uploadedBy', 'coSigner.documents', 'salesperson', 'lender', 'insurer', 'dealer', 'lienholder', 'vehicleReturn', 'sharedWith:id,name',
+        $deal->load(['customer.documents.uploadedBy', 'coSigner.documents', 'salesperson', 'lender', 'broker', 'dealer', 'lienholder', 'vehicleReturn', 'sharedWith:id,name',
             'customer.deals' => fn ($q) => $q->select(['id', 'deal_number', 'customer_id', 'stage', 'vehicle_year', 'vehicle_make', 'vehicle_model', 'created_at'])->orderByDesc('created_at')->limit(20),
             'quotes.lender', 'tasks', 'actionItems.completedBy', 'documents', 'noteThread.user', 'noteThread.assignedUsers', 'noteThread.comments.user', 'noteThread.activities.user']);
 
@@ -190,7 +190,8 @@ class DealController extends Controller
             'paperwork_tracking_number' => 'nullable|string|max:60',
             'bd_payment_received_at' => 'nullable|date',
             'bd_payment_amount' => 'nullable|numeric|min:0',
-            'insurer_id' => 'nullable|exists:insurers,id',
+            'broker_id' => 'nullable|exists:insurance_brokers,id',
+            'insurance_carrier' => 'nullable|string|max:120',
             'dealer_id' => 'nullable|exists:dealers,id',
             'lienholder_id' => 'nullable|exists:lienholders,id',
         ]);

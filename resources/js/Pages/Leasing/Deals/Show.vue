@@ -77,39 +77,49 @@ onMounted(() => {
 
 const stageLabels = { lead: 'Lead', quote: 'Quote', application: 'Application', submission: 'Submission', pending: 'Pending', finalize: 'Finalize', outstanding: 'Outstanding', complete: 'Complete', lost: 'Lost' };
 
-// ── Insurer picker (mirrors xDeskPro's Deal Information → Insurer typeahead) ──
-const insurerQuery = ref('');
-const insurerResults = ref([]);
-const insurerOpen = ref(false);
-const insurerSaving = ref(false);
-let insurerTimer = null;
-const fetchInsurers = (term) => {
-    clearTimeout(insurerTimer);
-    insurerTimer = setTimeout(async () => {
+// ── Broker picker (mirrors xDeskPro's Deal Information → Broker typeahead) ──
+const brokerQuery = ref('');
+const brokerResults = ref([]);
+const brokerOpen = ref(false);
+const brokerSaving = ref(false);
+let brokerTimer = null;
+const fetchBrokers = (term) => {
+    clearTimeout(brokerTimer);
+    brokerTimer = setTimeout(async () => {
         try {
-            const r = await fetch(route('leasing.insurers.typeahead', { q: term }), { headers: { 'Accept': 'application/json' } });
-            insurerResults.value = await r.json();
-        } catch { insurerResults.value = []; }
+            const r = await fetch(route('leasing.brokers.typeahead', { q: term }), { headers: { 'Accept': 'application/json' } });
+            brokerResults.value = await r.json();
+        } catch { brokerResults.value = []; }
     }, 200);
 };
-const onInsurerInput = (e) => {
-    insurerQuery.value = e.target.value;
-    insurerOpen.value = true;
-    fetchInsurers(insurerQuery.value);
+const onBrokerInput = (e) => {
+    brokerQuery.value = e.target.value;
+    brokerOpen.value = true;
+    fetchBrokers(brokerQuery.value);
 };
-const pickInsurer = (ins) => {
-    insurerSaving.value = true;
-    router.put(route('leasing.deals.update', d.id), { insurer_id: ins?.id || null }, {
+const pickBroker = (ins) => {
+    brokerSaving.value = true;
+    router.put(route('leasing.deals.update', d.id), { broker_id: ins?.id || null }, {
         preserveScroll: true,
         preserveState: true,
         onFinish: () => {
-            insurerSaving.value = false;
-            insurerOpen.value = false;
-            insurerQuery.value = '';
+            brokerSaving.value = false;
+            brokerOpen.value = false;
+            brokerQuery.value = '';
         },
     });
 };
-const clearInsurer = () => pickInsurer(null);
+const clearBroker = () => pickBroker(null);
+
+// ── Insurance Carrier (free text on the deal — the actual insurance co.) ──
+const carrierInput = ref(d.insurance_carrier || '');
+watch(() => d.insurance_carrier, (v) => { if (v !== carrierInput.value) carrierInput.value = v || ''; });
+const saveCarrier = () => {
+    const v = (carrierInput.value || '').trim();
+    if (v === (d.insurance_carrier || '')) return;
+    router.put(route('leasing.deals.update', d.id), { insurance_carrier: v || null },
+        { preserveScroll: true, preserveState: true });
+};
 
 // Generic picker factory — Dealer + Lienholder share the typeahead pattern.
 function makePicker(routeName, dealField) {
@@ -1223,7 +1233,7 @@ const saveCalcAsQuote = () => {
                                 <p v-else class="text-xs text-gray-400 italic">No preferences captured yet — click "+ Add" to fill them in.</p>
                             </div>
 
-                            <!-- Dealership / Insurer / Lienholder (xDeskPro parity — Deal Information row) -->
+                            <!-- Dealership / Broker + Carrier / Lienholder (xDeskPro parity — Deal Information row) -->
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
 
                             <!-- Dealership -->
@@ -1258,32 +1268,32 @@ const saveCalcAsQuote = () => {
                                 </div>
                             </div>
 
-                            <!-- Insurer (xDeskPro parity — Deal Information → Insurer) -->
+                            <!-- Insurance Broker + Carrier (xDeskPro parity — Deal Information row) -->
                             <div class="border rounded-xl p-4 bg-white">
                                 <div class="flex items-center justify-between mb-2">
-                                    <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Insurer</h4>
-                                    <Link :href="route('leasing.insurers.index')" class="text-xs text-indigo-600 hover:underline">Manage Insurers</Link>
+                                    <h4 class="text-xs font-semibold text-gray-700 uppercase tracking-wide">Insurance Broker</h4>
+                                    <Link :href="route('leasing.brokers.index')" class="text-xs text-indigo-600 hover:underline">Manage Brokers</Link>
                                 </div>
-                                <div v-if="d.insurer" class="flex items-center justify-between">
+                                <div v-if="d.broker" class="flex items-center justify-between">
                                     <div class="text-sm">
-                                        <div class="font-medium">{{ d.insurer.name }}</div>
+                                        <div class="font-medium">{{ d.broker.name }}</div>
                                         <div class="text-xs text-gray-500">
-                                            <span v-if="d.insurer.first_name || d.insurer.last_name">{{ [d.insurer.first_name, d.insurer.last_name].filter(Boolean).join(' ') }} · </span>
-                                            <span v-if="d.insurer.phone">{{ d.insurer.phone }}</span>
-                                            <span v-if="d.insurer.email"> · {{ d.insurer.email }}</span>
+                                            <span v-if="d.broker.first_name || d.broker.last_name">{{ [d.broker.first_name, d.broker.last_name].filter(Boolean).join(' ') }} · </span>
+                                            <span v-if="d.broker.phone">{{ d.broker.phone }}</span>
+                                            <span v-if="d.broker.email"> · {{ d.broker.email }}</span>
                                         </div>
                                     </div>
-                                    <button type="button" @click="clearInsurer" :disabled="insurerSaving"
+                                    <button type="button" @click="clearBroker" :disabled="brokerSaving"
                                             class="text-xs text-red-600 hover:underline">Remove</button>
                                 </div>
                                 <div v-else class="relative">
-                                    <input type="text" :value="insurerQuery" @input="onInsurerInput" @focus="insurerOpen = true"
-                                           placeholder="Search insurer by company, contact, phone…"
+                                    <input type="text" :value="brokerQuery" @input="onBrokerInput" @focus="brokerOpen = true"
+                                           placeholder="Search broker by company, contact, phone…"
                                            class="block w-full border-gray-300 rounded-md shadow-sm text-sm" />
-                                    <div v-if="insurerOpen && insurerResults.length"
+                                    <div v-if="brokerOpen && brokerResults.length"
                                          class="absolute z-10 mt-1 w-full bg-white border rounded-md shadow-lg max-h-64 overflow-y-auto">
-                                        <button v-for="ins in insurerResults" :key="ins.id"
-                                                type="button" @click="pickInsurer(ins)"
+                                        <button v-for="ins in brokerResults" :key="ins.id"
+                                                type="button" @click="pickBroker(ins)"
                                                 class="block w-full text-left px-3 py-2 text-sm hover:bg-indigo-50">
                                             <div class="font-medium">{{ ins.name }}</div>
                                             <div class="text-xs text-gray-500">
@@ -1292,7 +1302,34 @@ const saveCalcAsQuote = () => {
                                             </div>
                                         </button>
                                     </div>
-                                    <p class="text-xs text-gray-400 italic mt-1">No insurer assigned. Type to search; <Link :href="route('leasing.insurers.index')" class="text-indigo-600 hover:underline">add a new one</Link> if missing.</p>
+                                    <p class="text-xs text-gray-400 italic mt-1">No broker assigned. Type to search; <Link :href="route('leasing.brokers.index')" class="text-indigo-600 hover:underline">add a new one</Link> if missing.</p>
+                                </div>
+
+                                <!-- Insurance Carrier (the actual insurance company — GEICO, Progressive, etc.) -->
+                                <div class="mt-3 pt-3 border-t">
+                                    <label class="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Insurance Carrier</label>
+                                    <input type="text" v-model="carrierInput" @blur="saveCarrier" @keyup.enter="saveCarrier"
+                                           list="known-carriers" placeholder="e.g. GEICO, Progressive, Nationwide…"
+                                           class="block w-full border-gray-300 rounded-md shadow-sm text-sm" />
+                                    <datalist id="known-carriers">
+                                        <option value="GEICO" />
+                                        <option value="Progressive" />
+                                        <option value="Nationwide" />
+                                        <option value="State Farm" />
+                                        <option value="Allstate" />
+                                        <option value="Liberty Mutual" />
+                                        <option value="Travelers" />
+                                        <option value="Farmers" />
+                                        <option value="USAA" />
+                                        <option value="Kemper" />
+                                        <option value="MetLife" />
+                                        <option value="Erie Insurance" />
+                                        <option value="The Hartford" />
+                                        <option value="Mercury" />
+                                        <option value="Plymouth Rock" />
+                                        <option value="National General" />
+                                    </datalist>
+                                    <p class="text-[10px] text-gray-400 italic mt-1">The insurance company on the policy — distinct from the broker above.</p>
                                 </div>
                             </div>
 
@@ -1328,7 +1365,7 @@ const saveCalcAsQuote = () => {
                                 </div>
                             </div>
 
-                            </div><!-- /grid Dealer/Insurer/Lienholder -->
+                            </div><!-- /grid Dealer/ Broker /Lienholder -->
 
                             <div class="grid grid-cols-2 gap-4 text-sm">
                                 <div><span class="text-gray-500">Sell Price:</span> {{ fmt(d.sell_price) }}</div>
