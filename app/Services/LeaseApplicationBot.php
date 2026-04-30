@@ -612,12 +612,12 @@ class LeaseApplicationBot
                         'collected' => $collected,
                         'last_inbound_at' => now(),
                     ]);
-                    $msg = "Got your license. I see some differences from what we have on file:\n\n";
+                    $msg = "Got your license. Quick confirm — your license info doesn't match what we have on file:\n\n";
                     foreach ($diffs as $field => $pair) {
                         $label = ['date_of_birth' => 'DATE OF BIRTH', 'address' => 'ADDRESS', 'first_name' => 'FIRST NAME', 'last_name' => 'LAST NAME'][$field] ?? strtoupper($field);
                         $msg .= "{$label}\n  License: " . ($pair['license'] ?: '—') . "\n  On file: " . ($pair['file'] ?: '—') . "\n\n";
                     }
-                    $msg .= "Reply LICENSE to use the license info, FILE to keep what's on file, or text the correct value(s).";
+                    $msg .= "Which would you like to use for this application? Reply LICENSE or FILE — or text the value you want.";
                     $this->reply($session->phone, $msg);
                     return true; // stay on this step until user confirms
                 }
