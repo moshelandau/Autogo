@@ -88,7 +88,7 @@ class DealController extends Controller
     public function show(Deal $deal)
     {
         $this->syncCurrentStageTasks($deal);
-        $deal->load(['customer', 'coSigner', 'salesperson', 'lender', 'quotes.lender', 'tasks', 'documents', 'dealNotes.user']);
+        $deal->load(['customer.documents.uploadedBy', 'coSigner.documents', 'salesperson', 'lender', 'quotes.lender', 'tasks', 'documents', 'dealNotes.user']);
 
         // Credit-pull history for this deal's customer (most-recent first)
         $creditPulls = $deal->customer
@@ -302,6 +302,39 @@ class DealController extends Controller
         $quote = $deal->quotes()->findOrFail($quoteId);
         $quote->delete();
         return back()->with('success', 'Quote deleted.');
+    }
+
+    /**
+     * Upload a document for this deal. Routes to CustomerDocument under
+     * the deal's customer — the docs (license, insurance, paystub, …) are
+     * customer-owned and should be reusable across the customer's deals,
+     * not duplicated per deal. Show.vue's Documents tab reads from
+     * customer.documents to surface them on every deal page.
+     */
+    public function uploadDocument(Request $request, Deal $deal)
+    {
+        if (!$deal->customer_id) {
+            return back()->with('error', 'No customer linked to this deal — cannot attach a document.');
+        }
+        $validated = $request->validate([
+            'type' => 'required|string|max:50',
+            'label' => 'nullable|string|max:255',
+            'expires_at' => 'nullable|date',
+            'file' => 'required|file|max:20480', // 20 MB cap
+        ]);
+        $path = $request->file('file')->store('customer-documents/' . $deal->customer_id, 'public');
+        \App\Models\CustomerDocument::create([
+            'customer_id'   => $deal->customer_id,
+            'type'          => $validated['type'],
+            'label'         => $validated['label'] ?? $request->file('file')->getClientOriginalName(),
+            'disk'          => 'public',
+            'path'          => $path,
+            'original_name' => $request->file('file')->getClientOriginalName(),
+            'mime_type'     => $request->file('file')->getMimeType(),
+            'expires_at'    => $validated['expires_at'] ?? null,
+            'uploaded_by'   => auth()->id(),
+        ]);
+        return back()->with('success', 'Document uploaded.');
     }
 
     public function decodeVin(Request $request)

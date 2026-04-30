@@ -27,6 +27,52 @@ const activeTab = ref('summary');
 const stageLabels = { lead: 'Lead', quote: 'Quote', application: 'Application', submission: 'Submission', pending: 'Pending', finalize: 'Finalize', outstanding: 'Outstanding', complete: 'Complete', lost: 'Lost' };
 const allStages = ['lead', 'quote', 'application', 'submission', 'pending', 'finalize', 'outstanding', 'complete'];
 
+// Required document checklist on the Documents tab. Sourced from
+// customer.documents (the SMS bot saves license uploads there) plus any
+// deal-specific docs uploaded from this page. Match logic prefers the
+// most recent doc whose `type` equals the row's type.
+const REQUIRED_DOCS = [
+    { type: 'drivers_license_front', label: "Driver's license — front" },
+    { type: 'drivers_license_back',  label: "Driver's license — back" },
+    { type: 'insurance_card',        label: 'Insurance card' },
+    { type: 'registration',          label: 'Vehicle registration' },
+    { type: 'proof_of_residence',    label: 'Proof of residence' },
+    { type: 'paystub',               label: 'Paystub' },
+    { type: 'w2',                    label: 'W-2 / tax doc' },
+];
+const REQUIRED_TYPES = REQUIRED_DOCS.map(r => r.type);
+const DOC_ACCEPT = 'image/*,application/pdf';
+
+const allDocs = computed(() => {
+    const fromCustomer = (d.customer?.documents || []).map(x => ({ ...x, _source: 'customer' }));
+    const fromDeal     = (d.documents || []).map(x => ({ ...x, _source: 'deal' }));
+    return [...fromCustomer, ...fromDeal].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+});
+const findDoc = (type) => allDocs.value.find(doc => doc.type === type);
+const docsUploadedCount = computed(() => REQUIRED_TYPES.filter(t => !!findDoc(t)).length);
+const otherDocs = computed(() => allDocs.value.filter(doc => !REQUIRED_TYPES.includes(doc.type)));
+
+const docUrl = (doc) => {
+    if (!doc) return '#';
+    // CustomerDocument: public disk → /storage/{path}; deal documents may
+    // already include a URL helper. Fall back to /storage/{path}.
+    if (doc.url) return doc.url;
+    if (doc.path) return '/storage/' + String(doc.path).replace(/^\/+/, '');
+    return '#';
+};
+
+const uploadDocFor = (type, label, file) => {
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('type', type);
+    if (label) fd.append('label', label);
+    fd.append('file', file);
+    router.post(route('leasing.deals.documents.store', d.id), fd, {
+        preserveScroll: true,
+        forceFormData: true,
+    });
+};
+
 // Workflow tab — one inline-editable card per stage in workflow order.
 const STYLE_OPTIONS = ['Sedan', 'SUV', 'Coupe', 'Truck', 'Van', 'Convertible', 'Hatchback', 'Wagon', 'Crossover'];
 const MILES_OPTIONS = [7500, 10000, 12000, 15000, 18000, 20000];
@@ -662,13 +708,60 @@ const saveCalcAsQuote = () => {
                             <p v-if="!d.deal_notes?.length" class="text-gray-500 text-sm">No notes yet.</p>
                         </div>
 
-                        <!-- Documents Tab -->
-                        <div v-if="activeTab === 'documents'" class="space-y-2">
-                            <div v-for="doc in d.documents" :key="doc.id" class="flex items-center gap-3 py-2 border-b">
-                                <span class="text-sm font-medium">{{ doc.name }}</span>
-                                <span class="text-xs text-gray-400 capitalize">{{ doc.type }}</span>
+                        <!-- Documents Tab — required-docs checklist sourced from
+                             customer.documents (license front/back uploaded via the
+                             SMS bot land here automatically) plus deal-specific docs.
+                             Each row: status, file link if uploaded, upload button if not. -->
+                        <div v-if="activeTab === 'documents'" class="space-y-3">
+                            <div class="flex items-center justify-between mb-2">
+                                <h4 class="text-sm font-semibold text-gray-700">Required documents</h4>
+                                <span class="text-xs text-gray-500">
+                                    {{ docsUploadedCount }} of {{ REQUIRED_DOCS.length }} uploaded
+                                </span>
                             </div>
-                            <p v-if="!d.documents?.length" class="text-gray-500 text-sm">No documents uploaded yet.</p>
+                            <div class="space-y-2">
+                                <div v-for="req in REQUIRED_DOCS" :key="req.type"
+                                     class="flex items-center gap-3 py-2 border-b last:border-0">
+                                    <span class="text-lg" :class="findDoc(req.type) ? 'text-emerald-600' : 'text-gray-300'">
+                                        {{ findDoc(req.type) ? '✓' : '○' }}
+                                    </span>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="text-sm font-medium text-gray-900">{{ req.label }}</div>
+                                        <div v-if="findDoc(req.type)" class="text-xs text-gray-500 truncate">
+                                            <a :href="docUrl(findDoc(req.type))" target="_blank" class="text-indigo-600 hover:text-indigo-800 underline">
+                                                {{ findDoc(req.type).label || findDoc(req.type).original_name || 'View file' }}
+                                            </a>
+                                            <span v-if="findDoc(req.type).created_at" class="ml-2">· uploaded {{ fmtDate(findDoc(req.type).created_at) }}</span>
+                                        </div>
+                                        <div v-else class="text-xs text-gray-400 italic">Not uploaded yet</div>
+                                    </div>
+                                    <label class="text-xs text-indigo-600 hover:text-indigo-800 cursor-pointer underline">
+                                        {{ findDoc(req.type) ? 'Replace' : 'Upload' }}
+                                        <input type="file" class="hidden" :accept="DOC_ACCEPT"
+                                               @change="(e) => uploadDocFor(req.type, req.label, e.target.files[0])" />
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div v-if="otherDocs.length" class="pt-2">
+                                <h4 class="text-sm font-semibold text-gray-700 mb-2">Other documents</h4>
+                                <div v-for="doc in otherDocs" :key="'other-'+doc.id" class="flex items-center gap-3 py-1.5 border-b last:border-0 text-xs">
+                                    <span class="text-emerald-600">✓</span>
+                                    <a :href="docUrl(doc)" target="_blank" class="text-indigo-600 hover:text-indigo-800 underline">
+                                        {{ doc.label || doc.original_name || doc.type }}
+                                    </a>
+                                    <span class="text-gray-400 capitalize">· {{ String(doc.type).replace(/_/g, ' ') }}</span>
+                                </div>
+                            </div>
+
+                            <div class="pt-3 border-t">
+                                <label class="inline-flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-800 cursor-pointer">
+                                    <span class="text-lg leading-none">+</span>
+                                    <span class="underline">Upload another document</span>
+                                    <input type="file" class="hidden" :accept="DOC_ACCEPT"
+                                           @change="(e) => uploadDocFor('other', '', e.target.files[0])" />
+                                </label>
+                            </div>
                         </div>
 
                         <!-- Calculator Tab -->
