@@ -582,6 +582,34 @@ class LeaseApplicationBot
                 return true; // stay on same step
             }
 
+            // Quality gate — BACK: verify the photo shows the full back of
+            // the license, no parts cut off / covered. Back has no useful
+            // OCR fields so the front's 4-of-6 gate doesn't apply; we make
+            // a single Opus call asking "is this complete?".
+            if ($step['key'] === 'license_image_back') {
+                $verify = $this->verifyBackLicenseImage($extracted['_stored_path'] ?? null);
+                if (!empty($verify) && empty($verify['complete'])) {
+                    $reason = $verify['reason'] ?? 'looks cut off or covered';
+                    Log::error('License back verification failed', [
+                        'session_id' => $session->id, 'attempt' => $retries + 1, 'reason' => $reason,
+                    ]);
+                    if ($retries >= 1) {
+                        $collected[$step['key'] . '_url']  = $mediaUrls[0];
+                        $collected[$step['key'] . '_path'] = $extracted['_stored_path'] ?? null;
+                        $collected['_needs_license_review'] = true;
+                        return $this->skipImageStepAndAdvance($session, $step, $stepIdx, $collected,
+                            "Still can't see the whole back — I'll save what you sent and have the team verify. Moving on for now.");
+                    }
+                    $collected[$retryKey] = $retries + 1;
+                    $session->update(['collected' => $collected, 'last_inbound_at' => now()]);
+                    $this->reply($session->phone,
+                        "I need the FULL back of your license — {$reason}. " .
+                        "Please re-send with the WHOLE back visible: all four corners showing, nothing covered."
+                    );
+                    return true;
+                }
+            }
+
             // Quality gate (FRONT only): require ≥4 of the 6 key identity
             // fields. Previously we passed if ANY one was extracted, so a
             // cropped photo where OCR caught the name + DL # but missed DOB
@@ -897,6 +925,45 @@ class LeaseApplicationBot
         $count = 0;
         foreach ($keys as $k) if (!empty($data[$k])) $count++;
         return $count;
+    }
+
+    /**
+     * Verify a back-of-license photo is complete (all four corners
+     * visible, nothing cut off or covered). Returns
+     *   ['complete' => bool, 'reason' => string]
+     * Fails open (returns complete=true) on any error so we don't block
+     * progress when the verifier is itself broken.
+     */
+    private function verifyBackLicenseImage(?string $storedPath): array
+    {
+        if (!$storedPath || empty(config('services.anthropic.api_key'))) {
+            return ['complete' => true, 'reason' => ''];
+        }
+        try {
+            $binary = \Storage::disk('public')->get($storedPath);
+            if (!$binary) return ['complete' => true, 'reason' => '']; // can't read, fail open
+            $resp = app(\App\Services\AiClient::class)->messages([
+                'model' => 'claude-opus-4-7', 'max_tokens' => 200,
+                'system' => 'You verify photos of the BACK of US driver licenses. Output VALID JSON only: {"complete": <bool>, "reason": "<short reason if not complete>"}. Set complete=true ONLY if the entire back of the license is visible with all four corners showing, no fingers / objects covering it, and the image is in focus enough to read printed text. Otherwise complete=false with a brief reason like "right edge cut off" or "thumb covering top".',
+                'messages' => [[
+                    'role' => 'user',
+                    'content' => [
+                        ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => 'image/jpeg', 'data' => base64_encode($binary)]],
+                        ['type' => 'text', 'text' => 'Verify this back-of-license photo.'],
+                    ],
+                ]],
+            ]);
+            $text = trim(preg_replace('/^```(?:json)?\s*|\s*```$/m', '', $resp->content[0]->text ?? ''));
+            $data = json_decode($text, true);
+            if (!is_array($data)) return ['complete' => true, 'reason' => ''];
+            return [
+                'complete' => (bool) ($data['complete'] ?? false),
+                'reason'   => (string) ($data['reason'] ?? ''),
+            ];
+        } catch (\Throwable $e) {
+            Log::error('verifyBackLicenseImage failed', ['error' => $e->getMessage()]);
+            return ['complete' => true, 'reason' => '']; // fail open
+        }
     }
 
     private function finalize(LeaseApplicationSession $session): void
