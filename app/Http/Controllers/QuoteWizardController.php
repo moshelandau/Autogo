@@ -376,14 +376,16 @@ class QuoteWizardController extends Controller
 
         $svc = app(\App\Services\LeaseWorksheet::class);
         $sheets = $drafts->mapWithKeys(function ($d) use ($svc, $deal, $taxByZip) {
-            // Pull applied rebates (full objects with title/source/amount) from
-            // the draft's structure JSONB — persisted at step 1.
-            $appliedRebates = $d->structure['applied_rebates'] ?? [];
+            // Pull applied rebates AND the full set of rebates available at
+            // pull-time, both from structure JSONB persisted at step 1.
+            $appliedRebates    = $d->structure['applied_rebates'] ?? [];
+            $allPulledRebates  = $d->structure['all_pulled_rebates'] ?? [];
 
             $defaults = [
                 'cost' => $deal->cost,
                 'rebates' => (float) ($d->rebates ?? 0),
-                'applied_rebates' => $appliedRebates,
+                'applied_rebates'    => $appliedRebates,
+                'all_pulled_rebates' => $allPulledRebates,
                 'fees' => [
                     ['name' => 'Acquisition Fee', 'amount' => (float) ($d->acquisition_fee ?? 595), 'paid_as' => $d->acquisition_fee_type ?? 'capped'],
                     ['name' => 'Doc Fee',         'amount' => 199, 'paid_as' => 'capped'],
@@ -507,6 +509,7 @@ class QuoteWizardController extends Controller
             'applied_rebate_ids'            => 'nullable|array',
             'applied_rebate_ids.*'          => 'string',
             'applied_rebates'               => 'nullable|array',  // full rebate objects {id,title,cashback,source,...}
+            'all_pulled_rebates'            => 'nullable|array',  // every rebate MarketCheck returned at pull-time
             'rebates_total'                 => 'nullable|numeric|min:0',
         ]);
 

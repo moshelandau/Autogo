@@ -16,11 +16,54 @@ const sheets = reactive(
         draft_id: d.id,
         term:     d.term,
         lender:   d.lender?.name,
-        inputs:   { ...props.sheets[d.id].inputs, fees: [...props.sheets[d.id].inputs.fees].map(f => ({ ...f })) },
+        inputs:   {
+            ...props.sheets[d.id].inputs,
+            fees: [...props.sheets[d.id].inputs.fees].map(f => ({ ...f })),
+            applied_rebates:    [...(props.sheets[d.id].inputs.applied_rebates || [])],
+            all_pulled_rebates: [...(props.sheets[d.id].inputs.all_pulled_rebates || [])],
+        },
         result:   { ...props.sheets[d.id].result },
         recomputing: false,
+        newRebate: { title: '', amount: null },
     }))
 );
+
+// Build the picker list — every pulled rebate UNION any applied rebate
+// not in the pull list (manual or stale) — keyed by id, deduped.
+const rebatesAvailable = (sheet) => {
+    const map = new Map();
+    [...(sheet.inputs.all_pulled_rebates || []), ...(sheet.inputs.applied_rebates || [])]
+        .forEach(r => { if (r?.id) map.set(r.id, r); });
+    return Array.from(map.values());
+};
+const isRebateApplied = (sheet, id) => (sheet.inputs.applied_rebates || []).some(r => r.id === id);
+const recalcRebatesTotal = (sheet) => {
+    sheet.inputs.rebates = (sheet.inputs.applied_rebates || [])
+        .reduce((s, r) => s + (Number(r.cashback) || 0), 0);
+};
+const toggleRebate = (sheet, r) => {
+    const list = sheet.inputs.applied_rebates || [];
+    const idx = list.findIndex(x => x.id === r.id);
+    if (idx >= 0) list.splice(idx, 1);
+    else list.push({ ...r });
+    recalcRebatesTotal(sheet);
+};
+const addManualRebate = (sheet) => {
+    if (!sheet.newRebate.title || !sheet.newRebate.amount) return;
+    const id = 'manual_' + Date.now();
+    sheet.inputs.applied_rebates.push({
+        id,
+        title: sheet.newRebate.title,
+        cashback: Number(sheet.newRebate.amount),
+        source: 'manual',
+    });
+    sheet.newRebate = { title: '', amount: null };
+    recalcRebatesTotal(sheet);
+};
+const removeManualRebate = (sheet, id) => {
+    sheet.inputs.applied_rebates = (sheet.inputs.applied_rebates || []).filter(r => r.id !== id);
+    recalcRebatesTotal(sheet);
+};
 
 // Debounced recompute on input change
 const recompute = async (sheet) => {
@@ -131,27 +174,47 @@ const pct = (v) => v != null && v !== '' ? Number(v).toFixed(2) + '%' : '—';
                                 <p class="text-[10px] text-gray-500 mt-1">Set Target Profit to back-solve sell price (cost + target). Or set Sell Price directly.</p>
                             </div>
 
-                            <!-- Applied Rebates (from Step 1's Available Rebates picker) -->
-                            <div v-if="sheet.inputs.applied_rebates?.length" class="border rounded-xl p-3 bg-emerald-50/40">
+                            <!-- Rebates picker — checkbox each available rebate.
+                                 Sources from Step 1's pulled offers (persisted on save).
+                                 Ad-hoc rebates can be added inline. -->
+                            <div v-if="rebatesAvailable(sheet).length || sheet.inputs.applied_rebates?.length" class="border rounded-xl p-3 bg-emerald-50/40">
                                 <div class="flex items-baseline justify-between border-b pb-2 mb-2">
-                                    <h4 class="font-semibold text-sm">Applied Rebates</h4>
+                                    <h4 class="font-semibold text-sm">Rebates</h4>
                                     <span class="text-sm font-bold text-emerald-700">−{{ fmt(sheet.inputs.rebates) }}</span>
                                 </div>
-                                <ul class="space-y-1 text-xs">
-                                    <li v-for="r in sheet.inputs.applied_rebates" :key="r.id" class="flex items-center justify-between gap-2">
-                                        <span class="flex-1 truncate">
-                                            <span class="font-bold text-emerald-700">${{ Number(r.cashback || 0).toLocaleString() }}</span>
-                                            ·
-                                            <span class="px-1 py-0.5 rounded text-[9px] font-semibold"
-                                                  :class="r.source === 'dealer_markdown' ? 'bg-amber-200 text-amber-900' : 'bg-blue-200 text-blue-900'">
-                                                {{ r.source === 'dealer_markdown' ? 'DEALER' : 'OEM' }}
+                                <ul class="space-y-1 text-xs max-h-48 overflow-y-auto">
+                                    <li v-for="r in rebatesAvailable(sheet)" :key="r.id">
+                                        <label class="flex items-start gap-2 cursor-pointer hover:bg-white/60 rounded px-1 py-0.5">
+                                            <input type="checkbox"
+                                                   :checked="isRebateApplied(sheet, r.id)"
+                                                   @change="toggleRebate(sheet, r)" class="mt-0.5" />
+                                            <span class="flex-1">
+                                                <span class="font-bold text-emerald-700">${{ Number(r.cashback || 0).toLocaleString() }}</span>
+                                                <span class="px-1 py-0.5 rounded text-[9px] font-semibold ml-1"
+                                                      :class="r.source === 'dealer_markdown' ? 'bg-amber-200 text-amber-900' :
+                                                              r.source === 'manual' ? 'bg-gray-200 text-gray-700' :
+                                                              'bg-blue-200 text-blue-900'">
+                                                    {{ r.source === 'dealer_markdown' ? 'DEALER' : (r.source === 'manual' ? 'MANUAL' : 'OEM') }}
+                                                </span>
+                                                {{ r.title }}
                                             </span>
-                                            {{ r.title }}
-                                        </span>
+                                            <button v-if="r.source === 'manual'" type="button" @click.prevent="removeManualRebate(sheet, r.id)"
+                                                    class="text-red-500 text-xs">×</button>
+                                        </label>
                                     </li>
                                 </ul>
+                                <!-- Add ad-hoc rebate -->
+                                <div class="mt-2 pt-2 border-t flex items-center gap-1">
+                                    <input v-model="sheet.newRebate.title" type="text" placeholder="Other rebate name"
+                                           class="flex-1 border-gray-300 rounded text-xs" />
+                                    <input v-model.number="sheet.newRebate.amount" type="number" step="50" min="0" placeholder="$"
+                                           class="w-20 border-gray-300 rounded text-xs text-right" />
+                                    <button type="button" @click="addManualRebate(sheet)" :disabled="!sheet.newRebate.title || !sheet.newRebate.amount"
+                                            class="px-2 py-1 bg-indigo-600 text-white rounded text-xs disabled:opacity-50">+ Add</button>
+                                </div>
+                                <p class="text-[10px] text-gray-500 mt-1">Total auto-syncs to applied. Override below if needed.</p>
                                 <input v-model.number="sheet.inputs.rebates" type="number" step="50" min="0"
-                                       class="mt-2 block w-full border-gray-300 rounded text-xs" placeholder="Adjust total" />
+                                       class="mt-1 block w-full border-gray-300 rounded text-xs" placeholder="Override total" />
                             </div>
 
                             <!-- Detail table — Upfront / Capped / Total per line -->
