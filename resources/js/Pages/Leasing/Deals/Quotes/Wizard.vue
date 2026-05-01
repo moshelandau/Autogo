@@ -247,12 +247,16 @@ const fmt = (v) => v != null && v !== '' ? '$' + Number(v).toLocaleString(undefi
                                     <input v-model.number="price.msrp" type="number" step="0.01" min="0" placeholder="$ 0.00" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
                                 </div>
                                 <div>
-                                    <label class="block text-xs text-gray-500">Profit (auto)</label>
-                                    <input v-model.number="price.profit" type="number" step="0.01" placeholder="$ 0.00" class="mt-1 block w-full border-gray-300 rounded-md text-sm bg-gray-50" />
+                                    <label class="block text-xs text-gray-500" title="Maximum Retail Markup (Honda/Acura)">MRM</label>
+                                    <input v-model.number="price.mrm" type="number" step="0.01" min="0" placeholder="$ 0.00" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
                                 </div>
                                 <div>
                                     <label class="block text-xs text-gray-500">Invoice</label>
                                     <input v-model.number="price.invoice" type="number" step="0.01" min="0" placeholder="$ 0.00" class="mt-1 block w-full border-gray-300 rounded-md text-sm" />
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500">Profit (auto)</label>
+                                    <input v-model.number="price.profit" type="number" step="0.01" placeholder="$ 0.00" class="mt-1 block w-full border-gray-300 rounded-md text-sm bg-gray-50" />
                                 </div>
                                 <div class="col-span-2">
                                     <label class="block text-xs text-gray-500">Sell Price</label>

@@ -20,7 +20,7 @@ class Deal extends Model
         'vehicle_vin', 'vehicle_year', 'vehicle_make', 'vehicle_model',
         'vehicle_trim', 'vehicle_color', 'vehicle_odometer',
         'payment_type', 'stage', 'priority',
-        'msrp', 'invoice_price', 'sell_price', 'cost', 'profit',
+        'msrp', 'mrm', 'invoice_price', 'sell_price', 'cost', 'profit',
         'monthly_payment', 'term', 'mileage_per_year', 'drive_off',
         'trade_allowance', 'trade_acv', 'trade_payoff', 'trade_is_leased',
         'credit_score', 'customer_zip',
@@ -39,7 +39,7 @@ class Deal extends Model
     protected function casts(): array
     {
         return [
-            'msrp' => 'decimal:2', 'invoice_price' => 'decimal:2', 'sell_price' => 'decimal:2',
+            'msrp' => 'decimal:2', 'mrm' => 'decimal:2', 'invoice_price' => 'decimal:2', 'sell_price' => 'decimal:2',
             'cost' => 'decimal:2', 'profit' => 'decimal:2', 'monthly_payment' => 'decimal:2',
             'drive_off' => 'decimal:2', 'trade_allowance' => 'decimal:2', 'trade_acv' => 'decimal:2',
             'trade_payoff' => 'decimal:2', 'trade_is_leased' => 'boolean',
