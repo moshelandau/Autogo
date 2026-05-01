@@ -35,7 +35,13 @@ class MarketCheckOffersService
      *   'calls_remaining' => int,
      * ]
      */
-    public function offersForDeal(Deal $deal, ?string $vin = null): array
+    /**
+     * @param array $overrides Optional wizard-form overrides:
+     *                         {make?, model?, year?, zip?} — used when the
+     *                         user has typed values that aren't yet saved
+     *                         on the deal record.
+     */
+    public function offersForDeal(Deal $deal, ?string $vin = null, array $overrides = []): array
     {
         $listing = null;     // populated when VIN-driven — the actual car at the actual dealer
         $vehicleZip = null;  // zip we'll use for the incentive search (dealer's, when VIN given)
@@ -50,11 +56,20 @@ class MarketCheckOffersService
                 $vehicleZip = $listing['dealer']['zip'] ?? null;
             }
             // If VIN didn't match any listing we'll fall through to the
-            // deal-make+customer-zip path below — better something than nothing.
+            // deal/override path below — better something than nothing.
         }
 
-        $make = $listing['build']['make'] ?? $deal->vehicle_make;
-        $zip  = $vehicleZip
+        // Resolution order (most specific wins):
+        //   1. VIN listing (when matched)
+        //   2. wizard form overrides (user just typed)
+        //   3. deal saved fields
+        //   4. customer saved fields (for ZIP)
+        $make = $listing['build']['make']
+            ?? ($overrides['make'] ?: null)
+            ?? $deal->vehicle_make;
+
+        $zip = $vehicleZip
+            ?: ($overrides['zip'] ?: null)
             ?: ($deal->customer_zip ?: optional($deal->customer)->zip);
 
         if (!$make) return ['ok' => false, 'error' => 'No vehicle make available (set on the deal or supply a VIN).'];
@@ -63,8 +78,8 @@ class MarketCheckOffersService
         }
 
         $filters = [];
-        $modelForFilter = $listing['build']['model'] ?? $deal->vehicle_model;
-        $yearForFilter  = $listing['build']['year']  ?? $deal->vehicle_year;
+        $modelForFilter = $listing['build']['model'] ?? ($overrides['model'] ?? null) ?? $deal->vehicle_model;
+        $yearForFilter  = $listing['build']['year']  ?? ($overrides['year']  ?? null) ?? $deal->vehicle_year;
         if ($modelForFilter) $filters['model'] = $modelForFilter;
         if ($yearForFilter)  $filters['year']  = (int) $yearForFilter;
         $filters['rows'] = 50;
