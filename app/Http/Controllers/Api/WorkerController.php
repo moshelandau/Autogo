@@ -191,29 +191,48 @@ class WorkerController extends Controller
     // ── Vehicle swap ───────────────────────────────────────────────
 
     /**
-     * Vehicles the worker can swap to. Restricted to the reservation's
-     * class for now (no upgrade pricing).
+     * Vehicles the worker can swap to / pick up first.
+     *
+     * Shows every available car on the lot, not just the booking's class —
+     * the worker sees real-world availability and can hand over whatever's
+     * actually sitting outside. Same-class vehicles surface FIRST so the
+     * worker's natural pick is right at the top, then other classes follow
+     * for cases where the booked class has nothing on the lot.
      */
     public function swapOptions(Reservation $reservation): JsonResponse
     {
-        $class = $reservation->vehicle?->vehicle_class ?? $reservation->vehicle_class;
+        $bookedClass = $reservation->vehicle?->vehicle_class ?? $reservation->vehicle_class;
 
         $vehicles = Vehicle::query()
             ->where('is_active', true)
             ->where('status', 'available')
-            ->when($class, fn ($q) => $q->where('vehicle_class', $class))
-            ->orderBy('make')->orderBy('model')
-            ->limit(50)
+            ->where(function ($q) use ($reservation) {
+                // Don't show the currently-assigned vehicle in the swap list — the
+                // worker is here to pick a DIFFERENT one. (Pre-pickup the assigned
+                // vehicle is still in 'available' status; this filter hides it.)
+                if ($reservation->vehicle_id) {
+                    $q->where('id', '!=', $reservation->vehicle_id);
+                }
+            })
+            ->limit(200)
             ->get(['id', 'year', 'make', 'model', 'license_plate', 'vehicle_class', 'odometer'])
+            // Sort: same class first (preserve booked-class as group #0), then
+            // alphabetical by class, then by make/model within each group.
+            ->sortBy(function ($v) use ($bookedClass) {
+                $classSort = ($bookedClass && $v->vehicle_class === $bookedClass) ? '0' : '1_'.($v->vehicle_class ?? 'zzz');
+                return $classSort.'|'.($v->make ?? '').'|'.($v->model ?? '');
+            })
+            ->values()
             ->map(fn ($v) => [
-                'id'            => $v->id,
-                'label'         => trim("{$v->year} {$v->make} {$v->model} ({$v->license_plate})"),
-                'license_plate' => $v->license_plate,
-                'vehicle_class' => $v->vehicle_class,
-                'odometer'      => $v->odometer,
+                'id'                => $v->id,
+                'label'             => trim("{$v->year} {$v->make} {$v->model} ({$v->license_plate})"),
+                'license_plate'     => $v->license_plate,
+                'vehicle_class'     => $v->vehicle_class,
+                'odometer'          => $v->odometer,
+                'is_booked_class'   => $bookedClass && $v->vehicle_class === $bookedClass,
             ]);
 
-        return response()->json(['data' => $vehicles]);
+        return response()->json(['data' => $vehicles, 'booked_class' => $bookedClass]);
     }
 
     public function swapVehicle(Request $request, Reservation $reservation): JsonResponse
