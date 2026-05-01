@@ -68,7 +68,8 @@ onMounted(() => {
     // Redirect stale deep-links so the right merged tab opens.
     if (wantedTab === 'calculator') wantedTab = 'quotes';
     if (wantedTab === 'credit')     wantedTab = 'workflow';
-    if (wantedTab && ['summary','customer','tasks','workflow','quotes','notes','documents','vehicle_return','sharing','messages','timeline'].includes(wantedTab)) {
+    if (wantedTab === 'sharing')    wantedTab = 'summary';
+    if (wantedTab && ['summary','customer','tasks','workflow','quotes','notes','documents','vehicle_return','messages','timeline'].includes(wantedTab)) {
         activeTab.value = wantedTab;
     }
     if (window.location.hash) {
@@ -712,7 +713,7 @@ const saveCalcAsQuote = () => {
                      net for genuinely narrow viewports. -->
                 <div class="bg-white shadow-sm rounded-lg">
                     <div class="border-b flex flex-wrap gap-0">
-                        <button v-for="tab in ['summary', 'customer', 'tasks', 'workflow', 'quotes', 'notes', 'documents', 'vehicle_return', 'sharing', 'messages', 'timeline']" :key="tab"
+                        <button v-for="tab in ['summary', 'customer', 'tasks', 'workflow', 'quotes', 'notes', 'documents', 'vehicle_return', 'messages', 'timeline']" :key="tab"
                                 @click="activeTab = tab"
                                 class="px-2.5 py-3 text-sm font-medium capitalize whitespace-nowrap"
                                 :class="activeTab === tab ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500 hover:text-gray-700'">
@@ -1733,8 +1734,11 @@ const saveCalcAsQuote = () => {
                             </form>
                         </div>
 
-                        <!-- Sharing Tab — internal user access to this deal (xDeskPro parity) -->
-                        <div v-if="activeTab === 'sharing'" class="space-y-4">
+                        <!-- Sharing — folded into the Summary tab so the
+                             tab row stays uncluttered. Internal team access
+                             is a deal-meta concern, not its own destination. -->
+                        <div v-if="activeTab === 'summary'" class="mt-6 pt-6 border-t space-y-4">
+                            <h3 class="text-base font-semibold text-gray-700">🔐 Internal Sharing</h3>
                             <div class="flex items-center justify-between">
                                 <h3 class="text-sm font-semibold text-gray-700">Internal Sharing</h3>
                                 <button type="button" @click="selectAllShares" class="text-xs text-indigo-600 hover:underline">Select all</button>
