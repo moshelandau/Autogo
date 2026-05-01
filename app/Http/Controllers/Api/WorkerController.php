@@ -86,12 +86,20 @@ class WorkerController extends Controller
      */
     public function reservations(Request $request): JsonResponse
     {
+        // The previous filter (pickup_date <= now+2 OR return_date <= now+1) had no
+        // lower bound, which surfaced every "open" reservation from prior years —
+        // workers got dozens of stale rentals from 2023 in their list. Bracket
+        // BOTH ends of the window to "yesterday → 2 days out" so we only show
+        // pickups + returns the worker can actually act on today.
+        $start = now()->startOfDay()->subDay();
+        $end   = now()->endOfDay()->addDays(2);
+
         $reservations = Reservation::query()
             ->with(['customer:id,first_name,last_name,phone', 'vehicle:id,make,model,year,license_plate'])
             ->whereNotIn('status', ['cancelled', 'completed'])
-            ->where(function ($q) {
-                $q->whereDate('pickup_date', '<=', now()->addDays(2)->toDateString())
-                  ->orWhereDate('return_date', '<=', now()->addDays(1)->toDateString());
+            ->where(function ($q) use ($start, $end) {
+                $q->whereBetween('pickup_date', [$start, $end])
+                  ->orWhereBetween('return_date', [$start, $end]);
             })
             ->orderBy('pickup_date')
             ->limit(100)
@@ -183,29 +191,48 @@ class WorkerController extends Controller
     // ── Vehicle swap ───────────────────────────────────────────────
 
     /**
-     * Vehicles the worker can swap to. Restricted to the reservation's
-     * class for now (no upgrade pricing).
+     * Vehicles the worker can swap to / pick up first.
+     *
+     * Shows every available car on the lot, not just the booking's class —
+     * the worker sees real-world availability and can hand over whatever's
+     * actually sitting outside. Same-class vehicles surface FIRST so the
+     * worker's natural pick is right at the top, then other classes follow
+     * for cases where the booked class has nothing on the lot.
      */
     public function swapOptions(Reservation $reservation): JsonResponse
     {
-        $class = $reservation->vehicle?->vehicle_class ?? $reservation->vehicle_class;
+        $bookedClass = $reservation->vehicle?->vehicle_class ?? $reservation->vehicle_class;
 
         $vehicles = Vehicle::query()
             ->where('is_active', true)
             ->where('status', 'available')
-            ->when($class, fn ($q) => $q->where('vehicle_class', $class))
-            ->orderBy('make')->orderBy('model')
-            ->limit(50)
+            ->where(function ($q) use ($reservation) {
+                // Don't show the currently-assigned vehicle in the swap list — the
+                // worker is here to pick a DIFFERENT one. (Pre-pickup the assigned
+                // vehicle is still in 'available' status; this filter hides it.)
+                if ($reservation->vehicle_id) {
+                    $q->where('id', '!=', $reservation->vehicle_id);
+                }
+            })
+            ->limit(200)
             ->get(['id', 'year', 'make', 'model', 'license_plate', 'vehicle_class', 'odometer'])
+            // Sort: same class first (preserve booked-class as group #0), then
+            // alphabetical by class, then by make/model within each group.
+            ->sortBy(function ($v) use ($bookedClass) {
+                $classSort = ($bookedClass && $v->vehicle_class === $bookedClass) ? '0' : '1_'.($v->vehicle_class ?? 'zzz');
+                return $classSort.'|'.($v->make ?? '').'|'.($v->model ?? '');
+            })
+            ->values()
             ->map(fn ($v) => [
-                'id'            => $v->id,
-                'label'         => trim("{$v->year} {$v->make} {$v->model} ({$v->license_plate})"),
-                'license_plate' => $v->license_plate,
-                'vehicle_class' => $v->vehicle_class,
-                'odometer'      => $v->odometer,
+                'id'                => $v->id,
+                'label'             => trim("{$v->year} {$v->make} {$v->model} ({$v->license_plate})"),
+                'license_plate'     => $v->license_plate,
+                'vehicle_class'     => $v->vehicle_class,
+                'odometer'          => $v->odometer,
+                'is_booked_class'   => $bookedClass && $v->vehicle_class === $bookedClass,
             ]);
 
-        return response()->json(['data' => $vehicles]);
+        return response()->json(['data' => $vehicles, 'booked_class' => $bookedClass]);
     }
 
     public function swapVehicle(Request $request, Reservation $reservation): JsonResponse
@@ -567,6 +594,9 @@ class WorkerController extends Controller
             'customer_name'      => trim(($r->customer?->first_name ?? '').' '.($r->customer?->last_name ?? '')) ?: null,
             'customer_phone'     => $r->customer?->phone,
             'vehicle_label'      => $r->vehicle ? trim("{$r->vehicle->year} {$r->vehicle->make} {$r->vehicle->model} ({$r->vehicle->license_plate})") : null,
+            'vehicle_class'      => $r->vehicle?->vehicle_class ?? $r->vehicle_class,
+            'license_plate'      => $r->vehicle?->license_plate,
+            'vehicle_image_url'  => $this->publicUrl($r->vehicle?->image_path),
             'pickup_location'    => $r->pickup_location,
             'return_location'    => $r->return_location,
         ];
@@ -575,15 +605,24 @@ class WorkerController extends Controller
     /**
      * Inspection state shaped exactly the way the Android app expects:
      *   { "pickup": { "front": "https://...jpg", ... }, "return": { ... } }
+     *
+     * Cast each inner bucket to (object) so an empty bucket JSON-encodes as
+     * `{}` not `[]`. Without this, `json_encode` flattens an empty PHP array
+     * to a JSON array, and the Android client (kotlinx.serialization) chokes
+     * trying to deserialize `[]` into a `Map<String, String>`.
      */
     private function buildInspectionState(Reservation $reservation): array
     {
-        $state = ['pickup' => [], 'return' => []];
+        $pickup = [];
+        $return = [];
         foreach ($reservation->inspections as $insp) {
-            if (!isset($state[$insp->type])) continue;
-            $state[$insp->type][$insp->area] = $this->publicUrl($insp->image_path);
+            if ($insp->type === 'pickup') $pickup[$insp->area] = $this->publicUrl($insp->image_path);
+            elseif ($insp->type === 'return') $return[$insp->area] = $this->publicUrl($insp->image_path);
         }
-        return $state;
+        return [
+            'pickup' => (object) $pickup,
+            'return' => (object) $return,
+        ];
     }
 
     private function publicUrl(?string $path): ?string
