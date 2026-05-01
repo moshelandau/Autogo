@@ -594,6 +594,9 @@ class WorkerController extends Controller
             'customer_name'      => trim(($r->customer?->first_name ?? '').' '.($r->customer?->last_name ?? '')) ?: null,
             'customer_phone'     => $r->customer?->phone,
             'vehicle_label'      => $r->vehicle ? trim("{$r->vehicle->year} {$r->vehicle->make} {$r->vehicle->model} ({$r->vehicle->license_plate})") : null,
+            'vehicle_class'      => $r->vehicle?->vehicle_class ?? $r->vehicle_class,
+            'license_plate'      => $r->vehicle?->license_plate,
+            'vehicle_image_url'  => $this->publicUrl($r->vehicle?->image_path),
             'pickup_location'    => $r->pickup_location,
             'return_location'    => $r->return_location,
         ];
