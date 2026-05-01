@@ -261,6 +261,13 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::put   ('lienholders/{lienholder}',[LienholderController::class, 'update'])->name('lienholders.update');
         Route::delete('lienholders/{lienholder}',[LienholderController::class, 'destroy'])->name('lienholders.destroy');
         Route::get   ('lienholders-typeahead',   [LienholderController::class, 'typeahead'])->name('lienholders.typeahead');
+
+        // Dealer Markdowns — custom offers from individual dealer reps,
+        // shown alongside MarketCheck OEM rebates in the wizard.
+        Route::get   ('dealer-markdowns',                [\App\Http\Controllers\DealerMarkdownController::class, 'index'])->name('dealer-markdowns.index');
+        Route::post  ('dealer-markdowns',                [\App\Http\Controllers\DealerMarkdownController::class, 'store'])->name('dealer-markdowns.store');
+        Route::put   ('dealer-markdowns/{markdown}',     [\App\Http\Controllers\DealerMarkdownController::class, 'update'])->name('dealer-markdowns.update');
+        Route::delete('dealer-markdowns/{markdown}',     [\App\Http\Controllers\DealerMarkdownController::class, 'destroy'])->name('dealer-markdowns.destroy');
     });
 
     // ── Rental Claims Module ───────────────────────────

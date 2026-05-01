@@ -75,6 +75,7 @@ const navSections = [
             { name: 'Lienholders', route: 'leasing.lienholders.index', icon: 'building', pattern: 'leasing.lienholders.*', pageKey: 'lenders' },
             // Credit Pulls — moved inline into the Deal/Application page; no standalone nav
             { name: 'Lender Programs', route: 'lender-programs.index', icon: 'list', pattern: 'lender-programs.*', pageKey: 'lenders' },
+            { name: 'Dealer Markdowns', route: 'leasing.dealer-markdowns.index', icon: 'tag', pattern: 'leasing.dealer-markdowns.*', pageKey: 'lenders' },
         ]
     },
     {
