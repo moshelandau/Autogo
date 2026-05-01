@@ -242,7 +242,7 @@ class QuoteWizardController extends Controller
      * Lists draft quotes (one per term from step 1) and the lender
      * programs that fit each (filtered by make/model/term/credit tier).
      */
-    public function step2(Deal $deal)
+    public function step2(Deal $deal, MarketCheckOffersService $offersService)
     {
         $deal->load('customer');
 
@@ -278,11 +278,26 @@ class QuoteWizardController extends Controller
             ->orderBy('money_factor')
             ->get();
 
+        // Pull MarketCheck lease + finance offers for this deal so we can
+        // surface them as additional pickable options alongside our internal
+        // Lender Programs. Costs 1 API call per Step 2 view.
+        $mcOffers = $offersService->offersForDeal($deal);
+        $marketCheckOffers = $mcOffers['ok'] ?? false
+            ? array_merge(
+                array_map(fn ($o) => $o + ['kind' => 'lease'],   $mcOffers['leases']   ?? []),
+                array_map(fn ($o) => $o + ['kind' => 'finance'], $mcOffers['finances'] ?? []),
+            )
+            : [];
+
         return Inertia::render('Leasing/Deals/Quotes/WizardStep2', [
-            'deal'     => $deal,
-            'drafts'   => $drafts,
-            'programs' => $programs,
-            'lenders'  => Lender::active()->get(['id', 'name']),
+            'deal'              => $deal,
+            'drafts'            => $drafts,
+            'programs'          => $programs,
+            'lenders'           => Lender::active()->get(['id', 'name']),
+            'marketCheckOffers' => $marketCheckOffers,
+            'marketCheckCaptive'=> $mcOffers['captive'] ?? null,
+            'marketCheckOk'     => $mcOffers['ok'] ?? false,
+            'marketCheckError'  => $mcOffers['error'] ?? null,
         ]);
     }
 
@@ -359,9 +374,14 @@ class QuoteWizardController extends Controller
 
         $svc = app(\App\Services\LeaseWorksheet::class);
         $sheets = $drafts->mapWithKeys(function ($d) use ($svc, $deal, $taxByZip) {
+            // Pull applied rebates (full objects with title/source/amount) from
+            // the draft's structure JSONB — persisted at step 1.
+            $appliedRebates = $d->structure['applied_rebates'] ?? [];
+
             $defaults = [
                 'cost' => $deal->cost,
                 'rebates' => (float) ($d->rebates ?? 0),
+                'applied_rebates' => $appliedRebates,
                 'fees' => [
                     ['name' => 'Acquisition Fee', 'amount' => (float) ($d->acquisition_fee ?? 595), 'paid_as' => $d->acquisition_fee_type ?? 'capped'],
                     ['name' => 'Doc Fee',         'amount' => 199, 'paid_as' => 'capped'],
@@ -482,6 +502,7 @@ class QuoteWizardController extends Controller
             'credit.score'                  => 'nullable|integer|min:300|max:850',
             'applied_rebate_ids'            => 'nullable|array',
             'applied_rebate_ids.*'          => 'string',
+            'applied_rebates'               => 'nullable|array',  // full rebate objects {id,title,cashback,source,...}
             'rebates_total'                 => 'nullable|numeric|min:0',
         ]);
 

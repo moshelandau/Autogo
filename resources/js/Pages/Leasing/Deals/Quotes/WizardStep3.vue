@@ -93,26 +93,65 @@ const pct = (v) => v != null && v !== '' ? Number(v).toFixed(2) + '%' : '—';
                         <span v-if="sheet.recomputing" class="text-xs text-indigo-600 animate-pulse">recomputing…</span>
                     </header>
 
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 p-5">
+                    <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 p-5">
 
                         <!-- LEFT: Vehicle Price + Detail Table + Rate + Residual -->
                         <div class="space-y-4">
-                            <!-- Vehicle Price -->
+                            <!-- Vehicle Price + editable Profit (back-solves sell_price) -->
                             <div class="border rounded-xl p-3">
                                 <div class="flex items-baseline justify-between border-b pb-2 mb-2">
                                     <h4 class="font-semibold text-sm">Vehicle Price</h4>
                                     <span class="text-sm font-bold">{{ fmt(sheet.result.sell_price) }}</span>
                                 </div>
-                                <div class="grid grid-cols-2 gap-2 text-xs">
+                                <div class="grid grid-cols-3 gap-2 text-xs">
                                     <div>
                                         <label class="text-gray-500">Cost</label>
                                         <input v-model.number="sheet.inputs.cost" type="number" step="0.01" min="0" class="block w-full border-gray-300 rounded text-xs" />
                                     </div>
                                     <div>
-                                        <label class="text-gray-500">Profit</label>
-                                        <div class="text-sm font-semibold text-emerald-700 mt-1">{{ fmt(sheet.result.profit?.vehicle) }}</div>
+                                        <label class="text-gray-500">Sell Price</label>
+                                        <input v-model.number="sheet.inputs.sell_price" type="number" step="0.01" min="0"
+                                               :disabled="sheet.inputs.vehicle_profit_target != null && sheet.inputs.vehicle_profit_target !== ''"
+                                               :placeholder="fmt(sheet.result.sell_price)"
+                                               class="block w-full border-gray-300 rounded text-xs disabled:bg-gray-100" />
+                                    </div>
+                                    <div>
+                                        <label class="text-gray-500 flex items-center gap-1">
+                                            Target Profit
+                                            <button type="button" v-if="sheet.inputs.vehicle_profit_target != null && sheet.inputs.vehicle_profit_target !== ''"
+                                                    @click="sheet.inputs.vehicle_profit_target = ''"
+                                                    class="text-[10px] text-red-500">clear</button>
+                                        </label>
+                                        <input v-model.number="sheet.inputs.vehicle_profit_target" type="number" step="50" min="0"
+                                               :placeholder="fmt(sheet.result.profit?.vehicle)"
+                                               class="block w-full border-gray-300 rounded text-xs" />
+                                        <p class="text-[10px] text-emerald-700 mt-0.5 font-semibold">Current: {{ fmt(sheet.result.profit?.vehicle) }}</p>
                                     </div>
                                 </div>
+                                <p class="text-[10px] text-gray-500 mt-1">Set Target Profit to back-solve sell price (cost + target). Or set Sell Price directly.</p>
+                            </div>
+
+                            <!-- Applied Rebates (from Step 1's Available Rebates picker) -->
+                            <div v-if="sheet.inputs.applied_rebates?.length" class="border rounded-xl p-3 bg-emerald-50/40">
+                                <div class="flex items-baseline justify-between border-b pb-2 mb-2">
+                                    <h4 class="font-semibold text-sm">Applied Rebates</h4>
+                                    <span class="text-sm font-bold text-emerald-700">−{{ fmt(sheet.inputs.rebates) }}</span>
+                                </div>
+                                <ul class="space-y-1 text-xs">
+                                    <li v-for="r in sheet.inputs.applied_rebates" :key="r.id" class="flex items-center justify-between gap-2">
+                                        <span class="flex-1 truncate">
+                                            <span class="font-bold text-emerald-700">${{ Number(r.cashback || 0).toLocaleString() }}</span>
+                                            ·
+                                            <span class="px-1 py-0.5 rounded text-[9px] font-semibold"
+                                                  :class="r.source === 'dealer_markdown' ? 'bg-amber-200 text-amber-900' : 'bg-blue-200 text-blue-900'">
+                                                {{ r.source === 'dealer_markdown' ? 'DEALER' : 'OEM' }}
+                                            </span>
+                                            {{ r.title }}
+                                        </span>
+                                    </li>
+                                </ul>
+                                <input v-model.number="sheet.inputs.rebates" type="number" step="50" min="0"
+                                       class="mt-2 block w-full border-gray-300 rounded text-xs" placeholder="Adjust total" />
                             </div>
 
                             <!-- Detail table — Upfront / Capped / Total per line -->

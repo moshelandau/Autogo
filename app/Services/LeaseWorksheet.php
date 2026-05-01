@@ -33,9 +33,15 @@ class LeaseWorksheet
     {
         // ── Inputs with defaults ──
         $msrp        = (float) ($quote->msrp ?? 0);
-        $sellPrice   = (float) ($quote->sell_price ?? 0);
         $term        = (int)   ($quote->term ?: 36);
         $cost        = (float) ($w['cost'] ?? 0);
+
+        // Profit target: when set, sell_price is back-solved as cost +
+        // target_profit. Otherwise sell_price flows through from the input.
+        $profitTarget = isset($w['vehicle_profit_target']) ? (float) $w['vehicle_profit_target'] : null;
+        $sellPrice = $profitTarget !== null
+            ? round($cost + $profitTarget, 2)
+            : (float) ($w['sell_price'] ?? $quote->sell_price ?? 0);
 
         $buyMf       = (float) ($w['buy_money_factor']  ?? $quote->money_factor ?? 0);
         $sellMf      = (float) ($w['sell_money_factor'] ?? $buyMf);
