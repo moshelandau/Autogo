@@ -78,7 +78,16 @@ class LeasingService
                 }
                 $deal->unread_sms_count = $count;
             }
-            $stages[$stage] = $deals;
+            // Re-sort so deals with unread SMS float to the top of the
+            // column. unread_sms_count is computed in PHP (above) so this
+            // can't be done in the SQL ORDER BY. Within each group
+            // (unread vs read) keep the original ordering — sort_order
+            // first, then most-recently-updated.
+            $stages[$stage] = $deals->sortBy([
+                fn ($a, $b) => ($b->unread_sms_count ?? 0) <=> ($a->unread_sms_count ?? 0),
+                fn ($a, $b) => ($a->sort_order ?? -1)     <=> ($b->sort_order ?? -1),
+                fn ($a, $b) => $b->updated_at            <=> $a->updated_at,
+            ])->values();
         }
         return $stages;
     }
