@@ -260,6 +260,17 @@ const pct = (v) => v != null && v !== '' ? Number(v).toFixed(2) + '%' : '—';
                                         <div class="font-semibold mt-1">{{ pct(sheet.result.total_residual_pct) }}</div>
                                     </div>
                                 </div>
+                                <div class="grid grid-cols-2 gap-2 text-xs mt-2 pt-2 border-t">
+                                    <div>
+                                        <label class="text-gray-500">Purchase Option Fee</label>
+                                        <input v-model.number="sheet.inputs.purchase_option_fee" type="number" step="1" min="0" placeholder="0" class="block w-full border-gray-300 rounded text-xs" />
+                                    </div>
+                                    <div v-if="sheet.inputs.purchase_option_fee > 0">
+                                        <label class="text-gray-500">Buyout (residual + POF)</label>
+                                        <div class="text-xs mt-1">{{ fmt(sheet.result.residual_gross) }}</div>
+                                    </div>
+                                </div>
+                                <p class="text-[10px] text-gray-500 mt-1">Most OEMs leave POF at $0 (residual = lease-end buyout). Set when the lender adds a buyout fee — true residual used in monthly math = buyout − POF.</p>
                             </div>
                         </div>
 

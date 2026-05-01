@@ -70,6 +70,7 @@ const onZipBlur = async () => {
 const offers = ref(null);
 const offersLoading = ref(false);
 const showRebatesPicker = ref(false);
+const narrowToThisCar = ref(false); // when true, send model+year filter (focused view)
 const appliedRebateIds = ref(new Set());
 
 const pullOffers = async () => {
@@ -83,6 +84,7 @@ const pullOffers = async () => {
             model: v.model || undefined,
             year:  v.year || undefined,
             zip:   customer.zip && /^\d{5}$/.test(customer.zip) ? customer.zip : undefined,
+            narrow: narrowToThisCar.value || undefined, // backend ignores model+year unless this is true
         };
         const { data } = await axios.post(route('leasing.deals.quotes.wizard.pull-offers', props.deal.id), payload);
         offers.value = data;
@@ -264,8 +266,12 @@ const fmt = (v) => v != null && v !== '' ? '$' + Number(v).toLocaleString(undefi
                                         class="px-3 py-1.5 bg-gray-700 text-white rounded text-xs hover:bg-gray-800 disabled:opacity-50 whitespace-nowrap">
                                     💰 {{ offersLoading ? 'Pulling…' : (offers ? 'Refresh' : 'Available Rebates') }}
                                 </button>
-                                <span class="text-[11px] text-gray-500">VIN above narrows to the specific car + dealer</span>
+                                <label class="inline-flex items-center gap-1 text-[11px] text-gray-600 cursor-pointer">
+                                    <input type="checkbox" v-model="narrowToThisCar" class="h-3 w-3" />
+                                    Narrow to this car only
+                                </label>
                             </div>
+                            <p class="text-[11px] text-gray-500 mb-2">Default: pulls every offer for {{ v.make || 'this make' }} in this ZIP. VIN narrows to the specific car + dealer; checkbox narrows by model + year only.</p>
 
                             <!-- Matched listing card (when VIN found a real car) -->
                             <div v-if="offers?.matched_listing" class="mb-2 p-2 bg-emerald-50 border border-emerald-300 rounded text-xs">
