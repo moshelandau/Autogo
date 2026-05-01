@@ -86,12 +86,20 @@ class WorkerController extends Controller
      */
     public function reservations(Request $request): JsonResponse
     {
+        // The previous filter (pickup_date <= now+2 OR return_date <= now+1) had no
+        // lower bound, which surfaced every "open" reservation from prior years —
+        // workers got dozens of stale rentals from 2023 in their list. Bracket
+        // BOTH ends of the window to "yesterday → 2 days out" so we only show
+        // pickups + returns the worker can actually act on today.
+        $start = now()->startOfDay()->subDay();
+        $end   = now()->endOfDay()->addDays(2);
+
         $reservations = Reservation::query()
             ->with(['customer:id,first_name,last_name,phone', 'vehicle:id,make,model,year,license_plate'])
             ->whereNotIn('status', ['cancelled', 'completed'])
-            ->where(function ($q) {
-                $q->whereDate('pickup_date', '<=', now()->addDays(2)->toDateString())
-                  ->orWhereDate('return_date', '<=', now()->addDays(1)->toDateString());
+            ->where(function ($q) use ($start, $end) {
+                $q->whereBetween('pickup_date', [$start, $end])
+                  ->orWhereBetween('return_date', [$start, $end]);
             })
             ->orderBy('pickup_date')
             ->limit(100)
@@ -575,15 +583,24 @@ class WorkerController extends Controller
     /**
      * Inspection state shaped exactly the way the Android app expects:
      *   { "pickup": { "front": "https://...jpg", ... }, "return": { ... } }
+     *
+     * Cast each inner bucket to (object) so an empty bucket JSON-encodes as
+     * `{}` not `[]`. Without this, `json_encode` flattens an empty PHP array
+     * to a JSON array, and the Android client (kotlinx.serialization) chokes
+     * trying to deserialize `[]` into a `Map<String, String>`.
      */
     private function buildInspectionState(Reservation $reservation): array
     {
-        $state = ['pickup' => [], 'return' => []];
+        $pickup = [];
+        $return = [];
         foreach ($reservation->inspections as $insp) {
-            if (!isset($state[$insp->type])) continue;
-            $state[$insp->type][$insp->area] = $this->publicUrl($insp->image_path);
+            if ($insp->type === 'pickup') $pickup[$insp->area] = $this->publicUrl($insp->image_path);
+            elseif ($insp->type === 'return') $return[$insp->area] = $this->publicUrl($insp->image_path);
         }
-        return $state;
+        return [
+            'pickup' => (object) $pickup,
+            'return' => (object) $return,
+        ];
     }
 
     private function publicUrl(?string $path): ?string
