@@ -73,6 +73,12 @@ const loadMessages = async (isPoll = false) => {
         smsStaff.value = data.staff || [];
         smsPhone.value = data.phone || props.customer.phone;
         smsResolved.value = data.resolved || null;
+        // First-load only: snapshot which messages WERE unread before the
+        // server flipped them to read. Polls return an empty list, so we
+        // never accidentally clear the pinned divider.
+        if (!isPoll && Array.isArray(data.pre_open_unread_ids) && data.pre_open_unread_ids.length) {
+            frozenFirstUnreadId.value = Math.min(...data.pre_open_unread_ids);
+        }
         nextTick(() => {
             // If the user arrived via a kanban deep-link with #unread,
             // scroll the divider into view instead of jumping to the
@@ -96,12 +102,13 @@ const lastReadInboundMsg = computed(() => {
 // First unread inbound message — the divider in the thread renders right
 // above this one. Used by the kanban deep-link (?tab=messages#unread)
 // to scroll a flagged conversation directly to where the unread starts.
-const firstUnreadId = computed(() => {
-    for (const m of messages.value) {
-        if (m.direction === 'inbound' && m.status === 'received') return m.id;
-    }
-    return null;
-});
+//
+// The server's customerThread auto-marks received -> read on first open,
+// so by the time the response renders no message has status='received'.
+// We pin the divider to the smallest id from the server's
+// pre_open_unread_ids list captured BEFORE the read-marking.
+const frozenFirstUnreadId = ref(null);
+const firstUnreadId = computed(() => frozenFirstUnreadId.value);
 
 const assignConversation = () => {
     if (!smsPhone.value) return;
