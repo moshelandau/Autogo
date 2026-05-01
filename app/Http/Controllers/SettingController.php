@@ -55,6 +55,13 @@ class SettingController extends Controller
                 'mail'         => !empty(config('mail.mailers.smtp.host')),
                 's3'           => !empty(config('filesystems.disks.s3.key')),
                 'anthropic'    => !empty(config('services.anthropic.api_key')) || !empty(\App\Models\Setting::getValue('anthropic_api_key')),
+                'marketcheck'  => !empty(config('services.marketcheck.api_key')) || !empty(\App\Models\Setting::getValue('marketcheck_api_key')),
+                'marketcheck_usage' => [
+                    'used'      => \App\Services\MarketCheckService::callsThisMonth(),
+                    'quota'     => \App\Services\MarketCheckService::quota(),
+                    'remaining' => \App\Services\MarketCheckService::callsRemaining(),
+                    'month'     => now()->format('M Y'),
+                ],
             ],
         ]);
     }
@@ -101,7 +108,8 @@ class SettingController extends Controller
                 'allstate_roadside' => $this->testAllstate($request),
                 'mail'      => $this->testMail($request),
                 's3'        => $this->testS3($request),
-                'ai'        => $this->testAi($request),
+                'ai'          => $this->testAi($request),
+                'marketcheck' => $this->testMarketCheck($request),
                 default     => ['ok' => false, 'message' => "Unknown integration: {$integration}"],
             });
         } catch (\Throwable $e) {
@@ -205,6 +213,40 @@ class SettingController extends Controller
         return $resp->successful()
             ? ['ok' => true,  'message' => "700Credit reachable at {$url}"]
             : ['ok' => false, 'message' => '700Credit rejected (HTTP ' . $resp->status() . '). Verify key + endpoint with vendor.'];
+    }
+
+    /**
+     * MarketCheck — VIN decode against a known test VIN.
+     * Counts toward the free-tier monthly cap.
+     */
+    private function testMarketCheck(Request $r): array
+    {
+        $key = $this->tval($r, 'api_key', 'marketcheck_api_key', 'services.marketcheck.api_key');
+        if (!$key) return ['ok' => false, 'message' => 'MarketCheck API key required'];
+
+        // Save credentials if posted (so test acts like "save + verify")
+        if ($r->filled('api_key'))    \App\Models\Setting::setValue('marketcheck_api_key', $r->input('api_key'), 'marketcheck');
+        if ($r->filled('api_secret')) \App\Models\Setting::setValue('marketcheck_api_secret', $r->input('api_secret'), 'marketcheck');
+
+        $svc = app(\App\Services\MarketCheckService::class);
+        $result = $svc->decodeVin('4T1BF1FK5HU620111');
+
+        $callsUsed = \App\Services\MarketCheckService::callsThisMonth();
+        $remaining = \App\Services\MarketCheckService::callsRemaining();
+        $quota     = \App\Services\MarketCheckService::quota();
+
+        if (isset($result['error'])) {
+            return ['ok' => false, 'message' => 'MarketCheck error: ' . $result['error'] . " (used {$callsUsed}/{$quota} this month)"];
+        }
+        $vehicle = trim(($result['year'] ?? '') . ' ' . ($result['make'] ?? '') . ' ' . ($result['model'] ?? ''));
+        return ['ok' => true, 'message' => "MarketCheck OK · Decoded test VIN → {$vehicle} · {$callsUsed}/{$quota} calls used · {$remaining} remaining this month"];
+    }
+
+    /** Reset the MarketCheck monthly counter (manual override). */
+    public function resetMarketCheckCounter()
+    {
+        \App\Services\MarketCheckService::resetCounter();
+        return back()->with('success', 'MarketCheck counter reset to 0.');
     }
 
     private function testAsana(Request $r): array

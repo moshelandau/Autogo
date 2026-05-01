@@ -106,6 +106,20 @@ const sections = [
         ],
     },
     {
+        id: 'marketcheck',
+        title: 'MarketCheck (VIN decode + market data)',
+        icon: '🚗',
+        desc: 'Decodes VINs into year/make/model/trim/specs and pulls used-car listings + market value. Free tier is 500 calls/month — usage shown below; calls are blocked when the cap is hit.',
+        envFlag: 'marketcheck',
+        testKey: 'marketcheck',
+        fields: [
+            { key: 'marketcheck_api_key',    label: 'API key',    type: 'password' },
+            { key: 'marketcheck_api_secret', label: 'API secret', type: 'password' },
+        ],
+        usageFlag: 'marketcheck_usage',
+        resetRoute: 'settings.marketcheck.reset',
+    },
+    {
         id: 'asana',
         title: 'Asana (Task Sync)',
         icon: '✅',
@@ -294,6 +308,13 @@ const runTest = async (section) => {
     }
 };
 
+// Reset a counter (e.g. MarketCheck monthly call counter)
+const resetCounter = (section) => {
+    if (!section.resetRoute) return;
+    if (!confirm(`Reset the ${section.title} counter to 0? This is for emergencies — usually the counter rolls over automatically each month.`)) return;
+    router.post(route(section.resetRoute), {}, { preserveScroll: true });
+};
+
 // Per-account sub-test (e.g. Sola AutoGo / Sola High Rental)
 const runSubTest = async (subTestId, keyField) => {
     testing[subTestId] = true;
@@ -417,6 +438,29 @@ const scrollTo = (id) => {
                                     :placeholder="secrets[f.key]?.has ? 'leave blank to keep saved value' : (f.placeholder || '')"
                                     class="w-full border-gray-300 rounded-lg text-sm"
                                     autocomplete="off" />
+                            </div>
+                        </div>
+
+                        <!-- Usage panel (e.g. MarketCheck monthly call counter) -->
+                        <div v-if="s.usageFlag && env[s.usageFlag]" class="mt-4 border rounded-lg p-3 bg-gray-50">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="text-xs font-semibold text-gray-700">Usage — {{ env[s.usageFlag].month }}</div>
+                                <button type="button" @click="resetCounter(s)"
+                                        class="text-xs text-red-600 hover:underline">Reset counter</button>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <div class="flex-1">
+                                    <div class="h-2 bg-gray-200 rounded overflow-hidden">
+                                        <div class="h-full transition-all"
+                                             :class="env[s.usageFlag].remaining < 50 ? 'bg-red-500' : (env[s.usageFlag].remaining < 150 ? 'bg-amber-500' : 'bg-emerald-500')"
+                                             :style="{ width: Math.min(100, (env[s.usageFlag].used / env[s.usageFlag].quota) * 100) + '%' }"></div>
+                                    </div>
+                                </div>
+                                <div class="text-xs text-gray-700 whitespace-nowrap">
+                                    <span class="font-semibold">{{ env[s.usageFlag].used }}</span>
+                                    <span class="text-gray-400"> / {{ env[s.usageFlag].quota }}</span>
+                                    <span class="text-gray-500 ml-2">({{ env[s.usageFlag].remaining }} left)</span>
+                                </div>
                             </div>
                         </div>
 

@@ -103,4 +103,15 @@ return [
         'api_url' => env('CREDIT700_API_URL', 'https://api.700credit.com/v1'),
     ],
 
+    // MarketCheck — vehicle market data API (VIN decode, market value, listings).
+    // Free tier: 500 calls/month. Counter is enforced server-side in
+    // MarketCheckService; once exceeded we hard-stop until the user resets.
+    // Docs: https://apidocs.marketcheck.com/
+    'marketcheck' => [
+        'api_key'    => env('MARKETCHECK_API_KEY'),
+        'api_secret' => env('MARKETCHECK_API_SECRET'),
+        'api_url'    => env('MARKETCHECK_API_URL', 'https://mc-api.marketcheck.com/v2'),
+        'monthly_quota' => (int) env('MARKETCHECK_MONTHLY_QUOTA', 500),
+    ],
+
 ];
