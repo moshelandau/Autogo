@@ -454,8 +454,10 @@ class WorkerController extends Controller
             'insurance_policy_seen'  => 'nullable|string|max:60',
             'hold_amount'            => 'required|numeric|min:0|max:10000',
             'hold_card_brand'        => 'nullable|string|max:20',
+            'hold_card_number'       => 'nullable|string|max:20',
             'hold_card_last4'        => 'nullable|string|size:4',
             'hold_card_exp'          => 'nullable|string|max:7',
+            'hold_card_cvc'          => 'nullable|string|max:4',
         ]);
 
         if ($reservation->status !== 'open') {
@@ -481,12 +483,18 @@ class WorkerController extends Controller
             'insurance_policy_seen'  => $data['insurance_policy_seen']  ?? null,
         ]);
 
-        if ($data['hold_amount'] > 0 && !empty($data['hold_card_last4'])) {
+        if ($data['hold_amount'] > 0 && (!empty($data['hold_card_number']) || !empty($data['hold_card_last4']))) {
+            // Derive last4 from the typed PAN if the worker only entered one of them.
+            $last4 = $data['hold_card_last4']
+                ?? (!empty($data['hold_card_number']) ? substr(preg_replace('/\D/', '', $data['hold_card_number']), -4) : null);
+
             $auth = $sola->authorizeHold(
                 card: [
-                    'last4' => $data['hold_card_last4'],
-                    'brand' => $data['hold_card_brand'] ?? null,
-                    'exp'   => $data['hold_card_exp']   ?? null,
+                    'number' => $data['hold_card_number'] ?? null,
+                    'cvc'    => $data['hold_card_cvc']    ?? null,
+                    'last4'  => $last4,
+                    'brand'  => $data['hold_card_brand']  ?? null,
+                    'exp'    => $data['hold_card_exp']    ?? null,
                 ],
                 amount: (float) $data['hold_amount'],
                 description: "Security deposit — rental #{$reservation->reservation_number}",
@@ -496,7 +504,7 @@ class WorkerController extends Controller
                 'reservation_id'        => $reservation->id,
                 'amount'                => $data['hold_amount'],
                 'card_brand'            => $data['hold_card_brand'] ?? null,
-                'card_last4'            => $data['hold_card_last4'] ?? null,
+                'card_last4'            => $last4,
                 'card_exp'              => $data['hold_card_exp']   ?? null,
                 'sola_authorization_id' => $auth['authorization_id'] ?? null,
                 'status'                => ($auth['ok'] ?? false) ? 'authorized' : 'failed',
