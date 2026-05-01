@@ -32,15 +32,33 @@ class DealTimelineService
             ->merge($this->fromTasks($deal))
             ->merge($this->fromQuotes($deal));
 
-        return $events
-            ->sortByDesc(fn ($e) => $e['at'])
-            ->values()
+        $sorted = $events->sortByDesc(fn ($e) => $e['at'])->values();
+
+        // Collapse consecutive identical events (same kind+label+actor).
+        // Without this, an auto-saving form like the lease application
+        // floods the timeline with dozens of "Application edited" rows
+        // for one editing session. The collapsed row keeps the latest
+        // timestamp and tracks the count for display.
+        $deduped = [];
+        foreach ($sorted as $e) {
+            $key = ($e['kind'] ?? '') . '|' . ($e['label'] ?? '') . '|' . ($e['actor'] ?? '');
+            $last = end($deduped);
+            if ($last && (($last['_dedup_key'] ?? '') === $key)) {
+                $deduped[count($deduped) - 1]['count'] = ($last['count'] ?? 1) + 1;
+                continue;
+            }
+            $e['_dedup_key'] = $key;
+            $e['count']      = 1;
+            $deduped[]       = $e;
+        }
+
+        return collect($deduped)
             ->take($limit)
             ->map(fn ($e) => [
                 'kind'  => $e['kind'],
                 'at'    => $e['at'] instanceof CarbonInterface ? $e['at']->toIso8601String() : (string) $e['at'],
                 'actor' => $e['actor'] ?? null,
-                'label' => $e['label'],
+                'label' => ($e['count'] ?? 1) > 1 ? "{$e['label']} (×{$e['count']})" : $e['label'],
                 'meta'  => $e['meta'] ?? null,
             ])
             ->all();
@@ -70,6 +88,9 @@ class DealTimelineService
                 } elseif (str_contains((string) $a->path, '/document') || str_contains((string) $a->path, '/upload')) {
                     $kind = 'document';
                     $label = $a->method === 'DELETE' ? 'Document removed' : 'Document changed';
+                } elseif (str_contains((string) $a->path, '/application')) {
+                    $kind  = 'application';
+                    $label = 'Application edited';
                 } elseif ($a->method === 'PUT' && rtrim((string) $a->path, '/') === "/leasing/deals/{$deal->id}") {
                     $kind = 'update';
                     // Surface which keys were touched (skip the noisy ones)
