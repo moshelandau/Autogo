@@ -2,6 +2,7 @@
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useForm, Link } from '@inertiajs/vue3';
 import { ref } from 'vue';
+import axios from 'axios';
 import CustomerSelect from '@/Components/CustomerSelect.vue';
 import SearchableSelect from '@/Components/SearchableSelect.vue';
 import { VEHICLE_MAKES, VEHICLE_COLORS } from '@/Components/vehicleOptions.js';
@@ -35,20 +36,18 @@ const decodeVin = async () => {
     if (!form.vehicle_vin || form.vehicle_vin.length !== 17) return;
     decoding.value = true;
     try {
-        const response = await fetch(route('leasing.vin-decode'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content },
-            body: JSON.stringify({ vin: form.vehicle_vin }),
-        });
-        const result = await response.json();
-        if (result.success && result.data) {
-            form.vehicle_year = result.data.year || form.vehicle_year;
-            form.vehicle_make = result.data.make || form.vehicle_make;
-            form.vehicle_model = result.data.model || form.vehicle_model;
-            form.vehicle_trim = result.data.trim || form.vehicle_trim;
-            if (result.data.msrp) form.msrp = result.data.msrp;
+        // Use axios — it auto-refreshes CSRF from the XSRF-TOKEN cookie.
+        // Native fetch with the meta-tag token expires after a few hours
+        // (419 PAGE EXPIRED) which was the root cause of "nothing happens".
+        const { data } = await axios.post(route('leasing.vin-decode'), { vin: form.vehicle_vin });
+        if (data.success && data.data) {
+            form.vehicle_year  = data.data.year  || form.vehicle_year;
+            form.vehicle_make  = data.data.make  || form.vehicle_make;
+            form.vehicle_model = data.data.model || form.vehicle_model;
+            form.vehicle_trim  = data.data.trim  || form.vehicle_trim;
+            if (data.data.msrp) form.msrp = data.data.msrp;
         }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error('VIN decode failed', e); }
     decoding.value = false;
 };
 
