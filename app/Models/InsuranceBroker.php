@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * Insurance broker / agency the dealer works with — NOT the insurance
  * carrier (GEICO, Progressive, etc.). The carrier name lives on the
- * deal itself as a free-text `insurance_carrier` column.
+ * insurance docs the customer uploads, not on the deal record.
  */
 class InsuranceBroker extends Model
 {

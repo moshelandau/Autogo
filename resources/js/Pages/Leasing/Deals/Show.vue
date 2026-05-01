@@ -116,16 +116,6 @@ const pickBroker = (ins) => {
 };
 const clearBroker = () => pickBroker(null);
 
-// ── Insurance Carrier (free text on the deal — the actual insurance co.) ──
-const carrierInput = ref(d.insurance_carrier || '');
-watch(() => d.insurance_carrier, (v) => { if (v !== carrierInput.value) carrierInput.value = v || ''; });
-const saveCarrier = () => {
-    const v = (carrierInput.value || '').trim();
-    if (v === (d.insurance_carrier || '')) return;
-    router.put(route('leasing.deals.update', d.id), { insurance_carrier: v || null },
-        { preserveScroll: true, preserveState: true });
-};
-
 // Generic picker factory — Dealer + Lienholder share the typeahead pattern.
 function makePicker(routeName, dealField) {
     const query = ref('');
@@ -1312,33 +1302,6 @@ const saveCalcAsQuote = () => {
                                         </button>
                                     </div>
                                     <p class="text-xs text-gray-400 italic mt-1">No broker assigned. Type to search; <Link :href="route('leasing.brokers.index')" class="text-indigo-600 hover:underline">add a new one</Link> if missing.</p>
-                                </div>
-
-                                <!-- Insurance Carrier (the actual insurance company — GEICO, Progressive, etc.) -->
-                                <div class="mt-3 pt-3 border-t">
-                                    <label class="block text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Insurance Carrier</label>
-                                    <input type="text" v-model="carrierInput" @blur="saveCarrier" @keyup.enter="saveCarrier"
-                                           list="known-carriers" placeholder="e.g. GEICO, Progressive, Nationwide…"
-                                           class="block w-full border-gray-300 rounded-md shadow-sm text-sm" />
-                                    <datalist id="known-carriers">
-                                        <option value="GEICO" />
-                                        <option value="Progressive" />
-                                        <option value="Nationwide" />
-                                        <option value="State Farm" />
-                                        <option value="Allstate" />
-                                        <option value="Liberty Mutual" />
-                                        <option value="Travelers" />
-                                        <option value="Farmers" />
-                                        <option value="USAA" />
-                                        <option value="Kemper" />
-                                        <option value="MetLife" />
-                                        <option value="Erie Insurance" />
-                                        <option value="The Hartford" />
-                                        <option value="Mercury" />
-                                        <option value="Plymouth Rock" />
-                                        <option value="National General" />
-                                    </datalist>
-                                    <p class="text-[10px] text-gray-400 italic mt-1">The insurance company on the policy — distinct from the broker above.</p>
                                 </div>
                             </div>
 

@@ -25,7 +25,7 @@ class Deal extends Model
         'trade_allowance', 'trade_acv', 'trade_payoff', 'trade_is_leased',
         'credit_score', 'customer_zip',
         'lender_id', 'lender_status', 'lender_notes',
-        'broker_id', 'insurance_carrier', 'dealer_id', 'lienholder_id',
+        'broker_id', 'dealer_id', 'lienholder_id',
         'notes', 'deal_start_date', 'deal_expiration_date',
         'won_at', 'lost_at', 'lost_reason',
         // Workflow structured fields (see migration ..._add_preferences_to_deals_table)

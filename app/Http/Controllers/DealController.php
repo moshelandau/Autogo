@@ -191,7 +191,6 @@ class DealController extends Controller
             'bd_payment_received_at' => 'nullable|date',
             'bd_payment_amount' => 'nullable|numeric|min:0',
             'broker_id' => 'nullable|exists:insurance_brokers,id',
-            'insurance_carrier' => 'nullable|string|max:120',
             'dealer_id' => 'nullable|exists:dealers,id',
             'lienholder_id' => 'nullable|exists:lienholders,id',
         ]);
