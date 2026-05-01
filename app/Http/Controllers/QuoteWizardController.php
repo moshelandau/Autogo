@@ -48,6 +48,7 @@ class QuoteWizardController extends Controller
                 'profit'     => $deal->profit,
                 'sell_price' => $deal->sell_price,
                 'msrp'       => $deal->msrp,
+                'mrm'        => $deal->mrm,
                 'invoice'    => $deal->invoice_price,
             ],
             'trade' => [
@@ -483,6 +484,7 @@ class QuoteWizardController extends Controller
             'price.profit'                  => 'nullable|numeric',
             'price.sell_price'              => 'nullable|numeric|min:0',
             'price.msrp'                    => 'nullable|numeric|min:0',
+            'price.mrm'                     => 'nullable|numeric|min:0',
             'price.invoice'                 => 'nullable|numeric|min:0',
             'trade'                         => 'nullable|array',
             'customer'                      => 'nullable|array',
@@ -520,6 +522,7 @@ class QuoteWizardController extends Controller
             'cost'             => $data['price']['cost'] ?? null,
             'sell_price'       => $data['price']['sell_price'] ?? null,
             'msrp'             => $data['price']['msrp'] ?? null,
+            'mrm'              => $data['price']['mrm'] ?? null,
             'invoice_price'    => $data['price']['invoice'] ?? null,
             'profit'           => $data['price']['profit'] ?? null,
             'trade_allowance'  => $data['trade']['allowance'] ?? null,

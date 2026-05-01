@@ -155,8 +155,10 @@ const pct = (v) => v != null && v !== '' ? Number(v).toFixed(2) + '%' : '—';
                             </div>
 
                             <!-- Detail table — Upfront / Capped / Total per line -->
-                            <div class="border rounded-xl overflow-hidden">
-                                <table class="w-full text-xs">
+                            <!-- overflow-x-auto so the 4-column table can scroll
+                                 inside the card on narrow screens instead of clipping -->
+                            <div class="border rounded-xl overflow-x-auto">
+                                <table class="min-w-full text-xs whitespace-nowrap">
                                     <thead class="bg-gray-50 text-gray-500">
                                         <tr>
                                             <th class="px-2 py-1 text-left"></th>
@@ -311,6 +313,8 @@ const pct = (v) => v != null && v !== '' ? Number(v).toFixed(2) + '%' : '—';
                                 </div>
                                 <div class="grid grid-cols-2 gap-2 text-xs">
                                     <div>MSRP:</div>    <div class="text-right">{{ fmt(sheet.result.msrp) }}</div>
+                                    <div v-if="deal.mrm">MRM:</div>     <div v-if="deal.mrm" class="text-right">{{ fmt(deal.mrm) }}</div>
+                                    <div v-if="deal.invoice_price">Invoice:</div> <div v-if="deal.invoice_price" class="text-right">{{ fmt(deal.invoice_price) }}</div>
                                     <div>Sell Price:</div><div class="text-right">{{ fmt(sheet.result.sell_price) }}</div>
                                 </div>
                             </div>
