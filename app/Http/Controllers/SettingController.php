@@ -249,6 +249,44 @@ class SettingController extends Controller
         return back()->with('success', 'MarketCheck counter reset to 0.');
     }
 
+    /**
+     * Probe the MarketCheck OEM incentive endpoint (make+zip variant —
+     * the non-deprecated one) and return the RAW response. Costs 1 call.
+     *
+     * Body: { make, zip, model?, year?, trim?, offer_type? }
+     */
+    public function probeMarketCheckIncentives(Request $r)
+    {
+        $data = $r->validate([
+            'make'       => 'required|string|max:40',
+            'zip'        => 'required|string|size:5',
+            'model'      => 'nullable|string|max:60',
+            'year'       => 'nullable|integer|min:1990|max:2099',
+            'trim'       => 'nullable|string|max:60',
+            'offer_type' => 'nullable|in:lease,finance,cash',
+            'rows'       => 'nullable|integer|min:1|max:50',
+        ]);
+
+        $svc    = app(\App\Services\MarketCheckService::class);
+        $make   = $data['make'];
+        $zip    = $data['zip'];
+        $extras = collect($data)->except(['make', 'zip'])->filter()->all();
+        $extras['rows'] = $extras['rows'] ?? 10;
+
+        $result = $svc->searchIncentivesByMakeZip($make, $zip, $extras);
+
+        return response()->json([
+            'ok'        => !isset($result['error']),
+            'endpoint'  => "/search/car/incentive/{$make}/{$zip}",
+            'filters'   => $extras,
+            'num_found' => $result['num_found'] ?? null,
+            'raw'       => $result,
+            'used'      => \App\Services\MarketCheckService::callsThisMonth(),
+            'remaining' => \App\Services\MarketCheckService::callsRemaining(),
+            'quota'     => \App\Services\MarketCheckService::quota(),
+        ]);
+    }
+
     private function testAsana(Request $r): array
     {
         $token = $this->tval($r, 'token', 'asana_token', 'services.asana.token');

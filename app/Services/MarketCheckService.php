@@ -72,6 +72,54 @@ class MarketCheckService
         return $this->callApi('GET', "/decode/car/{$vin}/specs");
     }
 
+    /**
+     * ✅ VERIFIED — OEM incentives by make + ZIP (non-deprecated).
+     * Docs: https://docs.marketcheck.com/docs/api/cars/incentives/incentive-by-make-zip
+     * Endpoint: GET /v2/search/car/incentive/{make}/{zip}
+     *
+     * Returns: {num_found, listings[], facets?, stats?, range_facets?}
+     * Each listing has offer terms (APR, monthly_payment, down_payment,
+     * cashback amounts, term, offer_type=lease|finance|cash) plus the
+     * vehicle (year/make/model/trim) it applies to.
+     *
+     * Optional filters (whitelisted — extras are dropped):
+     *   - model           ("CR-V")
+     *   - year            (2026)
+     *   - trim            ("EX-L")
+     *   - offer_type      ("lease", "finance", "cash")
+     *   - rows            (default 10, max 50)
+     *   - drivetrain, transmission, engine, fuel_type
+     */
+    public function searchIncentivesByMakeZip(string $make, string $zip, array $filters = []): array
+    {
+        $make = strtolower(trim($make));
+        $zip  = trim($zip);
+        if (!$make || !preg_match('/^\d{5}$/', $zip)) {
+            return ['error' => 'Both `make` and a 5-digit `zip` are required.'];
+        }
+        $allowed = ['model', 'year', 'trim', 'offer_type', 'rows',
+                    'drivetrain', 'transmission', 'engine', 'fuel_type',
+                    'apr_range', 'monthly_range', 'term_range',
+                    'cashback_amount_range', 'cashback_target_group',
+                    'facets', 'range_facets', 'stats',
+                    'sort_by', 'sort_order', 'start'];
+        $query = array_intersect_key($filters, array_flip($allowed));
+        return $this->callApi('GET', "/search/car/incentive/{$make}/{$zip}", $query);
+    }
+
+    /**
+     * 🟡 VERIFIED-DEPRECATED — generic OEM incentive search.
+     * MarketCheck's docs list /v2/search/car/incentive/oem as
+     * "Deprecated". Prefer searchIncentivesByMakeZip() for new code.
+     */
+    public function searchOemIncentives(array $filters = []): array
+    {
+        $allowed = ['make', 'model', 'year', 'state', 'zip', 'offer_type',
+                    'trim', 'rows', 'apr_range', 'monthly_range', 'term_range'];
+        $query   = array_intersect_key($filters, array_flip($allowed));
+        return $this->callApi('GET', '/search/car/incentive/oem', $query);
+    }
+
     private function callApi(string $method, string $path, array $query = []): array
     {
         $key = config('services.marketcheck.api_key') ?: Setting::getValue('marketcheck_api_key');

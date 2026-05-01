@@ -110,7 +110,7 @@ return [
     'marketcheck' => [
         'api_key'    => env('MARKETCHECK_API_KEY'),
         'api_secret' => env('MARKETCHECK_API_SECRET'),
-        'api_url'    => env('MARKETCHECK_API_URL', 'https://mc-api.marketcheck.com/v2'),
+        'api_url'    => env('MARKETCHECK_API_URL', 'https://api.marketcheck.com/v2'),
         'monthly_quota' => (int) env('MARKETCHECK_MONTHLY_QUOTA', 500),
     ],
 

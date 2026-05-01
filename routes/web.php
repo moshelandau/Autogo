@@ -416,6 +416,7 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
     Route::post('settings', [SettingController::class, 'update'])->name('settings.update');
     Route::post('settings/test/{integration}', [SettingController::class, 'test'])->name('settings.test');
     Route::post('settings/marketcheck/reset-counter', [SettingController::class, 'resetMarketCheckCounter'])->name('settings.marketcheck.reset');
+    Route::post('settings/marketcheck/probe-incentives', [SettingController::class, 'probeMarketCheckIncentives'])->name('settings.marketcheck.probe-incentives');
 
     // S3 — locked-down with test-before-save + history (no delete endpoint, by design)
     Route::get('settings/s3', [\App\Http\Controllers\S3SettingsController::class, 'index'])->name('settings.s3');
