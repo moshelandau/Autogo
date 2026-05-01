@@ -305,8 +305,110 @@ class QuoteWizardController extends Controller
             $draft->update($update);
         }
 
+        return redirect()->route('leasing.deals.quotes.wizard.step3', $deal)
+            ->with('success', 'Lender(s) assigned. Now finalize the worksheet →');
+    }
+
+    /**
+     * Step 3 — Worksheet. Renders the per-draft worksheet form with
+     * upfront/capped fee toggles, buy/sell rate, base+adjusted residual,
+     * and live-computed monthly/profit numbers.
+     */
+    public function step3(Deal $deal)
+    {
+        $deal->load('customer');
+        $drafts = $deal->quotes()
+            ->where('is_draft', true)
+            ->whereNotNull('lender_id')
+            ->with('lender:id,name')
+            ->orderByDesc('id')
+            ->get();
+
+        if ($drafts->isEmpty()) {
+            return redirect()->route('leasing.deals.quotes.wizard.step2', $deal)
+                ->with('error', 'Pick a lender for at least one draft first.');
+        }
+
+        $svc = app(\App\Services\LeaseWorksheet::class);
+        $sheets = $drafts->mapWithKeys(function ($d) use ($svc, $deal) {
+            $defaults = [
+                'cost' => $deal->cost,
+                'rebates' => (float) ($d->rebates ?? 0),
+                'fees' => [
+                    ['name' => 'Acquisition Fee', 'amount' => (float) ($d->acquisition_fee ?? 595), 'paid_as' => $d->acquisition_fee_type ?? 'capped'],
+                    ['name' => 'Doc Fee',         'amount' => 199, 'paid_as' => 'capped'],
+                    ['name' => 'Registration',    'amount' => 175, 'paid_as' => 'capped'],
+                    ['name' => 'Inspection',      'amount' => 0,   'paid_as' => 'upfront'],
+                    ['name' => 'Tire Fee',        'amount' => 0,   'paid_as' => 'upfront'],
+                ],
+                'taxes_paid_as' => 'capped',
+                'tax_rate'      => 0.08125,
+                'sell_money_factor' => $d->money_factor,
+                'buy_money_factor'  => $d->money_factor,
+                'base_residual_pct' => $d->msrp ? round((float) $d->residual_value / (float) $d->msrp * 100, 2) : 0,
+                'adj_residual_pct'  => 0,
+                'max_advance_pct'   => 115,
+            ];
+            return [$d->id => [
+                'inputs'  => $defaults,
+                'result'  => $svc->compute($d, $defaults),
+            ]];
+        });
+
+        return Inertia::render('Leasing/Deals/Quotes/WizardStep3', [
+            'deal'   => $deal,
+            'drafts' => $drafts,
+            'sheets' => $sheets,
+        ]);
+    }
+
+    /** Live recompute endpoint — front-end calls on every input change */
+    public function step3Compute(Request $r, Deal $deal, DealQuote $quote, \App\Services\LeaseWorksheet $svc): JsonResponse
+    {
+        abort_unless($quote->deal_id === $deal->id, 404);
+        return response()->json($svc->compute($quote, $r->input('worksheet', [])));
+    }
+
+    /** Step 3 save — finalize each draft with the computed numbers. */
+    public function step3Save(Request $r, Deal $deal, \App\Services\LeaseWorksheet $svc)
+    {
+        $payload = $r->validate([
+            'sheets'                 => 'required|array',
+            'sheets.*.draft_id'      => 'required|exists:deal_quotes,id',
+            'sheets.*.inputs'        => 'required|array',
+        ]);
+
+        foreach ($payload['sheets'] as $row) {
+            $quote = DealQuote::where('id', $row['draft_id'])->where('deal_id', $deal->id)->first();
+            if (!$quote) continue;
+
+            $result = $svc->compute($quote, $row['inputs']);
+            $acqFee = collect($row['inputs']['fees'] ?? [])->firstWhere('name', 'Acquisition Fee');
+
+            $quote->update([
+                'monthly_payment'      => $result['total_monthly'],
+                'das'                  => $result['due_at_signing'],
+                'sell_price'           => $result['sell_price'],
+                'msrp'                 => $result['msrp'],
+                'rebates'              => $row['inputs']['rebates'] ?? $quote->rebates,
+                'acquisition_fee'      => $acqFee['amount'] ?? $quote->acquisition_fee,
+                'acquisition_fee_type' => $acqFee['paid_as'] ?? $quote->acquisition_fee_type,
+                'residual_value'       => $result['residual_value'],
+                'money_factor'         => $result['sell_money_factor'],
+                'tax_breakdown'        => [
+                    'taxes_paid_as' => $result['taxes_paid_as'],
+                    'tax_rate'      => $result['tax_rate'],
+                    'monthly_tax'   => $result['monthly_tax'],
+                    'upfront_tax'   => $result['upfront_tax'],
+                    'profit'        => $result['profit'],
+                    'fees'          => $row['inputs']['fees'] ?? [],
+                ],
+                'is_draft'             => false,
+            ]);
+        }
+
         return redirect()->route('leasing.deals.show', $deal)
-            ->with('success', 'Lender(s) assigned. Worksheet step coming next PR.');
+            ->with('success', count($payload['sheets']) . ' quote(s) finalized.');
     }
 
     /**
