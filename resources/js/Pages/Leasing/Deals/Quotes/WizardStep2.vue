@@ -8,6 +8,10 @@ const props = defineProps({
     drafts:   Array,
     programs: Array,
     lenders:  Array,
+    marketCheckOffers:  { type: Array, default: () => [] },
+    marketCheckCaptive: { type: String, default: null },
+    marketCheckOk:      { type: Boolean, default: false },
+    marketCheckError:   { type: String,  default: null },
 });
 
 // One row per draft quote — user picks a lender + (optional) program
@@ -18,6 +22,7 @@ const assignments = reactive(
         msrp:         d.msrp,
         lender_id:    d.lender_id || '',
         program_id:   '',
+        mc_offer_id:  '',
         money_factor: d.money_factor,
         apr:          d.apr,
         residual_pct: '',
@@ -43,6 +48,25 @@ const applyProgram = (a, programId) => {
 
 const fmtMoney  = (v) => v != null && v !== '' ? '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
 const aprFromMf = (mf) => mf ? (Number(mf) * 2400).toFixed(3) : null;
+
+// MarketCheck offers filtered to the draft's term (or "all terms" if no exact match)
+const mcOffersFor = (a) => props.marketCheckOffers.filter(o => o.term && Number(o.term) === Number(a.term));
+
+// Apply a MarketCheck offer → fill MF (derived) / APR / suggest captive lender
+const applyMcOffer = (a, offerId) => {
+    if (!offerId) return;
+    const o = props.marketCheckOffers.find(x => x.id === offerId);
+    if (!o) return;
+    if (o.money_factor_derived) a.money_factor = o.money_factor_derived;
+    if (o.apr)                  a.apr          = o.apr;
+    if (o.residual_pct)         a.residual_pct = o.residual_pct;
+    // Try to match captive lender by name from our lender list
+    if (props.marketCheckCaptive) {
+        const captiveLender = props.lenders.find(l => props.marketCheckCaptive.toLowerCase().includes(l.name.toLowerCase()));
+        if (captiveLender) a.lender_id = captiveLender.id;
+    }
+    a.mc_offer_id = offerId;
+};
 
 const form = useForm({});
 const save = () => {
@@ -93,6 +117,34 @@ const allAssigned = computed(() => assignments.every(a => a.lender_id));
                         </h3>
                         <span class="text-xs text-gray-500">MSRP {{ fmtMoney(a.msrp) }}</span>
                     </div>
+
+                    <!-- MarketCheck OEM offers (live API) — pickable in addition to internal Lender Programs -->
+                    <div v-if="mcOffersFor(a).length" class="mb-3 border border-blue-200 bg-blue-50/40 rounded-lg p-3">
+                        <div class="flex items-baseline justify-between mb-2">
+                            <h4 class="text-xs font-semibold text-blue-800">📡 MarketCheck offers ({{ mcOffersFor(a).length }} matching {{ a.term }}-mo)</h4>
+                            <span v-if="marketCheckCaptive" class="text-[10px] text-blue-700">Captive: {{ marketCheckCaptive }}</span>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            <button v-for="o in mcOffersFor(a)" :key="o.id" type="button"
+                                    @click="applyMcOffer(a, o.id)"
+                                    :class="['text-left p-2 rounded border-2 hover:border-blue-500 transition text-xs',
+                                            a.mc_offer_id === o.id ? 'border-blue-600 bg-white shadow' : 'border-gray-200 bg-white']">
+                                <div class="font-bold text-blue-800">
+                                    <span v-if="o.kind === 'lease'">${{ Number(o.monthly).toLocaleString() }}/mo · {{ o.term }}mo</span>
+                                    <span v-else>{{ o.apr || '?' }}% APR · {{ o.term }}mo</span>
+                                </div>
+                                <div class="text-gray-700 truncate">{{ o.vehicle }}</div>
+                                <div v-if="o.kind === 'lease'" class="text-[10px] text-gray-500">
+                                    DAS ${{ Number(o.due_at_signing || 0).toLocaleString() }} · MSRP ${{ Number(o.msrp || 0).toLocaleString() }} · Res {{ o.residual_pct || '—' }}%
+                                </div>
+                                <div v-if="o.money_factor_derived" class="text-[10px] text-emerald-700">MF derived: {{ o.money_factor_derived }} (~{{ o.apr_equivalent }}% APR)</div>
+                            </button>
+                        </div>
+                    </div>
+                    <div v-else-if="marketCheckOk && !marketCheckOffers.length" class="mb-3 text-xs text-gray-500 italic">
+                        MarketCheck returned no lease/finance offers for this make+ZIP this month.
+                    </div>
+                    <div v-else-if="marketCheckError" class="mb-3 text-xs text-red-700">MarketCheck: {{ marketCheckError }}</div>
 
                     <div class="grid grid-cols-1 md:grid-cols-12 gap-3 text-sm">
                         <!-- Program picker (filtered by term) -->

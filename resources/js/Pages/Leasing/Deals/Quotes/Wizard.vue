@@ -140,6 +140,7 @@ const saveAndContinue = () => {
             lease,
             credit,
             applied_rebate_ids: Array.from(appliedRebateIds.value),
+            applied_rebates: appliedRebates.value, // full {id,title,cashback,source,...}
             rebates_total: rebatesTotal.value,
         }))
         .post(route('leasing.deals.quotes.wizard.store', props.deal.id));
