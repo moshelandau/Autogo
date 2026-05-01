@@ -143,6 +143,7 @@ const saveAndContinue = () => {
             credit,
             applied_rebate_ids: Array.from(appliedRebateIds.value),
             applied_rebates: appliedRebates.value, // full {id,title,cashback,source,...}
+            all_pulled_rebates: offers.value?.rebates || [], // every offer MarketCheck returned at pull-time
             rebates_total: rebatesTotal.value,
         }))
         .post(route('leasing.deals.quotes.wizard.store', props.deal.id));
