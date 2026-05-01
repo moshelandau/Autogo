@@ -217,6 +217,99 @@ class QuoteWizardController extends Controller
     }
 
     /**
+     * Step 2 — Lender Selection.
+     * Lists draft quotes (one per term from step 1) and the lender
+     * programs that fit each (filtered by make/model/term/credit tier).
+     */
+    public function step2(Deal $deal)
+    {
+        $deal->load('customer');
+
+        $drafts = $deal->quotes()
+            ->where('is_draft', true)
+            ->whereNull('lender_id')
+            ->orderByDesc('id')
+            ->get();
+
+        if ($drafts->isEmpty()) {
+            return redirect()->route('leasing.deals.quotes.wizard', $deal)
+                ->with('error', 'No draft quotes to assign a lender to. Start at step 1 first.');
+        }
+
+        $terms = $drafts->pluck('term')->unique()->all();
+        $programs = \App\Models\LenderProgram::query()
+            ->where('is_active', true)
+            ->where(function ($q) use ($deal) {
+                $q->whereNull('make')->orWhereRaw('LOWER(make) = ?', [strtolower($deal->vehicle_make ?? '')]);
+            })
+            ->where(function ($q) use ($deal) {
+                $q->whereNull('model')->orWhereRaw('LOWER(model) = ?', [strtolower($deal->vehicle_model ?? '')]);
+            })
+            ->whereIn('term', $terms)
+            ->where(function ($q) use ($deal) {
+                $q->whereNull('min_credit_score')->orWhere('min_credit_score', '<=', $deal->credit_score ?? 850);
+            })
+            ->where(function ($q) {
+                $q->whereNull('valid_until')->orWhereDate('valid_until', '>=', now());
+            })
+            ->with('lender:id,name')
+            ->orderBy('apr')
+            ->orderBy('money_factor')
+            ->get();
+
+        return Inertia::render('Leasing/Deals/Quotes/WizardStep2', [
+            'deal'     => $deal,
+            'drafts'   => $drafts,
+            'programs' => $programs,
+            'lenders'  => Lender::active()->get(['id', 'name']),
+        ]);
+    }
+
+    /**
+     * Step 2 save — apply lender + program to each draft, then bump them
+     * toward the worksheet (still draft until step 3 finalizes).
+     */
+    public function step2Save(Request $r, Deal $deal)
+    {
+        $data = $r->validate([
+            'assignments'                  => 'required|array',
+            'assignments.*.draft_id'       => 'required|exists:deal_quotes,id',
+            'assignments.*.lender_id'      => 'nullable|exists:lenders,id',
+            'assignments.*.program_id'     => 'nullable|exists:lender_programs,id',
+            'assignments.*.money_factor'   => 'nullable|numeric|min:0',
+            'assignments.*.apr'            => 'nullable|numeric|min:0',
+        ]);
+
+        foreach ($data['assignments'] as $a) {
+            $draft = DealQuote::where('id', $a['draft_id'])->where('deal_id', $deal->id)->first();
+            if (!$draft) continue;
+
+            $update = ['lender_id' => $a['lender_id'] ?? null];
+
+            if (!empty($a['program_id'])) {
+                $program = \App\Models\LenderProgram::find($a['program_id']);
+                if ($program) {
+                    $update['lender_id']    = $update['lender_id'] ?: $program->lender_id;
+                    $update['money_factor'] = $program->money_factor;
+                    $update['apr']          = $program->apr;
+                    $update['residual_value'] = $program->residual_pct && $draft->msrp
+                        ? round((float) $draft->msrp * (float) $program->residual_pct / 100, 2)
+                        : null;
+                    $update['acquisition_fee'] = $program->acquisition_fee ?? $draft->acquisition_fee;
+                }
+            }
+
+            if (!empty($a['money_factor'])) $update['money_factor'] = $a['money_factor'];
+            if (!empty($a['apr']))          $update['apr']          = $a['apr'];
+
+            $draft->update($update);
+        }
+
+        return redirect()->route('leasing.deals.show', $deal)
+            ->with('success', 'Lender(s) assigned. Worksheet step coming next PR.');
+    }
+
+    /**
      * Save Quote Structure as a draft DealQuote (one per selected term).
      * Returns the IDs so the next step can iterate them.
      */
@@ -309,9 +402,9 @@ class QuoteWizardController extends Controller
         }
 
         // Step 2 (Lender Selection) is a future PR — for now, kick back to the deal Show page.
-        return redirect()->route('leasing.deals.show', $deal)
+        return redirect()->route('leasing.deals.quotes.wizard.step2', $deal)
             ->with('success', count($createdIds) === 1
-                ? "Quote #{$createdIds[0]} drafted (1 term). Lender Selection step coming soon."
-                : count($createdIds) . " draft quotes created (one per term). Lender Selection step coming soon.");
+                ? "Quote drafted. Pick a lender →"
+                : count($createdIds) . " draft quotes created (one per term). Pick a lender for each →");
     }
 }

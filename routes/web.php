@@ -206,6 +206,8 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::post('deals/{deal}/quotes/wizard/lookup-zip',       [\App\Http\Controllers\QuoteWizardController::class, 'lookupZip'])->name('deals.quotes.wizard.lookup-zip');
         Route::post('deals/{deal}/quotes/wizard/pull-offers',      [\App\Http\Controllers\QuoteWizardController::class, 'pullOffers'])->name('deals.quotes.wizard.pull-offers');
         Route::post('deals/{deal}/quotes/wizard/browse-inventory', [\App\Http\Controllers\QuoteWizardController::class, 'browseInventory'])->name('deals.quotes.wizard.browse-inventory');
+        Route::get ('deals/{deal}/quotes/wizard/step2',            [\App\Http\Controllers\QuoteWizardController::class, 'step2'])->name('deals.quotes.wizard.step2');
+        Route::post('deals/{deal}/quotes/wizard/step2',            [\App\Http\Controllers\QuoteWizardController::class, 'step2Save'])->name('deals.quotes.wizard.step2.save');
 
         // Deal sub-actions
         Route::post('deals/{deal}/tasks/{task}', [DealController::class, 'completeTask'])->name('deals.task');
