@@ -81,6 +81,53 @@ class ImageResizer
         return (string) ob_get_clean();
     }
 
+    /**
+     * Down-scale for the Anthropic Vision API. Their hard limit is 5 MB
+     * per image — modern phone cameras often produce 8–12 MB JPEGs, which
+     * fail with "image exceeds 5 MB maximum". Target 4 MB so base64
+     * encoding (which inflates ~33%) still fits with headroom.
+     *
+     * @return string the (possibly) resized JPEG bytes
+     */
+    public function fitForVisionApi(string $bytes): string
+    {
+        $cap = 4 * 1024 * 1024;
+        if (strlen($bytes) <= $cap) return $bytes;
+        if (!extension_loaded('gd')) return $bytes;
+
+        try {
+            $src = @imagecreatefromstring($bytes);
+            if (!$src) return $bytes;
+
+            // Scale longest side to 2400px first — typically gets a phone
+            // photo from ~10MB to ~2MB while keeping plenty of detail for OCR.
+            [$w, $h] = [imagesx($src), imagesy($src)];
+            $longest = max($w, $h);
+            $maxDim = 2400;
+            if ($longest > $maxDim) {
+                $scale = $maxDim / $longest;
+                $newW  = (int) round($w * $scale);
+                $newH  = (int) round($h * $scale);
+                $resized = imagecreatetruecolor($newW, $newH);
+                imagecopyresampled($resized, $src, 0, 0, 0, 0, $newW, $newH, $w, $h);
+                imagedestroy($src);
+                $src = $resized;
+            }
+
+            $quality = 85;
+            $out = $this->encodeJpeg($src, $quality);
+            while (strlen($out) > $cap && $quality > 50) {
+                $quality -= 10;
+                $out = $this->encodeJpeg($src, $quality);
+            }
+            imagedestroy($src);
+            return strlen($out) <= $cap ? $out : $bytes;
+        } catch (\Throwable $e) {
+            \Log::warning('fitForVisionApi failed', ['error' => $e->getMessage()]);
+            return $bytes;
+        }
+    }
+
     private function extFor(string $mime): string
     {
         return match ($mime) {

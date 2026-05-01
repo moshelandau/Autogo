@@ -1123,7 +1123,7 @@ class LeaseApplicationBot
                 'messages' => [[
                     'role' => 'user',
                     'content' => [
-                        ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => 'image/jpeg', 'data' => base64_encode($imageBinary)]],
+                        ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => 'image/jpeg', 'data' => base64_encode(app(ImageResizer::class)->fitForVisionApi($imageBinary))]],
                         ['type' => 'text', 'text' => 'Extract: { "first_name":"", "last_name":"", "address":"", "city":"", "state":"", "zip":"", "drivers_license_number":"", "dl_state":"", "dl_expiration":"YYYY-MM-DD", "date_of_birth":"YYYY-MM-DD" }'],
                     ],
                 ]],
@@ -1199,7 +1199,7 @@ class LeaseApplicationBot
                 'messages' => [[
                     'role' => 'user',
                     'content' => [
-                        ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => 'image/jpeg', 'data' => base64_encode($binary)]],
+                        ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => 'image/jpeg', 'data' => base64_encode(app(ImageResizer::class)->fitForVisionApi($binary))]],
                         ['type' => 'text', 'text' => "Verify this {$expectedSide}-of-license photo."],
                     ],
                 ]],
