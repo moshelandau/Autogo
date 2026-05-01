@@ -308,6 +308,32 @@ const runTest = async (section) => {
     }
 };
 
+// MarketCheck Incentive probe — calls the live /search/car/incentive/{make}/{zip}
+const incentiveProbe = reactive({
+    make: 'Honda', zip: '10952',
+    model: '', year: null, offer_type: '',
+    loading: false, result: null,
+});
+const probeIncentives = async () => {
+    incentiveProbe.loading = true;
+    incentiveProbe.result = null;
+    try {
+        const payload = {
+            make: incentiveProbe.make,
+            zip: incentiveProbe.zip,
+            ...(incentiveProbe.model ? { model: incentiveProbe.model } : {}),
+            ...(incentiveProbe.year ? { year: Number(incentiveProbe.year) } : {}),
+            ...(incentiveProbe.offer_type ? { offer_type: incentiveProbe.offer_type } : {}),
+        };
+        const { data } = await axios.post(route('settings.marketcheck.probe-incentives'), payload);
+        incentiveProbe.result = data;
+    } catch (e) {
+        incentiveProbe.result = { ok: false, raw: { error: e.response?.data?.message || e.message } };
+    } finally {
+        incentiveProbe.loading = false;
+    }
+};
+
 // Reset a counter (e.g. MarketCheck monthly call counter)
 const resetCounter = (section) => {
     if (!section.resetRoute) return;
@@ -461,6 +487,39 @@ const scrollTo = (id) => {
                                     <span class="text-gray-400"> / {{ env[s.usageFlag].quota }}</span>
                                     <span class="text-gray-500 ml-2">({{ env[s.usageFlag].remaining }} left)</span>
                                 </div>
+                            </div>
+                        </div>
+
+                        <!-- MarketCheck Incentive Probe — pull live OEM rebates/lease cash/APR offers -->
+                        <div v-if="s.id === 'marketcheck'" class="mt-4 border rounded-lg p-3 bg-white">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="text-xs font-semibold text-gray-700">Probe Incentives — pull live OEM offers</div>
+                                <span class="text-[10px] text-gray-400">Endpoint: /search/car/incentive/{make}/{zip} · 1 call per probe</span>
+                            </div>
+                            <div class="grid grid-cols-2 md:grid-cols-6 gap-2 mb-2">
+                                <input v-model="incentiveProbe.make" placeholder="Make *" class="border-gray-300 rounded text-sm" />
+                                <input v-model="incentiveProbe.zip" placeholder="ZIP *" maxlength="5" class="border-gray-300 rounded text-sm" />
+                                <input v-model="incentiveProbe.model" placeholder="Model" class="border-gray-300 rounded text-sm" />
+                                <input v-model.number="incentiveProbe.year" type="number" placeholder="Year" class="border-gray-300 rounded text-sm" />
+                                <select v-model="incentiveProbe.offer_type" class="border-gray-300 rounded text-sm">
+                                    <option value="">Any offer</option>
+                                    <option value="lease">Lease</option>
+                                    <option value="finance">Finance</option>
+                                    <option value="cash">Cash</option>
+                                </select>
+                                <button type="button" @click="probeIncentives" :disabled="incentiveProbe.loading || !incentiveProbe.make || !incentiveProbe.zip"
+                                        class="px-3 py-1 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50">
+                                    {{ incentiveProbe.loading ? 'Loading…' : 'Probe' }}
+                                </button>
+                            </div>
+                            <div v-if="incentiveProbe.result" class="mt-2">
+                                <div v-if="incentiveProbe.result.ok" class="text-xs text-emerald-700 mb-1">
+                                    ✓ Found {{ incentiveProbe.result.num_found ?? '?' }} offer(s) · {{ incentiveProbe.result.used }}/{{ incentiveProbe.result.quota }} calls used
+                                </div>
+                                <div v-else class="text-xs text-red-700 mb-1">
+                                    ✗ {{ incentiveProbe.result.raw?.error || 'Probe failed' }}
+                                </div>
+                                <pre class="text-[10px] bg-gray-900 text-gray-100 rounded p-2 overflow-x-auto max-h-80">{{ JSON.stringify(incentiveProbe.result.raw, null, 2) }}</pre>
                             </div>
                         </div>
 
