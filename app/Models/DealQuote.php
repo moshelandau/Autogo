@@ -13,7 +13,8 @@ class DealQuote extends Model
         'deal_id', 'lender_id', 'payment_type', 'term', 'mileage_per_year',
         'monthly_payment', 'das', 'sell_price', 'msrp', 'rebates',
         'acquisition_fee', 'acquisition_fee_type', 'residual_value',
-        'money_factor', 'apr', 'tax_breakdown', 'is_selected', 'notes', 'created_by',
+        'money_factor', 'apr', 'tax_breakdown', 'is_selected', 'is_draft',
+        'structure', 'notes', 'created_by',
     ];
 
     protected function casts(): array
@@ -22,7 +23,8 @@ class DealQuote extends Model
             'monthly_payment' => 'decimal:2', 'das' => 'decimal:2', 'sell_price' => 'decimal:2',
             'msrp' => 'decimal:2', 'rebates' => 'decimal:2', 'acquisition_fee' => 'decimal:2',
             'residual_value' => 'decimal:2', 'money_factor' => 'decimal:6', 'apr' => 'decimal:3',
-            'tax_breakdown' => 'array', 'is_selected' => 'boolean',
+            'tax_breakdown' => 'array', 'is_selected' => 'boolean', 'is_draft' => 'boolean',
+            'structure' => 'array',
         ];
     }
 

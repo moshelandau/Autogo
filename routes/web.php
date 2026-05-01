@@ -199,6 +199,13 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         // Live OEM offers from MarketCheck
         Route::post('deals/{deal}/calculator/pull-offers',  [DealController::class, 'pullLiveOffers'])->name('deals.pull-offers');
 
+        // Quote Wizard (3-step xDeskPro-style create flow)
+        Route::get ('deals/{deal}/quotes/wizard',                  [\App\Http\Controllers\QuoteWizardController::class, 'step1'])->name('deals.quotes.wizard');
+        Route::post('deals/{deal}/quotes/wizard',                  [\App\Http\Controllers\QuoteWizardController::class, 'store'])->name('deals.quotes.wizard.store');
+        Route::post('deals/{deal}/quotes/wizard/decode-vin',       [\App\Http\Controllers\QuoteWizardController::class, 'decodeVin'])->name('deals.quotes.wizard.decode-vin');
+        Route::post('deals/{deal}/quotes/wizard/lookup-zip',       [\App\Http\Controllers\QuoteWizardController::class, 'lookupZip'])->name('deals.quotes.wizard.lookup-zip');
+        Route::post('deals/{deal}/quotes/wizard/pull-offers',      [\App\Http\Controllers\QuoteWizardController::class, 'pullOffers'])->name('deals.quotes.wizard.pull-offers');
+
         // Deal sub-actions
         Route::post('deals/{deal}/tasks/{task}', [DealController::class, 'completeTask'])->name('deals.task');
         Route::post('deals/{deal}/tasks/{task}/due-date', [DealController::class, 'updateTaskDueDate'])->name('deals.task.due-date');

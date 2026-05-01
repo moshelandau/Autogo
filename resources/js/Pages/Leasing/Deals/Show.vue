@@ -840,6 +840,15 @@ const saveCalcAsQuote = () => {
 
                         <!-- Quotes Tab -->
                         <div v-if="activeTab === 'quotes'" class="space-y-4">
+                            <!-- New Quote Wizard CTA -->
+                            <div class="flex items-center justify-between">
+                                <h3 class="text-sm font-semibold text-gray-700">Quotes</h3>
+                                <Link :href="route('leasing.deals.quotes.wizard', d.id)"
+                                      class="px-3 py-1.5 bg-indigo-600 text-white rounded-md text-sm hover:bg-indigo-700">
+                                    + New Quote (Wizard)
+                                </Link>
+                            </div>
+
                             <!-- Vehicle context — quotes are scoped to this deal's vehicle.
                                  Updates live when a quote's VIN entry changes the deal vehicle. -->
                             <div v-if="d.vehicle_make || d.vehicle_vin"
