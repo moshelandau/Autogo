@@ -20,7 +20,11 @@ class InspectionController extends Controller
         $validated = $request->validate([
             'type' => 'required|in:pickup,return',
             'area' => 'required|in:' . implode(',', ReservationInspection::REQUIRED_AREAS),
-            'image' => 'required|image|max:10240',
+            // Laravel's `image` rule rejects HEIC (iPhone default) — and
+            // the 10 MB cap killed any high-res phone photo. Match the
+            // license-upload pattern: explicit mimetypes + 50 MB cap so a
+            // raw iPhone photo always saves on the first try.
+            'image' => 'required|file|max:51200|mimetypes:image/jpeg,image/png,image/heic,image/heif,image/webp,image/gif,image/bmp',
             'notes' => 'nullable|string',
         ]);
 
