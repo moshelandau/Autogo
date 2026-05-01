@@ -368,6 +368,16 @@ class DealController extends Controller
     }
 
     /**
+     * Pull live OEM lease/finance/cash offers from MarketCheck for this
+     * deal's make + customer ZIP. Returns normalized buckets the
+     * calculator can pick from. Costs 1 MarketCheck call per pull.
+     */
+    public function pullLiveOffers(Deal $deal, \App\Services\MarketCheckOffersService $offers)
+    {
+        return response()->json($offers->offersForDeal($deal));
+    }
+
+    /**
      * Stream a zip of every uploaded document for a deal (Documents tab
      * "Download All" — xDeskPro parity).
      */
