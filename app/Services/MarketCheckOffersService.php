@@ -35,20 +35,39 @@ class MarketCheckOffersService
      *   'calls_remaining' => int,
      * ]
      */
-    public function offersForDeal(Deal $deal): array
+    public function offersForDeal(Deal $deal, ?string $vin = null): array
     {
-        $make = $deal->vehicle_make;
-        $zip  = $deal->customer_zip ?: optional($deal->customer)->zip;
+        $listing = null;     // populated when VIN-driven — the actual car at the actual dealer
+        $vehicleZip = null;  // zip we'll use for the incentive search (dealer's, when VIN given)
 
-        if (!$make) return ['ok' => false, 'error' => 'Deal has no vehicle make set.'];
+        // VIN path: look up the specific car first so we know exactly which
+        // year/make/model AND which dealer has it. That gives us the dealer's
+        // zip → MSA, which is what MarketCheck uses for incentive scoping.
+        if ($vin && strlen(trim($vin)) === 17) {
+            $vinSearch = $this->mc->searchInventory(['vins' => strtoupper(trim($vin)), 'rows' => 1]);
+            if (!isset($vinSearch['error']) && !empty($vinSearch['listings'][0])) {
+                $listing = $vinSearch['listings'][0];
+                $vehicleZip = $listing['dealer']['zip'] ?? null;
+            }
+            // If VIN didn't match any listing we'll fall through to the
+            // deal-make+customer-zip path below — better something than nothing.
+        }
+
+        $make = $listing['build']['make'] ?? $deal->vehicle_make;
+        $zip  = $vehicleZip
+            ?: ($deal->customer_zip ?: optional($deal->customer)->zip);
+
+        if (!$make) return ['ok' => false, 'error' => 'No vehicle make available (set on the deal or supply a VIN).'];
         if (!$zip || !preg_match('/^\d{5}$/', (string) $zip)) {
-            return ['ok' => false, 'error' => 'Need a 5-digit ZIP on the deal or its customer.'];
+            return ['ok' => false, 'error' => 'Need a 5-digit ZIP (on the deal, customer, or — when VIN given — the dealer holding the car).'];
         }
 
         $filters = [];
-        if ($deal->vehicle_model) $filters['model'] = $deal->vehicle_model;
-        if ($deal->vehicle_year)  $filters['year']  = (int) $deal->vehicle_year;
-        $filters['rows'] = 50; // generous so staff sees all options at once
+        $modelForFilter = $listing['build']['model'] ?? $deal->vehicle_model;
+        $yearForFilter  = $listing['build']['year']  ?? $deal->vehicle_year;
+        if ($modelForFilter) $filters['model'] = $modelForFilter;
+        if ($yearForFilter)  $filters['year']  = (int) $yearForFilter;
+        $filters['rows'] = 50;
 
         $resp = $this->mc->searchIncentivesByMakeZip($make, $zip, $filters);
 
@@ -105,6 +124,40 @@ class MarketCheckOffersService
         // Dealer markdowns first (they're more lucrative + AutoGo-specific), then OEM cash
         $rebates = array_merge($markdowns, $rebates);
 
+        // If VIN was given AND we found a listing, surface the matched car
+        // (exact specs + dealer info) so the wizard can pre-fill from it.
+        $matchedListing = null;
+        if ($listing) {
+            $b = $listing['build'] ?? [];
+            $matchedListing = [
+                'vin'        => $listing['vin'] ?? null,
+                'year'       => $b['year'] ?? null,
+                'make'       => $b['make'] ?? null,
+                'model'      => $b['model'] ?? null,
+                'trim'       => $b['trim'] ?? null,
+                'body_type'  => $b['body_type'] ?? null,
+                'drivetrain' => $b['drivetrain'] ?? null,
+                'fuel_type'  => $b['fuel_type'] ?? null,
+                'engine'     => $b['engine'] ?? null,
+                'miles'      => $listing['miles'] ?? null,
+                'price'      => $listing['price'] ?? null,
+                'msrp'       => $listing['msrp'] ?? null,
+                'exterior_color' => $listing['exterior_color'] ?? null,
+                'stock_no'   => $listing['stock_no'] ?? null,
+                'inventory_type' => $listing['inventory_type'] ?? null,
+                'photo'      => $listing['media']['photo_links'][0] ?? null,
+                'dealer'     => [
+                    'name'   => $listing['dealer']['name'] ?? null,
+                    'street' => $listing['dealer']['street'] ?? null,
+                    'city'   => $listing['dealer']['city'] ?? null,
+                    'state'  => $listing['dealer']['state'] ?? null,
+                    'zip'    => $listing['dealer']['zip'] ?? null,
+                    'phone'  => $listing['dealer']['phone'] ?? null,
+                    'website'=> $listing['dealer']['website'] ?? null,
+                ],
+            ];
+        }
+
         return [
             'ok'              => true,
             'pulled_at'       => now()->toIso8601String(),
@@ -117,6 +170,8 @@ class MarketCheckOffersService
             'leases'          => $leases,
             'finances'        => $finances,
             'rebates'         => $rebates,
+            'matched_listing' => $matchedListing,
+            'searched_by_vin' => (bool) $vin,
             'calls_used'      => MarketCheckService::callsThisMonth(),
             'calls_remaining' => MarketCheckService::callsRemaining(),
         ];
