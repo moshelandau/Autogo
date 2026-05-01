@@ -828,28 +828,70 @@ class LeaseApplicationBot
                 if (!empty($extracted['dl_expiration']))          $collected['dl_expiration']          = $extracted['dl_expiration'];
             }
         } elseif ($step['key'] !== '__done__') {
-            // AI validates the answer matches what was asked. May reject (re-ask
-            // with hint), skip (customer refused), accept (save), or escalate.
-            $validation = app(\App\Services\SmsAiValidator::class)
-                ->validate($step['key'], $this->renderPrompt($step, $session), $body);
-
-            if ($validation['action'] === 'reject') {
-                // Don't advance — re-ask with the model's hint.
-                $hint = $validation['message'] ?: "Sorry, I didn't catch that.";
-                $this->reply($session->phone, "{$hint}\n\n" . $this->renderPrompt($step, $session));
-                $session->update(['last_inbound_at' => now()]);
+            // "I told you already" / "already said" / "done" — trust the
+            // customer instead of re-asking. If they've already given a
+            // value for THIS step, just advance. Otherwise accept whatever
+            // their last typed reply was (or move on with empty if blank).
+            // Saves Barry-style frustration loops where the validator keeps
+            // rejecting a perfectly valid answer.
+            if ($this->isAcknowledgement($body)) {
+                if (empty($collected[$step['key']]) && trim($body) !== '') {
+                    // Nothing on file yet but they're asserting they replied;
+                    // accept the body verbatim (don't re-validate).
+                    $collected[$step['key']] = $this->normalize($step['key'], $body);
+                }
+                // either way, advance past this step.
+                $next = $this->nextApplicableStep($steps, $stepIdx, $collected);
+                $session->update([
+                    'collected'       => $collected,
+                    'current_step'    => $next['key'] ?? '__done__',
+                    'last_inbound_at' => now(),
+                ]);
+                if ($next === null || $next['key'] === '__done__') { $this->finalize($session); return true; }
+                $this->reply($session->phone, $this->renderPrompt($next, $session));
                 return true;
             }
-            if ($validation['action'] === 'skip') {
-                $collected[$step['key']] = '';  // empty, but advance
-            } elseif ($validation['action'] === 'escalate') {
-                $session->update(['aborted_at' => now(), 'last_inbound_at' => now()]);
-                $msg = $validation['message'] ?: "Got it — a team member will follow up shortly.";
-                $this->reply($session->phone, $msg);
-                return true;
+
+            // After one reject for the same step, accept whatever comes
+            // next — never re-ask the same field three times.
+            $rejectKey = '_rejects_' . $step['key'];
+            $rejected  = (int) ($collected[$rejectKey] ?? 0);
+
+            if ($rejected >= 1) {
+                $collected[$step['key']] = $this->normalize($step['key'], $body);
+                unset($collected[$rejectKey]);
             } else {
-                // accept — store the cleaned/parsed value (after our existing normalize pass)
-                $collected[$step['key']] = $this->normalize($step['key'], $validation['parsed'] ?? $body);
+                // AI validates the answer matches what was asked. May reject (re-ask
+                // with hint), skip (customer refused), accept (save), or escalate.
+                $validation = app(\App\Services\SmsAiValidator::class)
+                    ->validate($step['key'], $this->renderPrompt($step, $session), $body);
+
+                if ($validation['action'] === 'reject') {
+                    $collected[$rejectKey] = $rejected + 1;
+                    $session->update(['collected' => $collected, 'last_inbound_at' => now()]);
+                    $hint = $validation['message'] ?: "Sorry, I didn't catch that.";
+                    $this->reply($session->phone, "{$hint}\n\n" . $this->renderPrompt($step, $session));
+                    return true;
+                }
+                if ($validation['action'] === 'skip') {
+                    $collected[$step['key']] = '';
+                } elseif ($validation['action'] === 'escalate') {
+                    $session->update(['aborted_at' => now(), 'last_inbound_at' => now()]);
+                    $msg = $validation['message'] ?: "Got it — a team member will follow up shortly.";
+                    $this->reply($session->phone, $msg);
+                    return true;
+                } else {
+                    $collected[$step['key']] = $this->normalize($step['key'], $validation['parsed'] ?? $body);
+                }
+            }
+
+            // Compound-line address parse: when they typed the full address
+            // line ("11 Main St, Kiryas Joel, NY 10950"), pre-fill the
+            // matching <x>_city / <x>_state / <x>_zip so the bot doesn't
+            // ask for them separately.
+            if (str_ends_with($step['key'], 'address')) {
+                $prefix = $step['key'] === 'address' ? '' : substr($step['key'], 0, -strlen('address')); // 'co_' or 'employer_' or ''
+                $this->extractAddressParts($body, $prefix, $collected);
             }
         }
 
@@ -882,6 +924,88 @@ class LeaseApplicationBot
     {
         foreach ($steps as $i => $s) if ($s['key'] === $key) return $i;
         return null;
+    }
+
+    /**
+     * Customer is asserting they already answered ("I told you already",
+     * "already said", "done"). The bot should trust them and advance,
+     * not re-ask the same field a third time.
+     */
+    private function isAcknowledgement(string $body): bool
+    {
+        $t = strtolower(trim(preg_replace('/[^a-z0-9 \']+/i', ' ', $body)));
+        if ($t === '') return false;
+        $patterns = [
+            '/\bi (told|said|gave|already|repeated)\b/',
+            '/\balready (said|told|gave|answered|did)\b/',
+            '/\bsaid (it|that)\b/',
+            '/^done$/',
+            '/^(its|it.?s|i did|done|same|whatever|good|right|correct)$/',
+            '/\bcheck (above|earlier|prior)\b/',
+        ];
+        foreach ($patterns as $p) {
+            if (preg_match($p, $t)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Pull city / state / zip out of a free-typed address line so the bot
+     * can skip the follow-up questions when the customer included them on
+     * the same line. Handles common US shapes:
+     *   "11 Dinev Rd Kiryas Joel NY 10950"
+     *   "11 Dinev Rd, Kiryas Joel, NY 10950"
+     *   "11 Dinev Rd, Kiryas Joel NY"
+     * Only fills target keys that are currently empty — never overwrites.
+     */
+    private function extractAddressParts(string $body, string $prefix, array &$collected): void
+    {
+        $cityKey  = $prefix . 'city';
+        $stateKey = $prefix . 'state';
+        $zipKey   = $prefix . 'zip';
+
+        // ZIP — take the last 5-digit run.
+        if (empty($collected[$zipKey]) && preg_match('/\b(\d{5})(?:-\d{4})?\b/', $body, $m)) {
+            $collected[$zipKey] = $m[1];
+        }
+        // State — 2-letter US state code preceding the ZIP, or just before end.
+        if (empty($collected[$stateKey]) && preg_match('/\b([A-Z]{2})\b(?=\s*\d{5}|\s*$|\s*[,.]\s*$)/', $body, $m)) {
+            $collected[$stateKey] = strtoupper($m[1]);
+        }
+        // City — text between street and the state token. Best-effort.
+        if (empty($collected[$cityKey])) {
+            $stripped = $body;
+            if (!empty($collected[$zipKey]))   $stripped = preg_replace('/\s*\b' . preg_quote($collected[$zipKey], '/') . '\b\s*/', ' ', $stripped);
+            if (!empty($collected[$stateKey])) $stripped = preg_replace('/\s*\b' . preg_quote($collected[$stateKey], '/') . '\b\s*$/', ' ', trim($stripped));
+            // Last comma-separated chunk after stripping state+zip is usually city.
+            if (str_contains($stripped, ',')) {
+                $parts = array_values(array_filter(array_map('trim', explode(',', $stripped)), fn ($p) => $p !== ''));
+                $candidate = end($parts);
+                if ($candidate !== false && $candidate !== '' && !preg_match('/\d/', $candidate)) {
+                    $collected[$cityKey] = $candidate;
+                }
+            } else if (!empty($collected[$stateKey]) && !empty($collected[$zipKey])) {
+                // No commas — heuristic: city is the last 1-2 alpha-only
+                // tokens before the state. "123 Main St Apt 4B Brooklyn NY 11218"
+                // -> city = "Brooklyn".
+                $tokens = preg_split('/\s+/', trim($stripped)) ?: [];
+                $cityTokens = [];
+                for ($i = count($tokens) - 1; $i >= 0; $i--) {
+                    $tok = $tokens[$i];
+                    // Stop when we hit something that has digits or is short
+                    // street-suffix (St / Rd / Ave / Blvd / Ln) — that's the
+                    // boundary between street and city.
+                    if (preg_match('/\d/', $tok)) break;
+                    if (preg_match('/^(st|street|rd|road|ave|avenue|blvd|boulevard|ln|lane|dr|drive|way|ct|court|pkwy|parkway|hwy|highway|apt|unit|suite|ste)\.?$/i', $tok)) break;
+                    array_unshift($cityTokens, $tok);
+                    if (count($cityTokens) >= 3) break; // cap at 3 words
+                }
+                $candidate = trim(implode(' ', $cityTokens));
+                if ($candidate !== '' && !preg_match('/\d/', $candidate)) {
+                    $collected[$cityKey] = $candidate;
+                }
+            }
+        }
     }
 
     private function nextApplicableStep(array $steps, int $currentIdx, array $collected): ?array
