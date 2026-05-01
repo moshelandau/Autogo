@@ -256,14 +256,25 @@ class SmsConversationController extends Controller
      */
     public function customerThread(Customer $customer)
     {
-        // Auto-mark received -> read on first load (skip on polling partial reloads)
+        // Auto-mark received -> read on first load (skip on polling partial reloads).
+        // BEFORE marking, capture which message IDs were unread so the
+        // frontend can still render the "↓ Unread" divider on first open.
+        // Without this snapshot the divider always vanishes — by the time
+        // the response is rendered every message is technically read.
+        $preOpenUnreadIds = [];
         if (!request()->header('X-Inertia-Partial-Data') && !request()->boolean('poll')) {
-            CommunicationLog::query()
+            $preOpenUnreadIds = CommunicationLog::query()
                 ->where('channel', 'sms')
                 ->where('customer_id', $customer->id)
                 ->where('direction', 'inbound')
                 ->where('status', 'received')
-                ->update(['status' => 'read']);
+                ->pluck('id')
+                ->all();
+
+            if (!empty($preOpenUnreadIds)) {
+                CommunicationLog::whereIn('id', $preOpenUnreadIds)
+                    ->update(['status' => 'read']);
+            }
         }
 
         $messages = CommunicationLog::query()
@@ -288,11 +299,12 @@ class SmsConversationController extends Controller
                 ->whereNotNull('resolved_at')->first()
             : null;
         return response()->json([
-            'messages'   => $messages,
-            'assignedTo' => $assignedTo,
-            'phone'      => $phone,
-            'staff'      => User::where('email', 'like', '%@autogoco.com')->orderBy('name')->get(['id', 'name']),
-            'resolved'   => $state ? ['at' => $state->resolved_at, 'by' => $state->resolver?->name] : null,
+            'messages'              => $messages,
+            'assignedTo'            => $assignedTo,
+            'phone'                 => $phone,
+            'staff'                 => User::where('email', 'like', '%@autogoco.com')->orderBy('name')->get(['id', 'name']),
+            'resolved'              => $state ? ['at' => $state->resolved_at, 'by' => $state->resolver?->name] : null,
+            'pre_open_unread_ids'   => $preOpenUnreadIds,
         ]);
     }
 
