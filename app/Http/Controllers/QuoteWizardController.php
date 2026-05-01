@@ -87,11 +87,17 @@ class QuoteWizardController extends Controller
         ]);
     }
 
-    /** ZIP → {state, county} JSON — front-end calls this on blur */
+    /** ZIP → {state, county, tax_rate} JSON — front-end calls this on blur */
     public function lookupZip(Request $r): JsonResponse
     {
         $zip = $r->string('zip')->toString();
-        return response()->json(ZipLookup::lookup($zip));
+        $loc = ZipLookup::lookup($zip);
+        // Layer NY county tax rate when state is NY
+        $taxRate = null;
+        if (($loc['state'] ?? null) === 'NY') {
+            $taxRate = \App\Support\NyCountyTax::lookup($loc['county'])['rate'] ?? null;
+        }
+        return response()->json($loc + ['tax_rate' => $taxRate]);
     }
 
     /** VIN decode → MarketCheck (1 call) */
@@ -329,8 +335,15 @@ class QuoteWizardController extends Controller
                 ->with('error', 'Pick a lender for at least one draft first.');
         }
 
+        // Look up the customer's county tax rate so the worksheet pre-fills
+        // with the right number instead of a generic 8.125%.
+        $customerZip = $deal->customer_zip ?: optional($deal->customer)->zip;
+        $taxByZip = $customerZip
+            ? \App\Support\NyCountyTax::lookupByZip($customerZip)
+            : ['rate' => 0.08125, 'county' => null];
+
         $svc = app(\App\Services\LeaseWorksheet::class);
-        $sheets = $drafts->mapWithKeys(function ($d) use ($svc, $deal) {
+        $sheets = $drafts->mapWithKeys(function ($d) use ($svc, $deal, $taxByZip) {
             $defaults = [
                 'cost' => $deal->cost,
                 'rebates' => (float) ($d->rebates ?? 0),
@@ -342,7 +355,8 @@ class QuoteWizardController extends Controller
                     ['name' => 'Tire Fee',        'amount' => 0,   'paid_as' => 'upfront'],
                 ],
                 'taxes_paid_as' => 'capped',
-                'tax_rate'      => 0.08125,
+                'tax_rate'      => $taxByZip['rate'],
+                'tax_county'    => $taxByZip['county'],
                 'sell_money_factor' => $d->money_factor,
                 'buy_money_factor'  => $d->money_factor,
                 'base_residual_pct' => $d->msrp ? round((float) $d->residual_value / (float) $d->msrp * 100, 2) : 0,
