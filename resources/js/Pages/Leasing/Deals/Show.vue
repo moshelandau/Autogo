@@ -707,16 +707,16 @@ const saveCalcAsQuote = () => {
                     </div>
                 </div>
 
-                <!-- Tabs — wrap to a second row instead of horizontal-scrolling.
-                     Tighter padding so they pack closer and most laptops fit
-                     all 11 tabs in one row. -->
+                <!-- Tabs — pack tightly so all 11 fit on a normal-width
+                     laptop without wrapping; flex-wrap remains as a safety
+                     net for genuinely narrow viewports. -->
                 <div class="bg-white shadow-sm rounded-lg">
                     <div class="border-b flex flex-wrap gap-0">
                         <button v-for="tab in ['summary', 'customer', 'tasks', 'workflow', 'quotes', 'notes', 'documents', 'vehicle_return', 'sharing', 'messages', 'timeline']" :key="tab"
                                 @click="activeTab = tab"
-                                class="px-3.5 py-3 text-sm font-medium capitalize whitespace-nowrap"
+                                class="px-2.5 py-3 text-sm font-medium capitalize whitespace-nowrap"
                                 :class="activeTab === tab ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500 hover:text-gray-700'">
-                            {{ tab === 'vehicle_return' ? 'Return' : tab.replace(/_/g, ' ') }}
+                            {{ ({ vehicle_return: 'Return', documents: 'Docs', messages: 'Msgs' })[tab] || tab.replace(/_/g, ' ') }}
                             <span v-if="tab === 'tasks' && d.tasks?.filter(t => !t.is_completed).length"
                                   class="ml-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full">{{ d.tasks.filter(t => !t.is_completed).length }}</span>
                         </button>
