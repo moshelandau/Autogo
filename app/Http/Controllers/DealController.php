@@ -372,9 +372,13 @@ class DealController extends Controller
      * deal's make + customer ZIP. Returns normalized buckets the
      * calculator can pick from. Costs 1 MarketCheck call per pull.
      */
-    public function pullLiveOffers(Deal $deal, \App\Services\MarketCheckOffersService $offers)
+    public function pullLiveOffers(Request $request, Deal $deal, \App\Services\MarketCheckOffersService $offers)
     {
-        return response()->json($offers->offersForDeal($deal));
+        // Optional `vin` body param — when supplied, MarketCheck identifies
+        // the exact car + dealer holding it, then scopes incentives to that
+        // dealer's MSA. Without it, falls back to deal make + customer ZIP.
+        $vin = $request->string('vin')->toString() ?: null;
+        return response()->json($offers->offersForDeal($deal, $vin));
     }
 
     /**

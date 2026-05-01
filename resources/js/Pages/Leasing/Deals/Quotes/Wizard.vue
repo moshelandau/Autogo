@@ -75,9 +75,26 @@ const appliedRebateIds = ref(new Set());
 const pullOffers = async () => {
     offersLoading.value = true;
     try {
-        const { data } = await axios.post(route('leasing.deals.quotes.wizard.pull-offers', props.deal.id));
+        // If user typed a VIN, send it — MarketCheck will resolve the exact
+        // car + dealer and scope incentives to that dealer's MSA.
+        const payload = v.vin && v.vin.length === 17 ? { vin: v.vin } : {};
+        const { data } = await axios.post(route('leasing.deals.quotes.wizard.pull-offers', props.deal.id), payload);
         offers.value = data;
-        if (data.ok) showRebatesPicker.value = true;
+        if (data.ok) {
+            showRebatesPicker.value = true;
+            // If VIN matched a listing, fill the wizard from it
+            if (data.matched_listing) {
+                const m = data.matched_listing;
+                if (m.year)  v.year  = m.year;
+                if (m.make)  v.make  = m.make;
+                if (m.model) v.model = m.model;
+                if (m.trim)  v.trim  = m.trim;
+                if (m.miles) v.odometer = m.miles;
+                if (m.msrp)  price.msrp = m.msrp;
+                if (m.price) price.sell_price = m.price;
+                if (m.inventory_type) v.type = m.inventory_type;
+            }
+        }
     } catch (e) {
         offers.value = { ok: false, error: e.message };
     }
@@ -235,10 +252,35 @@ const fmt = (v) => v != null && v !== '' ? '$' + Number(v).toLocaleString(undefi
                             </div>
 
                             <h3 class="font-semibold text-sm text-gray-700 mt-5 mb-2">Rebates</h3>
-                            <button type="button" @click="pullOffers" :disabled="offersLoading"
-                                    class="px-3 py-1.5 bg-gray-700 text-white rounded text-xs hover:bg-gray-800 disabled:opacity-50">
-                                💰 {{ offersLoading ? 'Pulling…' : (offers ? 'Refresh Available Rebates' : 'Available Rebates') }}
-                            </button>
+                            <div class="flex items-center gap-2 mb-2">
+                                <button type="button" @click="pullOffers" :disabled="offersLoading"
+                                        class="px-3 py-1.5 bg-gray-700 text-white rounded text-xs hover:bg-gray-800 disabled:opacity-50 whitespace-nowrap">
+                                    💰 {{ offersLoading ? 'Pulling…' : (offers ? 'Refresh' : 'Available Rebates') }}
+                                </button>
+                                <span class="text-[11px] text-gray-500">VIN above narrows to the specific car + dealer</span>
+                            </div>
+
+                            <!-- Matched listing card (when VIN found a real car) -->
+                            <div v-if="offers?.matched_listing" class="mb-2 p-2 bg-emerald-50 border border-emerald-300 rounded text-xs">
+                                <div class="font-semibold text-emerald-800">✓ Matched VIN to a live listing</div>
+                                <div class="mt-1 text-gray-700">
+                                    {{ offers.matched_listing.year }} {{ offers.matched_listing.make }} {{ offers.matched_listing.model }}
+                                    {{ offers.matched_listing.trim }} · {{ offers.matched_listing.exterior_color || '' }}
+                                </div>
+                                <div class="text-gray-600">
+                                    <span v-if="offers.matched_listing.miles">{{ Number(offers.matched_listing.miles).toLocaleString() }}mi · </span>
+                                    <span v-if="offers.matched_listing.price">Asking ${{ Number(offers.matched_listing.price).toLocaleString() }} · </span>
+                                    <span v-if="offers.matched_listing.msrp">MSRP ${{ Number(offers.matched_listing.msrp).toLocaleString() }}</span>
+                                </div>
+                                <div class="mt-1 text-gray-700">
+                                    🏬 <strong>{{ offers.matched_listing.dealer.name }}</strong>
+                                    <span v-if="offers.matched_listing.dealer.city">— {{ offers.matched_listing.dealer.city }}, {{ offers.matched_listing.dealer.state }} {{ offers.matched_listing.dealer.zip }}</span>
+                                </div>
+                                <div v-if="offers.matched_listing.dealer.phone" class="text-gray-500">{{ offers.matched_listing.dealer.phone }}</div>
+                            </div>
+                            <div v-else-if="offers?.searched_by_vin && offers?.ok" class="mb-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+                                ⚠ VIN didn't match any active listing — fell back to make + customer ZIP.
+                            </div>
                             <div v-if="offers && !offers.ok" class="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
                                 {{ offers.error || 'Failed to pull offers.' }}
                             </div>

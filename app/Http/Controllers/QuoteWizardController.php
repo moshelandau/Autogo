@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\Deal;
+use App\Models\Dealer;
 use App\Models\DealQuote;
 use App\Models\Lender;
 use App\Services\MarketCheckOffersService;
@@ -101,10 +102,118 @@ class QuoteWizardController extends Controller
         return response()->json($result);
     }
 
-    /** Pull live OEM offers for the wizard's currently-entered make/zip */
-    public function pullOffers(Deal $deal, MarketCheckOffersService $offers): JsonResponse
+    /**
+     * Pull live OEM offers. Optional `vin` body param: if given, MarketCheck
+     * looks up the exact car first, identifies the dealer holding it, then
+     * scopes incentives to the dealer's MSA. Otherwise falls back to the
+     * deal's make + customer ZIP.
+     */
+    public function pullOffers(Request $r, Deal $deal, MarketCheckOffersService $offers): JsonResponse
     {
-        return response()->json($offers->offersForDeal($deal));
+        $vin = $r->string('vin')->toString() ?: null;
+        return response()->json($offers->offersForDeal($deal, $vin));
+    }
+
+    /**
+     * Browse a specific dealer's inventory via MarketCheck. Costs 1 call.
+     * Body: { dealer_id?, dealer_name?, zip?, make?, model?, year?,
+     *         inventory_type? ("new"|"used"|"certified"),
+     *         price_range?, miles_range?, rows? }
+     */
+    public function browseInventory(Request $r, MarketCheckService $mc): JsonResponse
+    {
+        $data = $r->validate([
+            'dealer_id'      => 'nullable|exists:dealers,id',
+            'dealer_name'    => 'nullable|string|max:120',
+            'zip'            => 'nullable|string|size:5',
+            'make'           => 'nullable|string|max:60',
+            'model'          => 'nullable|string|max:60',
+            'year'           => 'nullable|integer|min:1990|max:2099',
+            'inventory_type' => 'nullable|in:new,used,certified',
+            'price_range'    => 'nullable|string|max:30',
+            'miles_range'    => 'nullable|string|max:30',
+            'rows'           => 'nullable|integer|min:1|max:50',
+        ]);
+
+        // Resolve dealer name + zip from a known dealer record if user picked one
+        if (!empty($data['dealer_id'])) {
+            $dealer = \App\Models\Dealer::find($data['dealer_id']);
+            if ($dealer) {
+                $data['dealer_name'] = $data['dealer_name'] ?: $dealer->name;
+                $data['zip']         = $data['zip']         ?: $dealer->zip;
+            }
+        }
+
+        if (empty($data['dealer_name']) && empty($data['zip'])) {
+            return response()->json(['ok' => false, 'error' => 'Need a dealer (or at least a ZIP) to search inventory.']);
+        }
+
+        $filters = [
+            'rows' => $data['rows'] ?? 25,
+        ];
+        if (!empty($data['dealer_name']))    $filters['seller_name']    = $data['dealer_name'];
+        if (!empty($data['zip']))            $filters['zip']            = $data['zip'];
+        if (!empty($data['make']))           $filters['make']           = $data['make'];
+        if (!empty($data['model']))          $filters['model']          = $data['model'];
+        if (!empty($data['year']))           $filters['year']           = $data['year'];
+        if (!empty($data['inventory_type']))$filters['inventory_type']  = $data['inventory_type'];
+        if (!empty($data['price_range']))   $filters['price_range']     = $data['price_range'];
+        if (!empty($data['miles_range']))   $filters['miles_range']     = $data['miles_range'];
+
+        $result = $mc->searchInventory($filters);
+        if (isset($result['error'])) {
+            return response()->json([
+                'ok' => false,
+                'error' => $result['error'],
+                'calls_used'      => MarketCheckService::callsThisMonth(),
+                'calls_remaining' => MarketCheckService::callsRemaining(),
+            ]);
+        }
+
+        // Normalize each listing into something the wizard can pick from
+        $cars = collect($result['listings'] ?? [])->map(function ($l) {
+            $b = $l['build'] ?? [];
+            return [
+                'id'         => $l['id'] ?? null,
+                'vin'        => $l['vin'] ?? null,
+                'year'       => $b['year'] ?? null,
+                'make'       => $b['make'] ?? null,
+                'model'      => $b['model'] ?? null,
+                'trim'       => $b['trim'] ?? null,
+                'body_type'  => $b['body_type'] ?? null,
+                'drivetrain' => $b['drivetrain'] ?? null,
+                'transmission'=> $b['transmission'] ?? null,
+                'fuel_type'  => $b['fuel_type'] ?? null,
+                'engine'     => $b['engine'] ?? null,
+                'miles'      => $l['miles'] ?? null,
+                'price'      => $l['price'] ?? null,
+                'msrp'       => $l['msrp'] ?? null,
+                'exterior_color' => $l['exterior_color'] ?? null,
+                'interior_color' => $l['interior_color'] ?? null,
+                'inventory_type' => $l['inventory_type'] ?? null,
+                'stock_no'   => $l['stock_no'] ?? null,
+                'dealer'     => [
+                    'name'   => $l['dealer']['name'] ?? null,
+                    'street' => $l['dealer']['street'] ?? null,
+                    'city'   => $l['dealer']['city'] ?? null,
+                    'state'  => $l['dealer']['state'] ?? null,
+                    'zip'    => $l['dealer']['zip'] ?? null,
+                    'phone'  => $l['dealer']['phone'] ?? null,
+                    'website'=> $l['dealer']['website'] ?? null,
+                ],
+                'photo'      => $l['media']['photo_links'][0] ?? null,
+                'vdp_url'    => $l['vdp_url'] ?? null,
+            ];
+        })->all();
+
+        return response()->json([
+            'ok'              => true,
+            'num_found'       => $result['num_found'] ?? 0,
+            'cars'            => $cars,
+            'filters'         => $filters,
+            'calls_used'      => MarketCheckService::callsThisMonth(),
+            'calls_remaining' => MarketCheckService::callsRemaining(),
+        ]);
     }
 
     /**

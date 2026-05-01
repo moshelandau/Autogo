@@ -108,6 +108,36 @@ class MarketCheckService
     }
 
     /**
+     * ✅ VERIFIED — Active inventory search.
+     * Docs: https://apidocs.marketcheck.com/ — GET /v2/search/car/active
+     *
+     * Filters supported (whitelisted):
+     *   - seller_name   string — dealer name as MarketCheck has it
+     *   - zip / radius  geo
+     *   - make/model/trim/year/year_range
+     *   - body_type, fuel_type, transmission, drivetrain
+     *   - price_range, miles_range
+     *   - inventory_type ("new", "used", "certified")
+     *   - rows (default 10, max 50), start (offset)
+     *   - sort_by, sort_order
+     *
+     * Returns the raw {num_found, listings[]} where each listing has
+     * id, vin, dealer{}, build{year,make,model,trim,...}, miles, price.
+     */
+    public function searchInventory(array $filters = []): array
+    {
+        $allowed = [
+            'seller_name', 'zip', 'radius', 'make', 'model', 'trim', 'year',
+            'year_range', 'body_type', 'fuel_type', 'transmission', 'drivetrain',
+            'price_range', 'miles_range', 'inventory_type',
+            'rows', 'start', 'sort_by', 'sort_order',
+        ];
+        $query = array_intersect_key($filters, array_flip($allowed));
+        $query['rows'] = $query['rows'] ?? 25;
+        return $this->callApi('GET', '/search/car/active', $query);
+    }
+
+    /**
      * 🟡 VERIFIED-DEPRECATED — generic OEM incentive search.
      * MarketCheck's docs list /v2/search/car/incentive/oem as
      * "Deprecated". Prefer searchIncentivesByMakeZip() for new code.
