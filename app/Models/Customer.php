@@ -18,6 +18,7 @@ class Customer extends Model
         'first_name', 'last_name', 'email', 'phone', 'secondary_phone',
         'can_receive_sms', 'address', 'address_2', 'city', 'state', 'zip', 'country',
         'drivers_license_number', 'dl_expiration', 'dl_state', 'date_of_birth',
+        'dl_front_image_path', 'dl_back_image_path', 'dl_ocr', 'dl_verified_at',
         'insurance_company', 'insurance_policy', 'credit_score',
         'store_credit_balance', 'cached_outstanding_balance',
         'notes', 'is_active', 'hq_rentals_id',
@@ -30,9 +31,21 @@ class Customer extends Model
             'is_active' => 'boolean',
             'dl_expiration' => 'date',
             'date_of_birth' => 'date',
+            'dl_ocr' => 'array',
+            'dl_verified_at' => 'datetime',
             'store_credit_balance' => 'decimal:2',
             'credit_score' => 'integer',
         ];
+    }
+
+    public function insurancePolicies(): HasMany
+    {
+        return $this->hasMany(CustomerInsurancePolicy::class)->latest();
+    }
+
+    public function currentInsurance(): ?CustomerInsurancePolicy
+    {
+        return $this->insurancePolicies()->where('is_current', true)->first();
     }
 
     /**
