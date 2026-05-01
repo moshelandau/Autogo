@@ -75,9 +75,15 @@ const appliedRebateIds = ref(new Set());
 const pullOffers = async () => {
     offersLoading.value = true;
     try {
-        // If user typed a VIN, send it — MarketCheck will resolve the exact
-        // car + dealer and scope incentives to that dealer's MSA.
-        const payload = v.vin && v.vin.length === 17 ? { vin: v.vin } : {};
+        // Send wizard form state so the backend uses what's CURRENTLY in
+        // the form, not what's saved on the deal. VIN narrows further.
+        const payload = {
+            vin:   v.vin && v.vin.length === 17 ? v.vin : undefined,
+            make:  v.make || undefined,
+            model: v.model || undefined,
+            year:  v.year || undefined,
+            zip:   customer.zip && /^\d{5}$/.test(customer.zip) ? customer.zip : undefined,
+        };
         const { data } = await axios.post(route('leasing.deals.quotes.wizard.pull-offers', props.deal.id), payload);
         offers.value = data;
         if (data.ok) {

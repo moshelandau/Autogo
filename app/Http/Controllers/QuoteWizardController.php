@@ -109,15 +109,30 @@ class QuoteWizardController extends Controller
     }
 
     /**
-     * Pull live OEM offers. Optional `vin` body param: if given, MarketCheck
-     * looks up the exact car first, identifies the dealer holding it, then
-     * scopes incentives to the dealer's MSA. Otherwise falls back to the
-     * deal's make + customer ZIP.
+     * Pull live OEM offers. Body params (all optional — sent by the wizard
+     * to reflect the user's CURRENT form state, which may not yet be saved
+     * to the deal record):
+     *   - vin       — if given, MarketCheck looks up the exact car +
+     *                 dealer first and scopes incentives to that MSA
+     *   - make      — overrides deal->vehicle_make
+     *   - model     — overrides deal->vehicle_model
+     *   - year      — overrides deal->vehicle_year
+     *   - zip       — overrides deal->customer_zip / customer->zip
+     *
+     * Without overrides, falls back to the deal's saved fields (legacy
+     * Deal Show calculator path).
      */
     public function pullOffers(Request $r, Deal $deal, MarketCheckOffersService $offers): JsonResponse
     {
-        $vin = $r->string('vin')->toString() ?: null;
-        return response()->json($offers->offersForDeal($deal, $vin));
+        $overrides = $r->validate([
+            'vin'   => 'nullable|string|size:17',
+            'make'  => 'nullable|string|max:60',
+            'model' => 'nullable|string|max:60',
+            'year'  => 'nullable|integer|min:1990|max:2099',
+            'zip'   => 'nullable|string|size:5',
+        ]);
+        $vin = $overrides['vin'] ?? null;
+        return response()->json($offers->offersForDeal($deal, $vin, $overrides));
     }
 
     /**
