@@ -553,6 +553,84 @@ const calcResult = ref(null);
 const calcLoading = ref(false);
 const matchedProgram = ref(null);
 
+// ── Live Offers (MarketCheck OEM incentive feed) ──
+const liveOffers = ref(null);            // { ok, leases[], finances[], rebates[], captive, calls_used, calls_remaining }
+const liveOffersLoading = ref(false);
+const selectedOfferId = ref(null);
+const appliedRebateIds = ref(new Set()); // ids of rebates user picked to add to cap-cost reduction
+
+const pullLiveOffers = async () => {
+    liveOffersLoading.value = true;
+    liveOffers.value = null;
+    try {
+        const { data } = await axios.post(route('leasing.deals.pull-offers', d.id));
+        liveOffers.value = data;
+    } catch (e) {
+        liveOffers.value = { ok: false, error: e.response?.data?.message || e.message };
+    }
+    liveOffersLoading.value = false;
+};
+
+const applyOfferToCalculator = (offer) => {
+    selectedOfferId.value = offer.id;
+    calc.value.type    = offer.type === 'finance' ? 'finance' : 'lease';
+    if (offer.msrp)              calc.value.msrp            = offer.msrp;
+    if (offer.term)              calc.value.term            = offer.term;
+    if (offer.mileage_limit)     calc.value.annual_mileage  = offer.mileage_limit;
+    if (offer.residual_pct)      calc.value.residual_pct    = offer.residual_pct;
+    if (offer.money_factor_derived) calc.value.money_factor = offer.money_factor_derived;
+    if (offer.apr)               calc.value.apr             = offer.apr;
+    if (offer.acquisition_fee)   calc.value.acquisition_fee = offer.acquisition_fee;
+    if (offer.down_payment)      calc.value.down_payment    = offer.down_payment;
+    if (offer.net_cap_cost)      calc.value.sell_price      = offer.net_cap_cost;
+    // Auto-tag captive lender into program label so it shows up on the quote
+    if (liveOffers.value?.captive) {
+        matchedProgram.value = { lender: { name: liveOffers.value.captive }, _from_marketcheck: true };
+    }
+};
+
+const toggleRebate = (rebate) => {
+    const next = new Set(appliedRebateIds.value);
+    next.has(rebate.id) ? next.delete(rebate.id) : next.add(rebate.id);
+    appliedRebateIds.value = next;
+    // Sum selected rebate cashback into the calc rebates_total field
+    const total = (liveOffers.value?.rebates || [])
+        .filter(r => next.has(r.id))
+        .reduce((sum, r) => sum + (Number(r.cashback) || 0), 0);
+    calc.value.rebates_total = total;
+};
+const isRebateApplied = (id) => appliedRebateIds.value.has(id);
+
+// ── Bird Dog + target profit (deal "placement") ──
+const birdDog = ref({
+    amount: 0,
+    source: 'dealer',   // 'dealer' = paid by dealer to AutoGo (adds to profit) | 'down' = applied to cap-cost reduction (lowers monthly) | 'deposit' = held back from customer's deposit (no monthly impact)
+});
+watch(() => birdDog.value, (v) => {
+    if (v.source === 'down') {
+        // Bird Dog rolled into cap-cost reduction stacks with rebates
+        const rebateBase = (liveOffers.value?.rebates || [])
+            .filter(r => appliedRebateIds.value.has(r.id))
+            .reduce((s, r) => s + (Number(r.cashback) || 0), 0);
+        calc.value.rebates_total = rebateBase + Number(v.amount || 0);
+    }
+}, { deep: true });
+
+const profitTarget = ref(null);
+// Derived AutoGo profit estimate. We don't have dealer reserve / back-end visibility yet (PR C),
+// so this is the front-end profit (sell - cost) + Bird Dog (if dealer pays it). Clearly labeled.
+const estimatedProfit = computed(() => {
+    const sell = Number(calc.value.sell_price) || 0;
+    const cost = Number(d.cost) || 0;
+    const frontEnd = Math.max(0, sell - cost);
+    const bd = birdDog.value.source === 'dealer' ? (Number(birdDog.value.amount) || 0) : 0;
+    return { front_end: frontEnd, bird_dog: bd, total: frontEnd + bd };
+});
+const profitGap = computed(() => {
+    if (!profitTarget.value) return null;
+    return Number(profitTarget.value) - estimatedProfit.value.total;
+});
+
 const findProgram = async () => {
     if (!d.vehicle_make || !d.vehicle_model) {
         alert('Set vehicle make/model on the deal first');
@@ -1086,9 +1164,130 @@ const saveCalcAsQuote = () => {
                         <!-- Calculator — merged under the Quotes tab so they sit together. -->
                         <div v-if="activeTab === 'quotes'" class="mt-6 pt-6 border-t space-y-4">
                             <h3 class="text-base font-semibold text-gray-700">📊 Calculator</h3>
+
+                            <!-- Live Offers panel: pulls real OEM lease/finance/cash offers from MarketCheck -->
+                            <div class="border-2 border-indigo-200 rounded-xl p-4 bg-indigo-50/30">
+                                <div class="flex items-center justify-between mb-2">
+                                    <div>
+                                        <h4 class="text-sm font-semibold text-gray-800">🚗 Live OEM Offers — MarketCheck</h4>
+                                        <p class="text-xs text-gray-500 mt-0.5">Pulls every active lease / finance / cash offer for this vehicle's make in the customer's ZIP. 1 API call per pull.</p>
+                                    </div>
+                                    <button @click="pullLiveOffers" :disabled="liveOffersLoading"
+                                            class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs hover:bg-indigo-700 disabled:opacity-50">
+                                        {{ liveOffersLoading ? 'Pulling…' : (liveOffers ? '↻ Refresh' : '⬇ Pull Live Offers') }}
+                                    </button>
+                                </div>
+
+                                <div v-if="liveOffers && !liveOffers.ok" class="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
+                                    {{ liveOffers.error || 'Failed to pull offers.' }}
+                                </div>
+
+                                <div v-if="liveOffers && liveOffers.ok" class="mt-3 space-y-3">
+                                    <div class="text-xs text-gray-600 flex items-center gap-3 flex-wrap">
+                                        <span><b>{{ liveOffers.num_found }}</b> offers for <b>{{ liveOffers.make }}</b> in <b>{{ liveOffers.zip }}</b></span>
+                                        <span v-if="liveOffers.captive" class="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[11px]">Captive: {{ liveOffers.captive }}</span>
+                                        <span class="text-gray-400">·</span>
+                                        <span>{{ liveOffers.calls_used }}/{{ liveOffers.calls_used + liveOffers.calls_remaining }} calls used</span>
+                                    </div>
+
+                                    <!-- Lease offers -->
+                                    <div v-if="liveOffers.leases.length">
+                                        <h5 class="text-xs font-semibold text-gray-700 mb-1">🔑 Lease offers ({{ liveOffers.leases.length }}) — click to apply</h5>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            <button v-for="o in liveOffers.leases" :key="o.id"
+                                                    @click="applyOfferToCalculator(o)" type="button"
+                                                    :class="['text-left p-3 rounded-lg border-2 hover:border-indigo-400 transition',
+                                                            selectedOfferId === o.id ? 'border-indigo-500 bg-white shadow' : 'border-gray-200 bg-white']">
+                                                <div class="flex items-baseline justify-between">
+                                                    <div class="font-bold text-lg text-indigo-700">${{ Number(o.monthly).toLocaleString() }}<span class="text-xs text-gray-500 font-normal">/mo</span></div>
+                                                    <div class="text-[11px] text-gray-500">{{ o.term }}mo · {{ o.mileage_limit?.toLocaleString() }}mi</div>
+                                                </div>
+                                                <div class="text-xs text-gray-700 mt-0.5">{{ o.vehicle }}</div>
+                                                <div class="text-[11px] text-gray-500 mt-1">
+                                                    DAS {{ fmt(o.due_at_signing) }} · MSRP {{ fmt(o.msrp) }} · Res {{ o.residual_pct }}%
+                                                </div>
+                                                <div v-if="o.money_factor_derived" class="text-[10px] text-gray-400 mt-0.5">MF derived: {{ o.money_factor_derived }} (~{{ o.apr_equivalent }}% APR)</div>
+                                                <div class="text-[10px] text-gray-400 mt-0.5">Valid {{ o.valid_from }} → {{ o.valid_through }}</div>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Finance offers -->
+                                    <div v-if="liveOffers.finances.length">
+                                        <h5 class="text-xs font-semibold text-gray-700 mb-1">💵 Finance offers ({{ liveOffers.finances.length }}) — click to apply</h5>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                            <button v-for="o in liveOffers.finances" :key="o.id"
+                                                    @click="applyOfferToCalculator(o)" type="button"
+                                                    :class="['text-left p-3 rounded-lg border-2 hover:border-indigo-400 transition',
+                                                            selectedOfferId === o.id ? 'border-indigo-500 bg-white shadow' : 'border-gray-200 bg-white']">
+                                                <div class="flex items-baseline justify-between">
+                                                    <div class="font-bold text-lg text-indigo-700">{{ o.apr ? o.apr + '% APR' : 'See terms' }}</div>
+                                                    <div class="text-[11px] text-gray-500">{{ o.term }}mo</div>
+                                                </div>
+                                                <div class="text-xs text-gray-700 mt-0.5">{{ o.vehicle }}</div>
+                                                <div class="text-[10px] text-gray-400 mt-0.5">Valid {{ o.valid_from }} → {{ o.valid_through }}</div>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Rebates / cash offers — checkboxes that sum into rebates_total -->
+                                    <div v-if="liveOffers.rebates.length">
+                                        <h5 class="text-xs font-semibold text-gray-700 mb-1">💰 Available Rebates ({{ liveOffers.rebates.length }}) — check to add to rebates_total</h5>
+                                        <div class="space-y-1">
+                                            <label v-for="r in liveOffers.rebates" :key="r.id"
+                                                   class="flex items-start gap-2 p-2 rounded hover:bg-white cursor-pointer">
+                                                <input type="checkbox" :checked="isRebateApplied(r.id)" @change="toggleRebate(r)" class="mt-0.5" />
+                                                <div class="flex-1 text-xs">
+                                                    <div class="flex items-baseline gap-2">
+                                                        <span class="font-bold text-emerald-700">${{ Number(r.cashback).toLocaleString() }}</span>
+                                                        <span class="text-gray-700">{{ r.title }}</span>
+                                                    </div>
+                                                    <div v-if="r.target_group" class="text-[11px] text-gray-500 mt-0.5 italic">{{ r.target_group }}</div>
+                                                    <div class="text-[10px] text-gray-400">Valid {{ r.valid_from }} → {{ r.valid_through }}</div>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Bird Dog + Profit Target controls -->
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div class="border rounded-xl p-3 bg-white">
+                                    <h4 class="text-xs font-semibold text-gray-700 mb-2">🐦 Bird Dog</h4>
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <input v-model.number="birdDog.amount" type="number" step="50" min="0" placeholder="$0"
+                                               class="block w-32 border-gray-300 rounded text-sm" />
+                                        <select v-model="birdDog.source" class="block flex-1 border-gray-300 rounded text-sm">
+                                            <option value="dealer">Paid by dealer (adds to profit)</option>
+                                            <option value="down">Roll into cap-cost reduction (lowers monthly)</option>
+                                            <option value="deposit">Held back from customer deposit (no monthly impact)</option>
+                                        </select>
+                                    </div>
+                                    <p class="text-[11px] text-gray-500">Choose where the BD lands. Most often "paid by dealer" — straight into AutoGo's profit.</p>
+                                </div>
+
+                                <div class="border rounded-xl p-3 bg-white">
+                                    <h4 class="text-xs font-semibold text-gray-700 mb-2">🎯 Target profit on this deal</h4>
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <input v-model.number="profitTarget" type="number" step="100" min="0" placeholder="$1500"
+                                               class="block w-32 border-gray-300 rounded text-sm" />
+                                        <div v-if="profitTarget" class="text-xs">
+                                            <div>Estimated: <span class="font-semibold">{{ fmt(estimatedProfit.total) }}</span> <span class="text-gray-400">(front {{ fmt(estimatedProfit.front_end) }} + BD {{ fmt(estimatedProfit.bird_dog) }})</span></div>
+                                            <div :class="profitGap > 0 ? 'text-red-600' : 'text-emerald-600'">
+                                                Gap: {{ profitGap > 0 ? `Need ${fmt(profitGap)} more` : `${fmt(-profitGap)} above target` }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <p class="text-[11px] text-gray-500">Profit estimate is front-end (sell − cost) + BD if dealer pays. Reserve / back-end income comes in PR D.</p>
+                                </div>
+                            </div>
+
                             <div class="flex items-center gap-2 mb-3">
                                 <button @click="findProgram" class="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700">⚡ Auto-Find Lender Program</button>
-                                <span v-if="matchedProgram" class="text-xs text-green-600 font-medium">✓ Loaded {{ matchedProgram.lender?.name }} program</span>
+                                <span v-if="matchedProgram" class="text-xs text-green-600 font-medium">
+                                    ✓ {{ matchedProgram._from_marketcheck ? 'Tagged via MarketCheck' : 'Loaded' }} {{ matchedProgram.lender?.name }}
+                                </span>
                             </div>
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
                                 <div>

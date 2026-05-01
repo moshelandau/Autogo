@@ -196,6 +196,9 @@ Route::middleware(['auth:sanctum', config('jetstream.auth_session'), 'verified']
         Route::post('deals/{deal}/quotes/{quoteId}/accept', [DealController::class, 'acceptQuote'])->name('deals.quote.accept');
         Route::get ('deals/{deal}/documents/download-all',  [DealController::class, 'downloadAllDocuments'])->name('deals.documents.download-all');
 
+        // Live OEM offers from MarketCheck
+        Route::post('deals/{deal}/calculator/pull-offers',  [DealController::class, 'pullLiveOffers'])->name('deals.pull-offers');
+
         // Deal sub-actions
         Route::post('deals/{deal}/tasks/{task}', [DealController::class, 'completeTask'])->name('deals.task');
         Route::post('deals/{deal}/tasks/{task}/due-date', [DealController::class, 'updateTaskDueDate'])->name('deals.task.due-date');
