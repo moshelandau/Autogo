@@ -192,7 +192,7 @@ class LeaseApplicationFormController extends Controller
 
     private function buildPayload(Deal $deal): array
     {
-        $deal->load('customer');
+        $deal->load(['customer', 'coSigner']);
         // Prefer the session that produced THIS deal; otherwise the latest
         // completed session for the customer; otherwise any session.
         $session = LeaseApplicationSession::where('deal_id', $deal->id)->latest('id')->first()
@@ -225,14 +225,19 @@ class LeaseApplicationFormController extends Controller
             'applicant_position'         => $c['position'] ?? '',
             'applicant_years_employed'   => $c['years_employed'] ?? '',
             'applicant_annual_income'    => $c['annual_income'] ?? '',
-            'co_name'           => trim(($c['co_first_name'] ?? '') . ' ' . ($c['co_last_name'] ?? '')),
-            'co_dob'            => $c['co_date_of_birth'] ?? '',
+            // Co-signer: prefer session-collected values (the SMS bot fills these),
+            // fall back to the linked Customer record (when staff added a co-signer
+            // via the Workflow tab — that flow only sets deal.co_signer_customer_id
+            // and never writes to session.collected).
+            'co_name'           => trim(($c['co_first_name'] ?? '') . ' ' . ($c['co_last_name'] ?? ''))
+                                       ?: trim(($deal->coSigner?->first_name ?? '') . ' ' . ($deal->coSigner?->last_name ?? '')),
+            'co_dob'            => $c['co_date_of_birth'] ?? (optional($deal->coSigner?->date_of_birth)->format('m/d/Y') ?: ''),
             'co_ssn'            => $c['co_ssn'] ?? '',
-            'co_phone'          => $c['co_phone'] ?? '',
-            'co_address'        => $c['co_address'] ?? '',
-            'co_city'           => $c['co_city'] ?? '',
-            'co_state'          => $c['co_state'] ?? '',
-            'co_zip'            => $c['co_zip'] ?? '',
+            'co_phone'          => $c['co_phone'] ?? ($deal->coSigner?->phone ?? ''),
+            'co_address'        => $c['co_address'] ?? ($deal->coSigner?->address ?? ''),
+            'co_city'           => $c['co_city'] ?? ($deal->coSigner?->city ?? ''),
+            'co_state'          => $c['co_state'] ?? ($deal->coSigner?->state ?? ''),
+            'co_zip'            => $c['co_zip'] ?? ($deal->coSigner?->zip ?? ''),
             'co_own_or_rent'    => $c['co_own_or_rent'] ?? '',
             'co_monthly_housing'=> $c['co_monthly_housing'] ?? '',
             'co_years_at_addr'  => $c['co_years_at_address'] ?? '',
