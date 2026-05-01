@@ -246,6 +246,9 @@ const fmt = (v) => v != null && v !== '' ? '$' + Number(v).toLocaleString(undefi
                                 No rebates available for {{ offers.make }} in {{ offers.zip }}.
                             </div>
                             <div v-if="showRebatesPicker && offers?.rebates?.length" class="mt-2 max-h-72 overflow-y-auto border rounded">
+                                <div v-if="offers.num_dealer_markdowns" class="px-2 py-1 bg-amber-50 border-b text-[11px] text-amber-800">
+                                    {{ offers.num_dealer_markdowns }} dealer markdown(s) shown first · {{ offers.num_marketcheck }} OEM rebate(s) below
+                                </div>
                                 <label v-for="r in offers.rebates" :key="r.id"
                                        class="flex items-start gap-2 p-2 border-b last:border-0 hover:bg-gray-50 cursor-pointer text-xs">
                                     <input type="checkbox" :checked="isRebateApplied(r.id)" @change="toggleRebate(r)" class="mt-0.5" />
@@ -253,9 +256,11 @@ const fmt = (v) => v != null && v !== '' ? '$' + Number(v).toLocaleString(undefi
                                         <div class="flex items-baseline gap-2">
                                             <span class="font-bold text-emerald-700">${{ Number(r.cashback).toLocaleString() }}</span>
                                             <span>{{ r.title }}</span>
+                                            <span v-if="r.source === 'dealer_markdown'" class="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded text-[10px] font-semibold">DEALER</span>
+                                            <span v-else class="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded text-[10px] font-semibold">OEM</span>
                                         </div>
                                         <div v-if="r.target_group" class="text-[11px] text-gray-500 italic">{{ r.target_group }}</div>
-                                        <div class="text-[10px] text-gray-400">Valid {{ r.valid_from }} → {{ r.valid_through }}</div>
+                                        <div class="text-[10px] text-gray-400">Valid {{ r.valid_from || '—' }} → {{ r.valid_through || '—' }}</div>
                                     </div>
                                 </label>
                             </div>

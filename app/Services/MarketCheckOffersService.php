@@ -81,13 +81,39 @@ class MarketCheckOffersService
         usort($finances, fn ($a, $b) => ($a['monthly'] ?? PHP_INT_MAX) <=> ($b['monthly'] ?? PHP_INT_MAX));
         usort($rebates,  fn ($a, $b) => ($b['cashback'] ?? 0) <=> ($a['cashback'] ?? 0));
 
+        // Merge in custom dealer markdowns scoped to this make/model/year
+        // (and the deal's dealer if one is linked). They render in the
+        // same Available Rebates picker as OEM rebates so staff sees one list.
+        $markdowns = \App\Models\DealerMarkdown::for($make, $deal->vehicle_model, $deal->vehicle_year, $deal->dealer_id)
+            ->with('dealer:id,name')
+            ->get()
+            ->map(fn ($m) => [
+                'id'            => 'dm_' . $m->id,
+                'type'          => 'cash',
+                'source'        => 'dealer_markdown',
+                'dealer_markdown_id' => $m->id,
+                'title'         => $m->title,
+                'cashback'      => (float) $m->amount,
+                'target_group'  => $m->dealer ? "Dealer: {$m->dealer->name}" : ($m->dealer_name ? "Dealer: {$m->dealer_name}" : 'Custom dealer markdown'),
+                'valid_from'    => optional($m->valid_from)->format('m/d/Y'),
+                'valid_through' => optional($m->valid_through)->format('m/d/Y'),
+                'vehicle'       => trim(($m->year_from ?? '') . ' ' . ($m->make ?? 'any') . ' ' . ($m->model ?? '')),
+                'bullets'       => $m->notes ? [$m->notes] : [],
+            ])
+            ->all();
+
+        // Dealer markdowns first (they're more lucrative + AutoGo-specific), then OEM cash
+        $rebates = array_merge($markdowns, $rebates);
+
         return [
             'ok'              => true,
             'pulled_at'       => now()->toIso8601String(),
             'make'            => $make,
             'zip'             => (string) $zip,
             'captive'         => CaptiveLenders::for($make),
-            'num_found'       => $resp['num_found'] ?? 0,
+            'num_found'       => ($resp['num_found'] ?? 0) + count($markdowns),
+            'num_marketcheck' => $resp['num_found'] ?? 0,
+            'num_dealer_markdowns' => count($markdowns),
             'leases'          => $leases,
             'finances'        => $finances,
             'rebates'         => $rebates,
