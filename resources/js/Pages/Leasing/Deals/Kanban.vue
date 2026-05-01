@@ -191,7 +191,10 @@ const submit = (dealId, stage, beforeId) => {
                                  @drop="onCardDrop(deal, $event)"
                                  class="cursor-grab active:cursor-grabbing transition"
                                  :class="dragOverCard === deal.id ? 'pt-3 border-t-2 border-indigo-500' : ''">
-                                <Link :href="route('leasing.deals.show', deal.id)" :draggable="false"
+                                <Link :href="deal.unread_sms_count
+                                            ? `${route('leasing.deals.show', deal.id)}?tab=messages#unread`
+                                            : route('leasing.deals.show', deal.id)"
+                                      :draggable="false"
                                       class="block bg-white rounded-lg shadow-sm p-3 hover:shadow-md transition-shadow border"
                                       :class="deal.unread_sms_count ? 'border-red-400 ring-2 ring-red-200' : 'border-gray-100'">
                                     <div class="flex justify-between items-start mb-2">

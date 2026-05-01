@@ -73,7 +73,16 @@ const loadMessages = async (isPoll = false) => {
         smsStaff.value = data.staff || [];
         smsPhone.value = data.phone || props.customer.phone;
         smsResolved.value = data.resolved || null;
-        nextTick(() => { if (msgScroll.value) msgScroll.value.scrollTop = msgScroll.value.scrollHeight; });
+        nextTick(() => {
+            // If the user arrived via a kanban deep-link with #unread,
+            // scroll the divider into view instead of jumping to the
+            // bottom — so they immediately see where the unread starts.
+            if (window.location.hash === '#unread' && firstUnreadId.value) {
+                const el = document.getElementById('unread-divider');
+                if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
+            }
+            if (msgScroll.value) msgScroll.value.scrollTop = msgScroll.value.scrollHeight;
+        });
     } catch (e) { console.error(e); }
     messagesLoading.value = false;
 };
@@ -82,6 +91,16 @@ const lastReadInboundMsg = computed(() => {
     const inbound = messages.value.filter(m => m.direction === 'inbound');
     const last = inbound[inbound.length - 1];
     return last && last.status !== 'received' ? last : null;
+});
+
+// First unread inbound message — the divider in the thread renders right
+// above this one. Used by the kanban deep-link (?tab=messages#unread)
+// to scroll a flagged conversation directly to where the unread starts.
+const firstUnreadId = computed(() => {
+    for (const m of messages.value) {
+        if (m.direction === 'inbound' && m.status === 'received') return m.id;
+    }
+    return null;
 });
 
 const assignConversation = () => {
@@ -241,7 +260,15 @@ onBeforeUnmount(() => { if (msgPollTimer) clearInterval(msgPollTimer); });
             <div class="min-h-full flex flex-col justify-end p-3 space-y-2">
                 <div v-if="messagesLoading" class="text-center text-gray-400 py-6 text-sm">Loading...</div>
                 <div v-else-if="messages.length === 0" class="text-center text-gray-400 py-6 text-sm">No messages yet.</div>
-                <div v-else v-for="m in messages" :key="m.id" class="flex"
+                <template v-else v-for="m in messages" :key="m.id">
+                    <!-- Unread divider — kanban links here with #unread when a deal has unread SMS. -->
+                    <div v-if="m.id === firstUnreadId" id="unread-divider"
+                         class="flex items-center gap-2 my-1 text-[11px] font-semibold text-red-600 uppercase tracking-wide">
+                        <div class="flex-1 h-px bg-red-300"></div>
+                        <span>↓ Unread</span>
+                        <div class="flex-1 h-px bg-red-300"></div>
+                    </div>
+                    <div class="flex"
                     :class="m.direction === 'outbound' ? 'justify-end' : 'justify-start'">
                     <div class="max-w-md">
                         <div class="px-3 py-1.5 rounded-2xl text-sm whitespace-pre-wrap break-words"
@@ -266,6 +293,7 @@ onBeforeUnmount(() => { if (msgPollTimer) clearInterval(msgPollTimer); });
                         </div>
                     </div>
                 </div>
+                </template>
             </div>
         </div>
         <form @submit.prevent="sendReply" class="mt-3 space-y-2">
