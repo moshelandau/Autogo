@@ -64,12 +64,12 @@ class MarketCheckOffersService
         //   2. wizard form overrides (user just typed)
         //   3. deal saved fields
         //   4. customer saved fields (for ZIP)
-        $make = $listing['build']['make']
-            ?? ($overrides['make'] ?: null)
-            ?? $deal->vehicle_make;
+        $make = ($listing['build']['make'] ?? null)
+            ?: ($overrides['make'] ?? null)
+            ?: $deal->vehicle_make;
 
         $zip = $vehicleZip
-            ?: ($overrides['zip'] ?: null)
+            ?: ($overrides['zip'] ?? null)
             ?: ($deal->customer_zip ?: optional($deal->customer)->zip);
 
         if (!$make) return ['ok' => false, 'error' => 'No vehicle make available (set on the deal or supply a VIN).'];
@@ -78,8 +78,8 @@ class MarketCheckOffersService
         }
 
         $filters = [];
-        $modelForFilter = $listing['build']['model'] ?? ($overrides['model'] ?? null) ?? $deal->vehicle_model;
-        $yearForFilter  = $listing['build']['year']  ?? ($overrides['year']  ?? null) ?? $deal->vehicle_year;
+        $modelForFilter = ($listing['build']['model'] ?? null) ?: ($overrides['model'] ?? null) ?: $deal->vehicle_model;
+        $yearForFilter  = ($listing['build']['year']  ?? null) ?: ($overrides['year']  ?? null) ?: $deal->vehicle_year;
         if ($modelForFilter) $filters['model'] = $modelForFilter;
         if ($yearForFilter)  $filters['year']  = (int) $yearForFilter;
         $filters['rows'] = 50;
