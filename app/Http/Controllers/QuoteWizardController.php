@@ -125,11 +125,12 @@ class QuoteWizardController extends Controller
     public function pullOffers(Request $r, Deal $deal, MarketCheckOffersService $offers): JsonResponse
     {
         $overrides = $r->validate([
-            'vin'   => 'nullable|string|size:17',
-            'make'  => 'nullable|string|max:60',
-            'model' => 'nullable|string|max:60',
-            'year'  => 'nullable|integer|min:1990|max:2099',
-            'zip'   => 'nullable|string|size:5',
+            'vin'    => 'nullable|string|size:17',
+            'make'   => 'nullable|string|max:60',
+            'model'  => 'nullable|string|max:60',
+            'year'   => 'nullable|integer|min:1990|max:2099',
+            'zip'    => 'nullable|string|size:5',
+            'narrow' => 'nullable|boolean', // true → also filter by model+year (focused view)
         ]);
         $vin = $overrides['vin'] ?? null;
         return response()->json($offers->offersForDeal($deal, $vin, $overrides));
@@ -397,6 +398,7 @@ class QuoteWizardController extends Controller
                 'base_residual_pct' => $d->msrp ? round((float) $d->residual_value / (float) $d->msrp * 100, 2) : 0,
                 'adj_residual_pct'  => 0,
                 'max_advance_pct'   => 115,
+                'purchase_option_fee' => 0,
             ];
             return [$d->id => [
                 'inputs'  => $defaults,

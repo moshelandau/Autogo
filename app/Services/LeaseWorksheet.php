@@ -70,7 +70,13 @@ class LeaseWorksheet
         }
 
         // ── Residual value in dollars ──
-        $residual = round($msrp * $totResPct / 100, 2);
+        // Some lenders publish a single number that's both the residual and
+        // the customer's lease-end buyout. A few add a "purchase option fee"
+        // (~$200–500) on top — when supplied, we subtract it from the
+        // buyout to get the TRUE residual the lender uses for monthly math.
+        $purchaseOptionFee = (float) ($w['purchase_option_fee'] ?? 0);
+        $residualGross = round($msrp * $totResPct / 100, 2);
+        $residual = round($residualGross - $purchaseOptionFee, 2);
 
         // ── Capitalized cost ──
         // gross = sell + capped fees (taxes added below if capped)
@@ -135,9 +141,11 @@ class LeaseWorksheet
             'taxes_paid_as'    => $taxesPaidAs,
 
             // Cap cost
-            'gross_cap_cost'   => round($grossCapBeforeTax, 2),
-            'net_cap_cost'     => round($netCap, 2),
-            'residual_value'   => $residual,
+            'gross_cap_cost'      => round($grossCapBeforeTax, 2),
+            'net_cap_cost'        => round($netCap, 2),
+            'residual_value'      => $residual,
+            'residual_gross'      => $residualGross,
+            'purchase_option_fee' => $purchaseOptionFee,
 
             // Fees
             'upfront_fees'     => round($upfrontFees, 2),

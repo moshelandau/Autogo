@@ -78,10 +78,16 @@ class MarketCheckOffersService
         }
 
         $filters = [];
-        $modelForFilter = ($listing['build']['model'] ?? null) ?: ($overrides['model'] ?? null) ?: $deal->vehicle_model;
-        $yearForFilter  = ($listing['build']['year']  ?? null) ?: ($overrides['year']  ?? null) ?: $deal->vehicle_year;
-        if ($modelForFilter) $filters['model'] = $modelForFilter;
-        if ($yearForFilter)  $filters['year']  = (int) $yearForFilter;
+        // Default: pull every offer for this make in this ZIP — same 1 API
+        // call cost, much broader info. Staff can narrow client-side by
+        // model / year / mileage tier from the response. Pass overrides
+        // ['narrow' => true] to re-enable the focused model+year filter.
+        if (!empty($overrides['narrow'])) {
+            $modelForFilter = ($listing['build']['model'] ?? null) ?: ($overrides['model'] ?? null) ?: $deal->vehicle_model;
+            $yearForFilter  = ($listing['build']['year']  ?? null) ?: ($overrides['year']  ?? null) ?: $deal->vehicle_year;
+            if ($modelForFilter) $filters['model'] = $modelForFilter;
+            if ($yearForFilter)  $filters['year']  = (int) $yearForFilter;
+        }
         $filters['rows'] = 50;
 
         $resp = $this->mc->searchIncentivesByMakeZip($make, $zip, $filters);
